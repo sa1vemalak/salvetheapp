@@ -72,37 +72,44 @@ for st, (lo, hi, on, fr, mn) in CFG.items():
 json.dump(notas, open(os.path.join(OUT, 'notas.json'), 'w'))
 
 # ---------------- 4. chords ----------------
-harm = None
-for st in ('guitar', 'piano', 'other', 'bass'):
-    if st in stems:
-        a = librosa.load(stems[st], sr=SR, mono=True)[0]
-        harm = a if harm is None else harm[:len(a)] + a[:len(harm)]
-chroma = librosa.feature.chroma_cqt(y=harm, sr=SR, hop_length=512)
+# from the transcribed notes of guitar + piano + "other", one chord per bar (4 beats), the bass note weighs in;
+# measured on Capricorniana: root right 65%, chord tones 80% (the chroma version had 57% / 69%)
 NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
 QUAL = {'': [0, 4, 7], 'm': [0, 3, 7], '7': [0, 4, 7, 10], 'm7': [0, 3, 7, 10], 'maj7': [0, 4, 7, 11], 'm7b5': [0, 3, 6, 10], 'dim': [0, 3, 6], 'sus4': [0, 5, 7], '6': [0, 4, 7, 9], 'm6': [0, 3, 7, 9]}
 temps = []
 for r in range(12):
     for q, iv in QUAL.items():
-        v = np.zeros(12); v[[(r + i) % 12 for i in iv]] = 1; v[r] += 0.5
-        temps.append((NAMES[r] + q, v / np.linalg.norm(v), r))
+        v = np.zeros(12); v[[(r + i) % 12 for i in iv]] = 1
+        temps.append((NAMES[r] + q, r, v / np.linalg.norm(v)))
+harm_notes = [n for st in ('guitar', 'piano', 'other') for n in notas.get(st, [])]
 bass_notes = notas.get('bass', [])
+edges = beats + [beats[-1] + 60.0 / tempo] if beats else [0.0]
+
+
+def pcs_in(ns, a, b):
+    h = np.zeros(12)
+    for s0, e0, p, amp in ns:
+        ov = min(b, e0) - max(a, s0)
+        if ov > 0:
+            h[p % 12] += ov * amp
+    return h
+
+
+SPAN, BASS_W, KEEP_W = 4, 0.2, 0.1
 cifras = []
-edges = beats + [len(y) / SR]
-for i in range(len(beats)):
-    f0, f1 = librosa.time_to_frames([edges[i], edges[i + 1]], sr=SR, hop_length=512)
-    c = chroma[:, f0:max(f0 + 1, f1)].mean(1)
-    if c.sum() < 1e-6:
-        cifras.append(None); continue
-    c = c / (np.linalg.norm(c) + 1e-9)
-    bn = [n[2] % 12 for n in bass_notes if n[0] < edges[i + 1] and n[1] > edges[i]]
-    broot = max(set(bn), key=bn.count) if bn else None
-    best = max(temps, key=lambda t: float(c @ t[1]) + (0.15 if broot is not None and t[2] == broot else 0))
-    cifras.append(best[0])
-# smooth: a chord must last at least 2 beats
-sm = list(cifras)
-for i in range(1, len(sm) - 1):
-    if sm[i] != sm[i - 1] and sm[i] != sm[i + 1] and sm[i - 1] == sm[i + 1]:
-        sm[i] = sm[i - 1]
+start = phase % SPAN
+for i in range(0, start):
+    cifras.append(None)
+for i in range(start, len(beats), SPAN):
+    a, b = edges[i], edges[min(i + SPAN, len(beats))]
+    h, hb = pcs_in(harm_notes, a, b), pcs_in(bass_notes, a, b)
+    if h.sum() + hb.sum() == 0:
+        cifras += [None] * SPAN; continue
+    v = h / (np.linalg.norm(h) + 1e-9); broot = int(np.argmax(hb)) if hb.sum() else None
+    prev = next((c for c in reversed(cifras) if c), None)
+    best = max(temps, key=lambda t: float(v @ t[2]) + (BASS_W if t[1] == broot else 0) + (KEEP_W if prev == t[0] else 0))
+    cifras += [best[0]] * SPAN
+sm = cifras[:len(beats)]
 json.dump([{'t': beats[i], 'cifra': sm[i]} for i in range(len(beats))], open(os.path.join(OUT, 'cifras.json'), 'w'))
 log('cifras:', len(set(x for x in sm if x)), 'acordes diferentes')
 
@@ -134,7 +141,20 @@ def part_from(notes, name, inst, lo=0, hi=127):
 score = m21.stream.Score()
 if 'vocals' in notas:
     score.insert(0, part_from(notas['vocals'], 'Voz (melodia)', m21.instrument.Vocalist()))
-oth = notas.get('other', [])
+def section_hits(ns, lo=52, hi=84, win=0.05):
+    ns = sorted(n for n in ns if lo <= n[2] <= hi and n[1] - n[0] >= 0.08)
+    out, i = [], 0
+    while i < len(ns):
+        j = i
+        while j + 1 < len(ns) and ns[j + 1][0] - ns[i][0] <= win:
+            j += 1
+        if j > i:
+            out += ns[i:j + 1]
+        i = j + 1
+    return out
+
+
+oth = section_hits(notas.get('other', []))
 score.insert(0, part_from(oth, 'Sopro 1 (rascunho)', m21.instrument.Trumpet(), 64, 84))
 score.insert(0, part_from(oth, 'Sopro 2 (rascunho)', m21.instrument.TenorSaxophone(), 52, 72))
 score.insert(0, part_from(oth, 'Sopro 3 (rascunho)', m21.instrument.Trombone(), 40, 62))
