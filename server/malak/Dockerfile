@@ -15,6 +15,7 @@ RUN set -eux; \
     bin=$(find /opt -type f -iname 'audiveris' -perm -u+x | head -1); ln -s "$bin" /usr/local/bin/audiveris; audiveris -help >/dev/null 2>&1 || true
 COPY requirements.txt /app/
 RUN pip3 install --no-cache-dir --break-system-packages -r /app/requirements.txt
-COPY robo.py layout2.py /app/
+COPY libs /opt/libs
+COPY robo.py layout2.py vetor.py hornsampler.py tuning_fix.json /app/
 WORKDIR /app
 CMD ["python3", "/app/robo.py"]

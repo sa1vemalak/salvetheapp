@@ -18,7 +18,9 @@ from google.cloud import firestore, storage
 import music21 as m21
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import vetor  # exact notes from the music-font symbols of PDFs exported from notation programs
 import layout2  # bar boxes from the PDF pages (same tool used for the tour scores)
+import hornsampler as H  # real recorded horns (VSCO 2 CE, MTG Solo Sax), the engine of the tour audio
 
 PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT', 'salvetheapp-3cceb')
 BUCKET = os.environ.get('BUCKET', 'salvetheapp-3cceb.firebasestorage.app')
@@ -26,7 +28,7 @@ BUCKET = os.environ.get('BUCKET', 'salvetheapp-3cceb.firebasestorage.app')
 SF2 = os.environ.get('SF2') or next((p for p in ('/usr/share/sounds/sf2/MuseScore_General_Full.sf2', '/usr/share/sounds/sf2/MuseScore_General.sf2',
       '/usr/share/sounds/sf3/MuseScore_General.sf3', '/usr/share/sounds/sf3/MuseScore_General_Full.sf3', '/usr/share/sounds/sf2/FluidR3_GM.sf2') if os.path.exists(p)), '/usr/share/sounds/sf2/FluidR3_GM.sf2')
 AUDIVERIS = os.environ.get('AUDIVERIS', 'audiveris')
-RATE = 44100
+RATE = 48000  # same rate as the horn sampler
 
 db = firestore.Client(project=PROJECT)
 gcs = storage.Client(project=PROJECT).bucket(BUCKET)
@@ -89,39 +91,38 @@ GM = [
     ('corne ingles|english horn', 69), ('fagote|bassoon', 70), ('clarone|bass clarinet|clarinete|clarinet|requinta', 71),
     ('flautim|piccolo', 72), ('flauta doce|recorder', 74), ('pifano|pife|fife', 72), ('flauta|flute', 73), ('pan flute|flauta pan', 75),
     ('ocarina', 79), ('sintetizador|synth lead|lead', 80), ('pad', 88), ('sitar', 104), ('kalimba', 108), ('steel drum|steel pan', 114),
-    ('teclado|keyboard|keys|piano|base', 0),
+    ('base', 4), ('teclado|keyboard|keys|piano', 0),
 ]
 DRUMS = 'bateria|drum|percuss|pandeiro|caixa|surdo|tamborim|agogo|agogô|cuica|cuíca|conga|bongo|cajon|cajón|ganza|ganzá|shaker|triangulo|triângulo|chocalho|timbal|repique|zabumba|kit'
 
 
 def program_for(part, name):
-    """(GM program, is drums): the instrument written in the file first, then the part name"""
+    """(GM program, is drums): the part name first (the PDF reader tags every staff as 'Voice'), then the file's instrument"""
     n = (name or '').lower()
     if re.search(DRUMS, n):
         return 0, True
-    try:
-        inst = part.getInstrument(returnDefault=False)
-        if inst is not None:
-            if isinstance(inst, m21.instrument.UnpitchedPercussion) or getattr(inst, 'inGMPercMap', False):
-                return 0, True
-            if inst.midiProgram is not None and not (inst.midiProgram == 0 and not re.search('piano|teclado|keys', n)):
-                return int(inst.midiProgram), False
-    except Exception:
-        pass
-    plain = n.encode('ascii', 'ignore').decode() if n.isascii() else __import__('unicodedata').normalize('NFD', n).encode('ascii', 'ignore').decode()
+    plain = __import__('unicodedata').normalize('NFD', n).encode('ascii', 'ignore').decode()
     for pat, prog in GM:
         if re.search(pat, plain) or re.search(pat, n):
             return prog, False
-    try:  # music21 knows many more instrument names
+    try:
         inst = m21.instrument.fromString(name)
-        if inst.midiProgram is not None:
+        if inst.midiProgram is not None and not isinstance(inst, m21.instrument.Vocalist):
             return int(inst.midiProgram), isinstance(inst, m21.instrument.UnpitchedPercussion)
+    except Exception:
+        pass
+    try:
+        inst = part.getInstrument(returnDefault=False)
+        if inst is not None and inst.midiProgram is not None and not re.search('voice|voz', (inst.instrumentName or '') + (part.partName or ''), re.I):
+            if isinstance(inst, m21.instrument.UnpitchedPercussion):
+                return 0, True
+            return int(inst.midiProgram), False
     except Exception:
         pass
     return 0, False
 
 
-def omr(pdf, out_dir):
+def omr(pdf, out_dir, progress=None):
     """PDF -> MusicXML with Audiveris (headless)"""
     os.makedirs(out_dir, exist_ok=True)
     # text reading (part names, tempo marks, lyrics): Portuguese, English, Italian (tempo words) and German
@@ -132,8 +133,26 @@ def omr(pdf, out_dir):
     cmd = [AUDIVERIS, '-batch', '-export', '-output', out_dir, '--', pdf]
     if shutil.which('xvfb-run'):
         cmd = ['xvfb-run', '-a'] + cmd  # some of its libraries want a display even in batch mode
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=2400, env=env)
-    print('audiveris saída:', r.returncode, r.stdout[-4000:], r.stderr[-4000:], flush=True)
+    try:  # pages, to show progress while the reader goes through them
+        import pdfplumber
+        with pdfplumber.open(pdf) as d:
+            pages = len(d.pages)
+    except Exception:
+        pages = 0
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+    tail, seen, t0 = [], set(), time.time()
+    for line in proc.stdout:
+        tail = (tail + [line])[-80:]
+        m = re.search(r'\[[^\]#]*#(\d+)\]', line)
+        if m and progress and pages:
+            k = int(m.group(1))
+            if k not in seen:
+                seen.add(k)
+                progress(k, pages)
+        if time.time() - t0 > 2400:
+            proc.kill(); break
+    proc.wait()
+    print('audiveris saída:', proc.returncode, ''.join(tail)[-4000:], flush=True)
     found = sorted(glob.glob(os.path.join(out_dir, '**', '*.mxl'), recursive=True)) + sorted(glob.glob(os.path.join(out_dir, '**', '*.musicxml'), recursive=True))
     if not found:
         raise RuntimeError('Não consegui ler as notas deste PDF. Ele é exportado de um programa de partitura (não foto/scan)?')
@@ -288,7 +307,7 @@ def repeat_plan(root):
 LAST_PLAN = None
 
 
-def sanitize_musicxml(path, boxes=None, voltas=None):
+def sanitize_musicxml(path, boxes=None, voltas=None, pdf=None):
     """Fix what the reader sometimes writes and music21 can't open: <divisions>0</divisions> (whole-bar rests),
     and whole-bar rests whose duration doesn't fill the bar. Returns the path of a fixed .musicxml."""
     import zipfile
@@ -331,6 +350,14 @@ def sanitize_musicxml(path, boxes=None, voltas=None):
                     du.text = str(max(1, bar)); fixed += 1
                 if du is not None and int(float(du.text or 0)) <= 0 and n.find('grace') is None:
                     du.text = '1'; fixed += 1
+    if pdf and boxes:  # PDFs exported from notation programs: read the notes from the vector symbols, bar by bar
+        try:
+            nst = len(list(root.iter('part')))
+            ev = vetor.read(pdf, boxes, nst)
+            done, kept = vetor.patch_musicxml(root, ev, nst)
+            print(f'leitura vetorial do PDF: {done} compassos lidos dos símbolos, {kept} ficaram da leitura por imagem', flush=True)
+        except Exception as e:
+            print('leitura vetorial do PDF não deu:', e, flush=True)
     out = os.path.splitext(path)[0] + '.limpo.musicxml'
     ET.ElementTree(root).write(out, encoding='UTF-8', xml_declaration=True)
     if fixed:
@@ -338,8 +365,8 @@ def sanitize_musicxml(path, boxes=None, voltas=None):
     return out
 
 
-def load_score(files, boxes=None):
-    files = [sanitize_musicxml(f, boxes if len(files) == 1 else None) if f.lower().endswith(('.mxl', '.musicxml', '.xml')) else f for f in files]
+def load_score(files, boxes=None, pdf=None):
+    files = [sanitize_musicxml(f, boxes if len(files) == 1 else None, pdf=pdf if len(files) == 1 else None) if f.lower().endswith(('.mxl', '.musicxml', '.xml')) else f for f in files]
     s = None
     for f in files:
         x = m21.converter.parse(f)
@@ -428,11 +455,32 @@ def chords_to_bars(chords, boxes):
     return res
 
 
+QUAL_V = {'m7': [0, 3, 7, 10], '7': [0, 4, 7, 10], 'maj7': [0, 4, 7, 11], 'm7b5': [0, 3, 6, 10], 'dim': [0, 3, 6, 9], 'm': [0, 3, 7], '': [0, 4, 7],
+          '6': [0, 4, 7, 9], 'm6': [0, 3, 7, 9], 'sus4': [0, 5, 7], '7sus4': [0, 5, 7, 10], 'aug': [0, 4, 8], 'add9': [0, 4, 7, 14], '9': [0, 4, 7, 10, 14], 'm9': [0, 3, 7, 10, 14]}
+
+
+def voicing(sym):
+    """the tour charts' voicing: chord in the middle register (around G3-D5), bass note in the low octave"""
+    try:
+        cs = m21.harmony.ChordSymbol(sym)
+        root = cs.root().pitchClass
+        bass = cs.bass().pitchClass if cs.bass() is not None else root
+        iv = sorted({(p.pitchClass - root) % 12 for p in cs.pitches})
+    except Exception:
+        return None, None
+    base = 53 + ((root - 53) % 12)
+    tones = sorted(base + x for x in iv)
+    while tones[-1] > 76:
+        tones = sorted(tones[:-1] + [tones[-1] - 12])
+    return tones[:4], 36 + ((bass - 36) % 12)
+
+
 def comping_part(score, bar_chords, name='Base'):
-    """a keyboard + bass part from chord symbols: chord held until the next one, root in the bass on each change and beat 3"""
+    """keyboard + bass from chord symbols: a soft held chord and bass root on each chord change, so the band part is a
+    harmonic guide under the horns (a made-up groove sounded worse than none)."""
     ref = score.parts[0].getElementsByClass('Measure')
     part = m21.stream.Part(); part.partName = name
-    part.insert(0, m21.instrument.Piano())
+    part.insert(0, m21.instrument.ElectricPiano())
     last = None
     for m in ref:
         nm = m21.stream.Measure(number=m.number)
@@ -445,23 +493,17 @@ def comping_part(score, bar_chords, name='Base'):
         if changes[0][0] > 0 and last:
             changes.insert(0, (0.0, last))
         changes[0] = (0.0, changes[0][1])
-        for i, (off, sym) in enumerate(changes):
-            end = changes[i + 1][0] if i + 1 < len(changes) else bar_len
-            dur = max(0.5, end - off)
-            try:
-                cs = m21.harmony.ChordSymbol(sym.replace('maj', 'maj').replace('Δ', 'maj7'))
-                ps = [p for p in cs.pitches]
-            except Exception:
-                continue
-            root = cs.root() if cs.root() else ps[0]
-            voicing = sorted({(p.pitchClass - 0) % 12 for p in ps})
-            notes = [m21.pitch.Pitch(midi=60 + ((pc - 0) % 12) - (12 if pc > 7 else 0)) for pc in voicing][:4]
-            ch = m21.chord.Chord(notes, quarterLength=dur); ch.volume.velocity = 60
-            nm.insert(off, ch)
-            bass = m21.note.Note(m21.pitch.Pitch(midi=36 + root.pitchClass + (0 if root.pitchClass < 5 else -12) + 12), quarterLength=min(dur, 2.0)); bass.volume.velocity = 80
-            nm.insert(off, bass)
-            if dur >= 4 and bar_len >= 4:
-                b2 = m21.note.Note(bass.pitch, quarterLength=2.0); b2.volume.velocity = 70; nm.insert(off + 2, b2)
+        # a soft guide, not a groove: the chord held from each change (re-struck on beat 1), bass root held under it
+        starts = sorted({0.0} | {o for o, _ in changes if o < bar_len})
+        for k, o in enumerate(starts):
+            end = starts[k + 1] if k + 1 < len(starts) else bar_len
+            sym = [t for oo, t in changes if oo <= o + 1e-6][-1]
+            tones, bass = voicing(sym)
+            if tones:
+                ch = m21.chord.Chord(tones, quarterLength=max(0.5, end - o - 0.05)); ch.volume.velocity = 52 if o == 0 else 46
+                nm.insert(o, ch)
+                bn = m21.note.Note(m21.pitch.Pitch(midi=bass), quarterLength=max(0.5, end - o - 0.1)); bn.volume.velocity = 70
+                nm.insert(o, bn)
             last = sym
         part.append(nm)
     return part
@@ -564,33 +606,116 @@ def measures_of(score, tmap):
 
 
 # ---------------- 3. audio ----------------
-def render_part(part, tmap, prog, drums, path_wav, tmp):
-    s = m21.stream.Score()
+def click_track(measures, beats, end, sr=48000):
+    """metronome: a short click on every beat, higher and louder on beat 1, following the bars' time signatures and tempo"""
+    buf = np.zeros((int((end + 1.0) * sr), 2), np.float32)
+    t = np.arange(int(0.035 * sr)) / sr
+    env = np.exp(-t / 0.007)
+    hi = (0.42 * np.sin(2 * np.pi * 2093 * t) * env).astype(np.float32)
+    lo = (0.26 * np.sin(2 * np.pi * 1568 * t) * env).astype(np.float32)
+    for i, (num, t0) in enumerate(measures):
+        t1 = measures[i + 1][1] if i + 1 < len(measures) else end
+        nb = max(1, beats[i])
+        for k in range(nb):
+            a = int((t0 + k * (t1 - t0) / nb) * sr); c = hi if k == 0 else lo
+            seg = buf[a:a + len(c)]
+            seg += c[:len(seg), None]
+    return buf
+
+
+def _gm_instrument(prog, drums, channel):
+    inst = m21.instrument.Instrument()
+    inst.midiProgram = 0 if drums else int(prog)
+    inst.midiChannel = 9 if drums else channel
+    return inst
+
+
+def render_part(part, tmap, prog, drums, path_wav, tmp, split_bass=False):
+    """one part -> wav with FluidSynth, on the right General MIDI instrument.
+    split_bass: a chord part (base) plays its low notes on an electric bass and the rest on the keyboard program."""
     try:  # transposing instruments (trumpet in Bb, sax, horn in F...): play the real, sounding notes
         part = part.toSoundingPitch(inPlace=False)
     except Exception:
         pass
-    p = part.flatten().notesAndRests.stream()
-    p.insert(0, m21.instrument.Instrument())
-    s.insert(0, p)
-    # fixed tempo map on the copy, so every part renders on the same clock
-    for e in list(p.recurse().getElementsByClass('MetronomeMark')):
-        p.remove(e, recurse=True)
-    for off, bpm in tmap:
-        p.insert(off, m21.tempo.MetronomeMark(number=bpm))
+    flat = part.flatten().notesAndRests.stream()
+    groups = [(flat, prog, drums, 0)]
+    if split_bass and not drums:
+        low, high = m21.stream.Stream(), m21.stream.Stream()
+        for n in flat.notes:
+            ps = n.pitches if n.isChord else [n.pitch]
+            if not n.isChord and ps[0].midi < 48:
+                low.insert(n.offset, m21.note.Note(ps[0], quarterLength=n.quarterLength))
+            else:
+                high.insert(n.offset, n)
+        if len(low.notes):
+            groups = [(high, prog, False, 0), (low, 33, False, 1)]
+    s = m21.stream.Score()
+    for st, pr, dr, ch in groups:
+        p = m21.stream.Part()
+        p.insert(0, _gm_instrument(pr, dr, ch))
+        for el in st.notesAndRests:
+            p.insert(el.offset, el)
+        for off, bpm in tmap:
+            p.insert(off, m21.tempo.MetronomeMark(number=bpm))
+        s.insert(0, p)
     mf = m21.midi.translate.music21ObjectToMidiFile(s)
-    for tr in mf.tracks:
-        for ev in tr.events:
-            if drums and getattr(ev, 'channel', None) is not None:
-                ev.channel = 10
-        if not drums:
-            pc = m21.midi.MidiEvent(tr, type=m21.midi.ChannelVoiceMessages.PROGRAM_CHANGE, channel=1)
-            pc.data = prog
-            dt = m21.midi.DeltaTime(tr, time=0)
-            tr.events[0:0] = [dt, pc]
     mid = os.path.join(tmp, os.path.basename(path_wav) + '.mid')
     mf.open(mid, 'wb'); mf.write(); mf.close()
+    humanize_midi(mid, np.random.default_rng(len(path_wav)))
     subprocess.run(['fluidsynth', '-ni', '-g', '0.7', '-r', str(RATE), '-F', path_wav, SF2, mid], check=True, capture_output=True, timeout=900)
+
+
+SAMPLED = {56: 'trumpet', 59: 'trumpet', 57: 'trombone', 58: 'trombone', 64: 'tenor-sax', 65: 'tenor-sax', 66: 'tenor-sax', 67: 'tenor-sax'}
+DYN = {'ppp': 34, 'pp': 44, 'p': 56, 'mp': 68, 'mf': 82, 'f': 96, 'ff': 108, 'fff': 118, 'sfz': 110, 'fp': 96}
+
+
+def horn_events(part, tmap, rng):
+    """notes for the sampler: [start ms, end ms, midi, velocity, legato, grace], at sounding pitch, with the score's
+    dynamics, accents, staccato and slurs, and a little human timing and force variation"""
+    try:
+        part = part.toSoundingPitch(inPlace=False)
+    except Exception:
+        pass
+    flat = part.flatten()
+    dyn = sorted((float(d.offset), DYN.get(d.value, 82)) for d in flat.getElementsByClass('Dynamic'))
+    slurred = set()
+    for sp in part.spannerBundle.getByClass('Slur') if hasattr(part, 'spannerBundle') else []:
+        els = sp.getSpannedElements()
+        for e in els[:-1]:
+            slurred.add(id(e))
+    notes = [n for n in flat.notes]
+    out = []
+    for i, n in enumerate(notes):
+        off = float(n.offset)
+        t0 = seconds_at(off, tmap); t1 = seconds_at(off + float(n.quarterLength), tmap)
+        vel = 82
+        for o, v in dyn:
+            if o <= off + 1e-6:
+                vel = v
+        arts = {a.name for a in n.articulations}
+        if 'accent' in arts or 'strong accent' in arts:
+            vel += 14
+        if 'staccato' in arts or 'staccatissimo' in arts:
+            t1 = t0 + min(t1 - t0, 0.18)
+        # phrase shape: a long note after short ones gets a touch more, the last note of a run a touch less
+        vel += int(rng.normal(0, 4))
+        leg = id(n) in slurred or (i + 1 < len(notes) and abs(float(notes[i + 1].offset) - (off + float(n.quarterLength))) < 1e-6 and t1 - t0 > 0.3 and 'staccato' not in arts)
+        jitter = rng.normal(0, 0.007)
+        grace = bool(n.duration.isGrace)
+        for p in (n.pitches if n.isChord else [n.pitch]):
+            out.append([int((t0 + jitter) * 1000), int(max(t0 + 0.06, t1 - 0.015) * 1000), int(p.midi), int(max(30, min(124, vel))), bool(leg), grace])
+    return sorted(out)
+
+
+def humanize_midi(path, rng):
+    """small velocity variation on every note of a rendered General MIDI file"""
+    import mido
+    mf = mido.MidiFile(path)
+    for tr in mf.tracks:
+        for msg in tr:
+            if msg.type == 'note_on' and msg.velocity > 0:
+                msg.velocity = int(max(20, min(127, msg.velocity + rng.normal(0, 6))))
+    mf.save(path)
 
 
 def load_wav(p, n=None):
@@ -710,7 +835,9 @@ def run(job):
             for i, p in enumerate(pdfs):
                 job.step(f'Lendo as notas do PDF {p["name"]} ({i + 1}/{len(pdfs)})', 5 + int(40 * i / len(pdfs)))
                 pdf = download(p['src'], os.path.join(tmp, f'{slug(p["key"])}.pdf'))
-                src_files.append((p, omr(pdf, os.path.join(tmp, 'omr', slug(p['key']))), pdf_text(pdf), pdf))
+                base_pct, span = 5 + int(40 * i / len(pdfs)), max(1, int(40 / len(pdfs)))
+                prog = lambda k, n, p=p, b=base_pct, sp=span: job.step(f'Lendo as notas de {p["name"]}: página {k} de {n}', b + int(sp * k / n))
+                src_files.append((p, omr(pdf, os.path.join(tmp, 'omr', slug(p['key'])), prog), pdf_text(pdf), pdf))
             how = 'leitura do PDF da grade' if grade else 'leitura dos PDFs das partes'
 
         # --- one score with every instrument ---
@@ -734,7 +861,7 @@ def run(job):
                     tinfo['boxes'], _w = layout2.layout(_pdf, None)
                 except Exception as e:
                     tinfo['boxes'] = None; print('mapa de compassos do PDF:', e)
-                sc = load_score(files, tinfo['boxes'])
+                sc = load_score(files, tinfo['boxes'], _pdf)
                 if len(sc.parts) > 1 and len(tinfo['names']) >= len(sc.parts):
                     for pt, nm in zip(sc.parts, tinfo['names'][:len(sc.parts)]):
                         pt.partName = nm
@@ -747,7 +874,9 @@ def run(job):
                     names.append(p['name'] if len(sc.parts) == 1 else (f'Pauta {i + 1}' if generic else nm))
         if not len(score.parts):
             raise RuntimeError('Não encontrei nenhuma pauta na partitura.')
-        # chord-chart parts (slashes + chord symbols) come out of the reader as rests: play their chords instead
+        # chord-chart parts (slashes + chord symbols) come out of the reader as rests: in the study audio they become a
+        # metronome (a computer-made band sounded worse than none); the chords stay in the score
+        click_names = set()
         if how not in ('arquivo original',) and not reuse:
             for p, files, tinfo, pdf in src_files:
                 if not tinfo['chords']:
@@ -762,7 +891,7 @@ def run(job):
                     notes = len(list(pt.recurse().notes))
                     if notes <= len(pt.getElementsByClass('Measure')) * 0.3:  # nearly empty: the chart part
                         newp = comping_part(score, bars, names[i])
-                        score.replace(pt, newp)
+                        score.replace(pt, newp); click_names.add(names[i])
                         print('base gerada das cifras:', names[i], len(bars), 'compassos com cifra', flush=True)
         # PDFs are read at written pitch: trumpet in Bb, saxes, horn... need their transposition to sound in tune
         if not how.startswith('arquivo original'):
@@ -798,9 +927,27 @@ def run(job):
             prog, drums = program_for(pt, name)
             w = os.path.join(tmp, f'{k}.wav')
             try:
-                render_part(pt, tmap, prog, drums, w, tmp)
+                if name in click_names or (reuse and re.search(r'\bbase\b|cifra', name, re.I)):  # chart part: metronome
+                    sf.write(w, click_track(measures, beats, duration), 48000)
+                    keys.append('metronomo'); wavs.append(w); labels.append('Metrônomo')
+                    continue
+                horn = SAMPLED.get(prog) if not drums else None
+                evs = horn_events(pt, tmap, np.random.default_rng(i + 7)) if horn else []
+                if horn and evs:  # real recorded horns, like the tour audio
+                    end_ms = int(seconds_at(float(pt.highestTime), tmap) * 1000) + 500
+                    b = H.render_part(horn, evs, [], end_ms)
+                    b = H.room(H.pan(b, {'trumpet': 36, 'tenor-sax': 92, 'trombone': 62}[horn]), 0.30)
+                    sf.write(w, b, H.SR)
+                else:
+                    render_part(pt, tmap, prog, drums, w, tmp, split_bass=bool(re.search(r'base|cifra|chord|harmonia|teclado|piano|guitarra|viol', name, re.I)))
+                    a, sr0 = sf.read(w, always_2d=True)
+                    if a.shape[1] == 1:
+                        a = np.repeat(a, 2, 1)
+                    a = H.room(a.astype(np.float32) * 1.5, 0.18)  # the base sits under the horns
+                    sf.write(w, a, sr0)
             except Exception as e:
                 print('parte sem som:', name, e)
+                traceback.print_exc()
                 continue
             keys.append(k); wavs.append(w); labels.append(name)
         if not wavs:

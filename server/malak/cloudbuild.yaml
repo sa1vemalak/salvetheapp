@@ -1,0 +1,11 @@
+steps:
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+  args: ['gsutil', '-m', '-q', 'cp', '-r', 'gs://salvetheapp-3cceb-acervo/libs', '/workspace/']
+- name: gcr.io/cloud-builders/docker
+  args: ['build', '-t', '$_IMAGE', '/workspace']
+images: ['$_IMAGE']
+timeout: 3600s
+options:
+  machineType: E2_HIGHCPU_8
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
