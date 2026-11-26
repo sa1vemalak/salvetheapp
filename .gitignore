@@ -1,0 +1,7 @@
+node_modules/
+.t
+*.log
+__pycache__/
+scores/
+_blob/
+dados.json

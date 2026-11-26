@@ -1,0 +1,19 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function member(band) {
+      return request.auth != null &&
+        firestore.exists(/databases/(default)/documents/bands/$(band)/members/$(request.auth.uid));
+    }
+    function editor(band) {
+      return member(band) &&
+        firestore.get(/databases/(default)/documents/bands/$(band)/members/$(request.auth.uid)).data.role in ['dono', 'editor'];
+    }
+    // each band's files: only its members read, only owner/editors write (up to 200 MB per file)
+    match /bands/{band}/{path=**} {
+      allow read: if member(band);
+      allow write: if editor(band) && (request.resource == null || request.resource.size < 200 * 1024 * 1024);
+    }
+    match /{other=**} { allow read, write: if false; }
+  }
+}

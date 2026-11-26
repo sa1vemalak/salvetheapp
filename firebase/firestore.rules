@@ -1,0 +1,107 @@
+rules_version = '2';
+// Access codes (invite-only phase). Assumed data model of the new paths:
+//   admins/{uid}        exists for app administrators; written only from the server/console
+//   config/app          { cadastroAberto: bool }   true = anyone may create a band
+//   codigos/{codigo}    { ativo: bool, limite: int 1..10000, usados: int >= 0, nota: string <= 200, criadoEm: int, ultimaBanda?: string }
+//   bands/{b}           { name: string 1..80, owner: uid, createdAt: int, codigo?: string }
+// A new band needs: signup open, or an admin, or one use of an active code consumed in the same batch.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signed() { return request.auth != null; }
+    function memberDoc(b) { return /databases/$(database)/documents/bands/$(b)/members/$(request.auth.uid); }
+    function member(b) { return signed() && exists(memberDoc(b)); }
+    function role(b) { return get(memberDoc(b)).data.role; }
+    function editor(b) { return member(b) && role(b) in ['dono', 'editor']; }
+    function owner(b) { return member(b) && role(b) == 'dono'; }
+    function isAdmin() { return signed() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function codePath(c) { return /databases/$(database)/documents/codigos/$(c); }
+    function signupOpen() {
+      let cfg = /databases/$(database)/documents/config/app;
+      return exists(cfg) && get(cfg).data.get('cadastroAberto', false) == true;
+    }
+    // the band being created consumed exactly one use of its code in this same batch
+    function usedCode(b) {
+      let c = request.resource.data.get('codigo', null);
+      return c is string && c.size() > 0 && c.size() <= 64 && exists(codePath(c)) &&
+        getAfter(codePath(c)).data.usados == get(codePath(c)).data.usados + 1 &&
+        getAfter(codePath(c)).data.get('ultimaBanda', '') == b;
+    }
+    function isValidBand(d) {
+      return d.keys().hasAll(['name', 'owner', 'createdAt']) && d.keys().hasOnly(['name', 'owner', 'createdAt', 'codigo']) &&
+        d.name is string && d.name.size() > 0 && d.name.size() <= 80 && d.owner is string && d.createdAt is int &&
+        (!('codigo' in d) || (d.codigo is string && d.codigo.size() <= 64));
+    }
+    function isValidCode(d) {
+      return d.keys().hasAll(['ativo', 'limite', 'usados']) && d.keys().hasOnly(['ativo', 'limite', 'usados', 'nota', 'criadoEm', 'ultimaBanda']) &&
+        d.ativo is bool && d.limite is int && d.limite >= 1 && d.limite <= 10000 && d.usados is int && d.usados >= 0 &&
+        (!('nota' in d) || (d.nota is string && d.nota.size() <= 200)) && (!('criadoEm' in d) || d.criadoEm is int) &&
+        (!('ultimaBanda' in d) || (d.ultimaBanda is string && d.ultimaBanda.size() <= 120));
+    }
+
+    // each person: their list of bands and their private notes
+    match /users/{uid} { allow read, write: if signed() && request.auth.uid == uid; }
+    match /users/{uid}/{rest=**} { allow read, write: if signed() && request.auth.uid == uid; }
+
+    match /bands/{b} {
+      allow read: if member(b);
+      allow create: if signed() && request.resource.data.owner == request.auth.uid && isValidBand(request.resource.data) &&
+        (signupOpen() || isAdmin() || usedCode(b));
+      allow update: if owner(b) && isValidBand(request.resource.data) &&
+        request.resource.data.owner == resource.data.owner && request.resource.data.get('codigo', null) == resource.data.get('codigo', null);
+      allow delete: if owner(b);
+
+      match /members/{uid} {
+        allow read: if member(b);
+        // joining: your own entry, either as the band's creator or with a valid invite (with the invite's role)
+        allow create: if signed() && uid == request.auth.uid && (
+          (request.resource.data.role == 'dono' && get(/databases/$(database)/documents/bands/$(b)).data.owner == request.auth.uid) ||
+          (request.resource.data.invite is string &&
+           exists(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)) &&
+           request.resource.data.role == get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data.role));
+        allow update: if owner(b) && request.resource.data.role in ['editor', 'musico'];
+        allow delete: if owner(b) || (signed() && uid == request.auth.uid);
+      }
+      match /invites/{code} {
+        allow get: if signed();
+        allow list, write: if editor(b);
+      }
+      match /shows/{s} {
+        allow read: if member(b);
+        allow write: if editor(b);
+        match /logic/{d} {
+          allow read: if member(b);
+          allow write: if editor(b);
+        }
+      }
+      // songs, layout, ann (the shared "Em comum" layer), versions
+      match /{col}/{doc} {
+        allow read: if member(b);
+        allow write: if editor(b) && !(col in ['members', 'invites', 'shows']);
+      }
+    }
+
+    // app administrators and signup settings
+    match /admins/{uid} { allow read: if signed() && request.auth.uid == uid; }
+    match /config/app {
+      allow read: if signed();
+      allow write: if isAdmin() && request.resource.data.keys().hasOnly(['cadastroAberto']) && request.resource.data.cadastroAberto is bool;
+    }
+    match /codigos/{c} {
+      allow get: if signed();
+      allow list, delete: if isAdmin();
+      allow create, update: if isAdmin() && isValidCode(request.resource.data);
+      // anyone signed in may consume ONE use, only while creating their own new band in the same batch
+      allow update: if signed() && !isAdmin() && isValidCode(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usados', 'ultimaBanda']) &&
+        resource.data.ativo == true &&
+        request.resource.data.usados == resource.data.usados + 1 &&
+        request.resource.data.usados <= resource.data.limite &&
+        request.resource.data.ultimaBanda is string &&
+        !exists(/databases/$(database)/documents/bands/$(request.resource.data.ultimaBanda)) &&
+        getAfter(/databases/$(database)/documents/bands/$(request.resource.data.ultimaBanda)).data.get('codigo', '') == c &&
+        getAfter(/databases/$(database)/documents/bands/$(request.resource.data.ultimaBanda)).data.owner == request.auth.uid;
+    }
+
+    // the old single-band collections (before bands existed) are closed to everyone
+  }
+}

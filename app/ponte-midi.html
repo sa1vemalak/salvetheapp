@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ponte MIDI</title>
+<style>
+  :root { --bg: #f7f6f2; --fg: #1d1e22; --muted: #6c6d73; --ok: #2fb36b; --bad: #c0392b; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #202127; --fg: #ececef; --muted: #9a9ba3; } }
+  body { margin: 0; padding: 18px; background: var(--bg); color: var(--fg); font: 15px -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { margin: 6px 0; line-height: 1.4; }
+  #st { font-weight: 600; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  small { color: var(--muted); }
+</style></head>
+<body>
+<h1>Ponte MIDI · salvetheapp</h1>
+<p id="st">Pedindo acesso ao MIDI…</p>
+<p id="ports"><small></small></p>
+<p id="pos"><small></small></p>
+<p><small>Deixe esta janela aberta enquanto o Logic toca. Ela passa a posição do Logic para o app.</small></p>
+<script>
+/* Runs as its own window, outside the claude.ai frame, so the browser can give it MIDI.
+   It forwards Logic's clock and position messages to the app tab that opened it. */
+(() => {
+  const st = document.getElementById('st'), ports = document.querySelector('#ports small'), pos = document.querySelector('#pos small');
+  const bc = 'BroadcastChannel' in window ? new BroadcastChannel('estante-midi') : null;
+  const send = msg => {
+    msg.type = 'estante-midi';
+    try { if (window.opener) window.opener.postMessage(msg, '*'); } catch {}
+    try { bc && bc.postMessage(msg); } catch {}
+  };
+  let n = 0;
+  function onMidi(ev) {
+    const d = ev.data; if (!d || !d.length) return;
+    if (d[0] !== 0xF2 && d[0] !== 0xF8 && d[0] !== 0xFA && d[0] !== 0xFB && d[0] !== 0xFC) return;
+    send({ data: Array.from(d) });
+    if (d[0] !== 0xF8 || ++n % 96 === 0) pos.textContent = d[0] === 0xFC ? 'Logic parado' : 'Recebendo o Logic…';
+  }
+  if (!navigator.requestMIDIAccess) { st.textContent = 'Este navegador não tem MIDI. Use o Google Chrome.'; st.className = 'bad'; send({ error: 'no-midi' }); return; }
+  navigator.requestMIDIAccess({ sysex: false }).then(acc => {
+    const hook = () => {
+      const names = [];
+      acc.inputs.forEach(inp => { inp.onmidimessage = onMidi; names.push(inp.name); });
+      ports.textContent = names.length ? 'Entradas: ' + names.join(', ') : 'Nenhuma entrada MIDI. Ligue o Driver IAC no Configuração de Áudio e MIDI.';
+      send({ ready: true, ports: names });
+    };
+    acc.onstatechange = hook; hook();
+    st.textContent = 'MIDI ligado. Pode tocar o Logic.'; st.className = 'ok';
+  }, e => {
+    st.textContent = 'O Chrome não deixou usar o MIDI (' + (e && e.name || 'erro') + ').'; st.className = 'bad';
+    send({ error: (e && e.name) || 'denied' });
+  });
+  setInterval(() => send({ alive: true }), 2000);
+})();
+</script>
+</body></html>
