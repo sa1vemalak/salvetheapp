@@ -91,7 +91,7 @@ GM = [
     ('corne ingles|english horn', 69), ('fagote|bassoon', 70), ('clarone|bass clarinet|clarinete|clarinet|requinta', 71),
     ('flautim|piccolo', 72), ('flauta doce|recorder', 74), ('pifano|pife|fife', 72), ('flauta|flute', 73), ('pan flute|flauta pan', 75),
     ('ocarina', 79), ('sintetizador|synth lead|lead', 80), ('pad', 88), ('sitar', 104), ('kalimba', 108), ('steel drum|steel pan', 114),
-    ('base', 4), ('teclado|keyboard|keys|piano', 0),
+    ('base', 0), ('teclado|keyboard|keys|piano', 0),
 ]
 DRUMS = 'bateria|drum|percuss|pandeiro|caixa|surdo|tamborim|agogo|agogô|cuica|cuíca|conga|bongo|cajon|cajón|ganza|ganzá|shaker|triangulo|triângulo|chocalho|timbal|repique|zabumba|kit'
 
@@ -435,12 +435,16 @@ def chords_to_bars(chords, boxes):
         cand = [b for b in boxes if b[2] == c['page'] and b[3] - 0.01 <= c['x'] <= b[5] + 0.01 and b[4] - 0.08 <= c['y'] <= b[6] + 0.01]
         if not cand:
             continue
-        b = min(cand, key=lambda b: abs(c['y'] - b[4]))
+        # the system whose height holds the chord (chords sit low, above the base staff), then the bar whose span really holds the chord's x (the slack above is only for edges)
+        b = min(cand, key=lambda b: (round(max(0.0, b[4] - c['y'], c['y'] - b[6]), 3), max(0.0, b[3] - c['x'], c['x'] - b[5])))
         if b[0] != b[1]:
             continue  # a multi-bar rest has no chords
         frac = min(0.99, max(0.0, (c['x'] - b[3]) / max(1e-6, b[5] - b[3])))
-        if frac > 0.93:
-            continue  # at the very end of a bar it is a mark for the next one, not a chord
+        if frac > 0.85:  # the symbol starts just before the barline: it belongs to the first beat of the next bar
+            nxt = [n for n in boxes if n[2] == b[2] and abs(n[4] - b[4]) < 1e-3 and abs(n[3] - b[5]) < 0.01 and n[0] == n[1]]
+            if not nxt:
+                continue
+            b, frac = nxt[0], 0.0
         out.setdefault(int(b[0]), []).append((frac, c['t']))
     res = {}
     for k, v in out.items():
@@ -476,11 +480,11 @@ def voicing(sym):
 
 
 def comping_part(score, bar_chords, name='Base'):
-    """keyboard + bass from chord symbols: a soft held chord and bass root on each chord change, so the band part is a
-    harmonic guide under the horns (a made-up groove sounded worse than none)."""
+    """piano + bass from chord symbols, like the tour's first version: the chord held in the middle register from each
+    chord change, the bass root (or slash bass) held in the low octave."""
     ref = score.parts[0].getElementsByClass('Measure')
     part = m21.stream.Part(); part.partName = name
-    part.insert(0, m21.instrument.ElectricPiano())
+    part.insert(0, m21.instrument.Piano())
     last = None
     for m in ref:
         nm = m21.stream.Measure(number=m.number)
@@ -500,9 +504,9 @@ def comping_part(score, bar_chords, name='Base'):
             sym = [t for oo, t in changes if oo <= o + 1e-6][-1]
             tones, bass = voicing(sym)
             if tones:
-                ch = m21.chord.Chord(tones, quarterLength=max(0.5, end - o - 0.05)); ch.volume.velocity = 52 if o == 0 else 46
+                ch = m21.chord.Chord(tones, quarterLength=end - o); ch.volume.velocity = 64
                 nm.insert(o, ch)
-                bn = m21.note.Note(m21.pitch.Pitch(midi=bass), quarterLength=max(0.5, end - o - 0.1)); bn.volume.velocity = 70
+                bn = m21.note.Note(m21.pitch.Pitch(midi=bass), quarterLength=end - o); bn.volume.velocity = 92
                 nm.insert(o, bn)
             last = sym
         part.append(nm)
@@ -662,7 +666,7 @@ def render_part(part, tmap, prog, drums, path_wav, tmp, split_bass=False):
     mid = os.path.join(tmp, os.path.basename(path_wav) + '.mid')
     mf.open(mid, 'wb'); mf.write(); mf.close()
     humanize_midi(mid, np.random.default_rng(len(path_wav)))
-    subprocess.run(['fluidsynth', '-ni', '-g', '0.7', '-r', str(RATE), '-F', path_wav, SF2, mid], check=True, capture_output=True, timeout=900)
+    subprocess.run(['fluidsynth', '-ni', '-g', '0.5' if split_bass else '0.7'] + (['-o', 'synth.reverb.active=0'] if split_bass else []) + ['-r', str(RATE), '-F', path_wav, SF2, mid], check=True, capture_output=True, timeout=900)
 
 
 SAMPLED = {56: 'trumpet', 59: 'trumpet', 57: 'trombone', 58: 'trombone', 64: 'tenor-sax', 65: 'tenor-sax', 66: 'tenor-sax', 67: 'tenor-sax'}
@@ -927,10 +931,6 @@ def run(job):
             prog, drums = program_for(pt, name)
             w = os.path.join(tmp, f'{k}.wav')
             try:
-                if name in click_names or (reuse and re.search(r'\bbase\b|cifra', name, re.I)):  # chart part: metronome
-                    sf.write(w, click_track(measures, beats, duration), 48000)
-                    keys.append('metronomo'); wavs.append(w); labels.append('Metrônomo')
-                    continue
                 horn = SAMPLED.get(prog) if not drums else None
                 evs = horn_events(pt, tmap, np.random.default_rng(i + 7)) if horn else []
                 if horn and evs:  # real recorded horns, like the tour audio
@@ -939,11 +939,12 @@ def run(job):
                     b = H.room(H.pan(b, {'trumpet': 36, 'tenor-sax': 92, 'trombone': 62}[horn]), 0.30)
                     sf.write(w, b, H.SR)
                 else:
-                    render_part(pt, tmap, prog, drums, w, tmp, split_bass=bool(re.search(r'base|cifra|chord|harmonia|teclado|piano|guitarra|viol', name, re.I)))
+                    sb = bool(re.search(r'base|cifra|chord|harmonia|teclado|piano|guitarra|viol', name, re.I))
+                    render_part(pt, tmap, prog, drums, w, tmp, split_bass=sb)
                     a, sr0 = sf.read(w, always_2d=True)
                     if a.shape[1] == 1:
                         a = np.repeat(a, 2, 1)
-                    a = H.room(a.astype(np.float32) * 1.5, 0.18)  # the base sits under the horns
+                    a = H.room(a.astype(np.float32) * (2.8 if sb else 1.5), 0.18)  # same level as the tour base
                     sf.write(w, a, sr0)
             except Exception as e:
                 print('parte sem som:', name, e)

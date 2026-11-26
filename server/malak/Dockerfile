@@ -6,9 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 # Audiveris (reads printed scores): the newest Ubuntu 24.04 package from its releases
 RUN set -eux; \
-    url=$(curl -fsSL https://api.github.com/repos/Audiveris/audiveris/releases \
+    url=$(curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 https://api.github.com/repos/Audiveris/audiveris/releases \
           | jq -r '[.[] | select(.prerelease == false) | .assets[] | select(.name | test("ubuntu24.*x86_64.*\\.deb$"))][0].browser_download_url'); \
-    echo "Audiveris: $url"; curl -fsSL -o /tmp/audiveris.deb "$url"; \
+    echo "Audiveris: $url"; curl -fsSL --retry 6 --retry-all-errors --retry-delay 10 -o /tmp/audiveris.deb "$url"; \
     deps=$(dpkg-deb -f /tmp/audiveris.deb Depends | sed -E 's/\([^)]*\)//g; s/\|[^,]*//g; s/,/ /g'); echo "deps: $deps"; \
     apt-get update; apt-get install -y --no-install-recommends $deps; \
     dpkg-deb -x /tmp/audiveris.deb /; rm -rf /var/lib/apt/lists/* /tmp/audiveris.deb; \
