@@ -382,6 +382,12 @@ body.at-home .palette { display: none; }
 .setlist { list-style: none; margin: 0; padding: 0; }
 .setlist li + li { border-top: 1px solid #e3e1da; }
 .setempty { padding: 24px 0; color: #6c6d73; font-family: var(--f-mono); font-size: 12px; }
+.robo { display: flex; flex-direction: column; gap: 6px; font-family: var(--f-body); font-size: 14px; line-height: 1.4; }
+.robo b { font-family: var(--f-display); font-size: 16px; }
+.robo-bar { display: block; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) var(--p), var(--line) var(--p)); transition: background .4s; }
+.robo-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.robo-bpm { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+.robo-bpm input { width: 72px; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font: 14px var(--f-mono); }
 .setfirst { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; font-family: var(--f-body); font-size: 14px; line-height: 1.45; color: #55565c; }
 .setfirst b { font-family: var(--f-display); font-size: 20px; color: #1d1e22; }
 .setfirst .btn { font-size: 15px; padding: 10px 16px; }
@@ -538,7 +544,7 @@ body.at-home .palette { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261126160141';
+window.APP_VERSION = '20261126182433';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -1209,6 +1215,10 @@ const Caio = (() => {
     if (m.tipo === 'ordem_show') return 'Nova ordem do show: ' + m.ordem.map(t).join(' → ');
     if (m.tipo === 'marcador_daw') return `${t(m.musica)}: a partitura troca no compasso ${m.compasso_daw} da DAW`;
     if (m.tipo === 'nota_musica') return `${t(m.musica)}: notas da música passam a ser “${m.texto.slice(0, 120)}${m.texto.length > 120 ? '…' : ''}”`;
+    if (m.tipo === 'corrigir_notas') {
+      const inst = (S.songs.find(x => x.id === m.musica)?.player?.instrumentos || []).find(x => x.key === m.parte)?.name || m.parte;
+      return `${t(m.musica)} · ${inst} · compasso ${m.compasso}: ${m.descricao || 'corrigir notas'} (${m.notas})`;
+    }
     if (m.tipo === 'renomear_musica') return `${t(m.musica)} passa a se chamar “${m.titulo}”${m.rotulo ? ' (' + m.rotulo + ')' : ''}`;
     return m.descricao || m.tipo;
   };
@@ -1231,7 +1241,8 @@ const Caio = (() => {
         const chosen = p.mudancas.filter((_, k) => checks[k].checked); if (!chosen.length) return;
         ok.disabled = true; ok.textContent = 'Aplicando…';
         const r = await apply(chosen, p.resumo);
-        conversa[i].feito = r.erros.length ? `Apliquei ${r.ok} de ${chosen.length}. Não deu: ${r.erros.join('; ')}` : `Aplicado (${r.ok}). As músicas alteradas têm a versão anterior guardada em Versões.`;
+        const notas = chosen.some(x => x.tipo === 'corrigir_notas');
+        conversa[i].feito = r.erros.length ? `Apliquei ${r.ok} de ${chosen.length}. Não deu: ${r.erros.join('; ')}` : `Aplicado (${r.ok}). As músicas alteradas têm a versão anterior guardada em Versões.${notas ? ' O Malak está gerando o áudio corrigido (1 a 2 minutos).' : ''}`;
         keep(); paint(); toast(r.erros.length ? 'Algumas mudanças não foram aplicadas.' : 'Mudanças aplicadas.');
       };
       row.append(ok);
@@ -1242,7 +1253,8 @@ const Caio = (() => {
 
   async function apply(list, resumo) {
     let ok = 0; const erros = [];
-    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica'].includes(m.tipo)).map(m => m.musica))];
+    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas'].includes(m.tipo)).map(m => m.musica))];
+    const rerender = new Set();
     for (const id of songsTouched) { try { await Versions.snapshot(id, 'Antes das mudanças do Caio: ' + (resumo || '')); } catch {} }
     for (const m of list) {
       try {
@@ -1267,17 +1279,74 @@ const Caio = (() => {
           await ref.update({ switchBars: { ...(cur.switchBars || {}), [m.musica]: m.compasso_daw }, updatedMarkers: Date.now() });
         } else if (m.tipo === 'nota_musica') {
           await S.db.collection('songs').doc(m.musica).update({ notes: m.texto });
+        } else if (m.tipo === 'corrigir_notas') {
+          const song = (await S.db.collection('songs').doc(m.musica).get()).data();
+          if (!song?.player?.lido) throw new Error('esta música não tem partitura lida pelo Malak');
+          const fila = [...(song.correcoes || []).filter(c => !(c.parte === m.parte && c.compasso === m.compasso)),
+            { parte: m.parte, compasso: m.compasso, notas: m.notas, descricao: m.descricao || '', por: SALVE.ctx().user.uid, em: Date.now() }];
+          await S.db.collection('songs').doc(m.musica).update({ correcoes: fila });
+          rerender.add(m.musica);
         } else if (m.tipo === 'renomear_musica') {
           await S.db.collection('songs').doc(m.musica).update(m.rotulo ? { title: m.titulo, tag: m.rotulo } : { title: m.titulo });
         } else throw new Error('tipo desconhecido');
         ok++;
       } catch (e) { erros.push(label(m, Object.fromEntries(S.songs.map(s => [s.id, s.title]))) + ' (' + (e.message || e) + ')'); }
     }
+    for (const id of rerender) await Robo.start(id, null, 'lido');  // the robot rebuilds the audio with the corrections
     return { ok, erros };
   }
 
   $('#caioBtn').onclick = open;
   return { open };
+})();
+/* ---------- robot: turns the score (PDF or original file) into player audio and a bar map ---------- */
+const Robo = (() => {
+  const jobs = new Map(); let unsub = null, lastPaint = null;
+  function watch() {
+    if (unsub || !S.db || !window.SALVE) return;
+    unsub = S.db.collection('jobs').onSnapshot(snap => {
+      jobs.clear(); snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.criadoEm - b.criadoEm).forEach(j => jobs.set(j.song, j));
+      if (lastPaint) paint(...lastPaint);
+      if (typeof Home !== 'undefined' && Home.refresh) Home.refresh();
+    }, () => {});
+  }
+  const running = j => j && ['pendente', 'na fila', 'rodando'].includes(j.status) && Date.now() - (j.atualizado || j.criadoEm) < 45 * 60e3;
+  async function start(songId, bpm, fonte) {
+    if (!S.canWrite) { toast('Só o dono ou um editor pode gerar o áudio.'); return; }
+    const job = { song: songId, tipo: 'audio', status: 'pendente', criadoEm: Date.now(), uid: SALVE.ctx().user.uid, fonte: fonte || 'pdf' };
+    if (bpm) job.bpm = +bpm;
+    try { await S.db.collection('jobs').doc(songId + '__' + Date.now()).set(job); toast('O Malak começou. Leva alguns minutos; pode continuar usando o app.'); }
+    catch { toast('Não consegui chamar o Malak.'); }
+  }
+  function paint(song, box, data) {
+    lastPaint = [song, box, data]; watch();
+    if (!song) return;
+    const j = jobs.get(song.id); box.replaceChildren();
+    const row = el('div', 'robo');
+    if (running(j)) {
+      row.append(el('b', '', 'Malak trabalhando nesta música'), el('span', '', `${j.msg || 'Na fila…'}${j.progresso ? ' · ' + j.progresso + '%' : ''}`));
+      const bar = el('i', 'robo-bar'); bar.style.setProperty('--p', (j.progresso || 3) + '%'); row.append(bar);
+    } else if (data && data.conferido === false) {
+      row.append(el('b', '', 'Áudio gerado pelo Malak: aguardando conferência'),
+        el('span', '', `Lido de ${data.source || 'partitura'} · andamento ${Math.round(data.bpm || 0)}${data.tempoLido ? ' (da partitura)' : ''}. Ouça junto com a partitura; se alguma nota ou o andamento estiver errado, peça ao Caio ou gere de novo com outro andamento.`));
+      if (S.canWrite) row.append(controls(song, data, true));
+    } else if (!data) {
+      row.append(el('b', '', `“${song.title}” ainda não tem áudio`), el('span', '', j && j.status === 'erro' ? 'A última tentativa falhou: ' + (j.msg || '') : 'O Malak lê a partitura (PDF ou arquivo original), gera o som de cada instrumento e marca onde fica cada compasso.'));
+      if (S.canWrite) row.append(controls(song, data, false)); else row.append(el('span', 'hint', 'Peça para o dono ou um editor da banda gerar o áudio.'));
+    }
+    box.append(row); box.hidden = !row.childNodes.length;
+  }
+  function controls(song, data, done) {
+    const c = el('div', 'robo-row');
+    const bpm = document.createElement('input'); bpm.type = 'number'; bpm.min = 20; bpm.max = 320; bpm.placeholder = 'auto'; bpm.setAttribute('aria-label', 'Andamento (batidas por minuto)');
+    if (data?.bpm && !data.tempoLido) bpm.value = Math.round(data.bpm);
+    const lab = el('label', 'robo-bpm'); lab.append('Andamento ♩=', bpm);
+    const go = el('button', 'btn primary', done ? 'Gerar de novo' : 'Gerar áudio'); go.type = 'button'; go.onclick = () => start(song.id, bpm.value, data?.lido ? 'lido' : 'pdf');
+    c.append(lab, go);
+    if (done) { const ok = el('button', 'btn', 'Está certo, conferido'); ok.type = 'button'; ok.onclick = async () => { try { await S.db.collection('songs').doc(song.id).update({ 'player.conferido': true, status: 'pronta' }); toast('Música conferida.'); } catch { toast('Não consegui salvar.'); } }; c.append(ok); }
+    return c;
+  }
+  return { start, paint, job: id => jobs.get(id), running, watch };
 })();
 const Versions = (() => {
   const escH = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1378,7 +1447,7 @@ function openAdd() {
     <div class="field"><label for="newFiles">PDFs das partes</label><input type="file" id="newFiles" accept="application/pdf,.pdf" multiple></div>
     <div class="hint">Um PDF por parte (grade, base, trompete…). Dê o nome de cada parte ao lado do arquivo. Se o nome da música já existir, as partes entram nela.</div>
     <div class="field"><label for="newSrc">Arquivo original <span class="hint" style="display:inline">(opcional)</span></label><input type="file" id="newSrc" accept=".musicxml,.mxl,.xml,.mscz,.mscx,.mid,.midi,.gp,.gpx,.gp5,.sib,.musx,.dorico" multiple></div>
-    <div class="hint">MusicXML, MuseScore, MIDI ou Guitar Pro. Fica guardado na música para o robô de diagramação e para o Caio.</div>
+    <div class="hint">MusicXML, MuseScore, MIDI ou Guitar Pro. Fica guardado na música para o Malak e para o Caio.</div>
     <div class="filelist" id="fileList"></div>
     <div class="noteedit-row" style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelAdd">Cancelar</button><button class="btn primary" id="doAdd">Adicionar</button></div>`;
   document.body.append(scrim, m);
@@ -1430,6 +1499,7 @@ function openAdd() {
       const doc = { ...keep, title, tag: existing?.tag || '', parts, fontes, notes: existing?.notes || '' };
       await S.db.collection('songs').doc(id).set(doc);
       if (window.SALVE) { const c = SALVE.ctx(); if (!(c.order || []).includes(id)) await SALVE.saveShow(c.show, { order: [...(c.order || []), id] }); }
+      if (window.SALVE && (files.length || srcs.length)) Robo.start(id, null, 'pdf');
       S.songId = id; ls.set('song', id);
       toast(existing ? 'Partes adicionadas.' : 'Música adicionada.');
       shut();
@@ -1465,9 +1535,11 @@ const Player = (() => {
   const fmt = t => { t = Math.max(0, t || 0); return Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'); };
   const partKey = () => panes[0]?.part || null;
   const partName = () => currentSong()?.parts.find(p => p.key === partKey())?.name || 'parte';
-  const ORDER = ['trumpet', 'tenor-sax', 'trombone', 'base'];
-  P.mix = ls.get('pmix', ORDER.slice());
-  const avail = () => P.data ? ORDER.filter(k => P.data.mixes['so-' + k]) : [];
+  const TOUR = ['trumpet', 'tenor-sax', 'trombone', 'base'];
+  const ORDER = () => P.data?.instrumentos ? P.data.instrumentos.map(x => x.key) : TOUR;
+  P.off = ls.get('pmixoff', null) || TOUR.filter(k => !(ls.get('pmix', TOUR)).includes(k));  // instruments switched off
+  Object.defineProperty(P, 'mix', { get: () => ORDER().filter(k => !P.off.includes(k)) });
+  const avail = () => P.data ? ORDER().filter(k => P.data.mixes['so-' + k]) : [];
   /* which pre-rendered audio matches the instruments switched on; null = nothing on (metronome only) */
   function mixKey() {
     const d = P.data; if (!d) return null;
@@ -1475,7 +1547,7 @@ const Player = (() => {
     if (!sel.length) return null;
     if (sel.length === av.length || !av.length) return 'tudo';
     if (sel.length === 1) return 'so-' + sel[0];
-    if (av.length === 4 && sel.length === 3) return 'sem-' + av.find(k => !sel.includes(k));
+    if (av.length > 2 && sel.length === av.length - 1 && d.mixes['sem-' + av.find(k => !sel.includes(k))]) return 'sem-' + av.find(k => !sel.includes(k));
     const duo = 'duo-' + sel.join('+');
     return d.mixes[duo] ? duo : 'missing';
   }
@@ -1703,7 +1775,25 @@ const Player = (() => {
     // if the download fails, try the file directly (works on computers and Android)
     getBlob(url).then(swap, () => swap(url));
   }
+  // the mixer buttons follow the song's instruments (the tour songs keep their 4)
+  let mixFor = null;
+  function buildMixer() {
+    const list = P.data?.instrumentos || [{ key: 'trumpet', name: 'Trompete' }, { key: 'tenor-sax', name: 'Sax' }, { key: 'trombone', name: 'Trombone' }, { key: 'base', name: 'Base' }];
+    const sig = list.map(x => x.key).join('|'); if (sig === mixFor) return; mixFor = sig;
+    const box = $('#pMix'); box.querySelectorAll('.mixch').forEach(b => b.remove());
+    const after = box.querySelector('.mixall');
+    [...list].reverse().forEach(x => { const b = el('button', 'mixch'); b.dataset.p = x.key; b.setAttribute('aria-pressed', 'true'); b.append(el('i'), document.createTextNode(x.name)); b.onclick = mixClick; after.after(b); });
+  }
+  function mixClick(e) {
+    const b = e.currentTarget, av = avail();
+    if (b.hasAttribute('data-all')) P.off = [];
+    else { const k = b.dataset.p; P.off = P.off.includes(k) ? P.off.filter(x => x !== k) : [...P.off, k]; }
+    ls.set('pmixoff', P.off);
+    if (!av.some(k => P.mix.includes(k)) && P.data) toast('Nenhum instrumento ligado: só o metrônomo vai soar (se estiver ligado).');
+    applyMix();
+  }
   function renderMode() {
+    buildMixer();
     const av = avail();
     document.querySelectorAll('#pMix .mixch').forEach(b => {
       const k = b.dataset.p, has = av.includes(k);
@@ -1739,10 +1829,10 @@ const Player = (() => {
     P.data = data;
     if (changed) { buildBeats(); setDrumStyleFor(song?.id); }
     loadLayout(song?.id || null);
-    if (data && 'mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: 'salvetheapp · Tour 10 Anos · partitura' }); } catch {} }
+    if (data && 'mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: 'salvetheapp · ' + (window.SALVE ? SALVE.ctx().bandName : '') }); } catch {} }
     $('#pControls').hidden = !data; seek.disabled = !data; playBtn.disabled = !data;
-    msg.hidden = !!data;
-    msg.textContent = song ? `“${song.title}” ainda não tem áudio da partitura. Ele é gerado a partir do arquivo do MuseScore da pasta MATRIZ.` : '';
+    msg.hidden = !song || (!!data && data.conferido !== false);
+    Robo.paint(song, msg, data);
     if (data) applyMix(!newSong); else { renderMode(); setSrc(null); }
     setPlaying();
     paint();
@@ -1972,14 +2062,7 @@ const Player = (() => {
   };
   seek.addEventListener('input', () => { P.seeking = true; const d = audio.duration || P.data?.duration || 0; cur.textContent = fmt(seek.value / 1000 * d); });
   seek.addEventListener('change', () => { const d = audio.duration || 0; if (d) audio.currentTime = seek.value / 1000 * d; P.seeking = false; paint(); });
-  document.querySelectorAll('#pMix .mixch, #pMix .mixall').forEach(b => b.onclick = () => {
-    const av = avail();
-    if (b.hasAttribute('data-all')) P.mix = ORDER.slice();
-    else { const k = b.dataset.p; P.mix = P.mix.includes(k) ? P.mix.filter(x => x !== k) : [...P.mix, k]; }
-    ls.set('pmix', P.mix);
-    if (!av.some(k => P.mix.includes(k)) && P.data) toast('Nenhum instrumento ligado: só o metrônomo vai soar (se estiver ligado).');
-    applyMix();
-  });
+  document.querySelector('#pMix .mixall').onclick = mixClick;
   rateSel.value = String(P.rate);
   rateSel.onchange = () => { P.rate = parseFloat(rateSel.value); ls.set('prate', P.rate); audio.playbackRate = P.rate; audio.defaultPlaybackRate = P.rate; };
   const fillB = () => { if (aIn.value && (!bIn.value || +bIn.value < +aIn.value)) bIn.value = aIn.value; };
@@ -2079,7 +2162,10 @@ const Home = (() => {
       const bpm = bpmOf(s.player);
       if (s.player?.duration) m.append(el('span', '', fmt(s.player.duration)));
       if (bpm) m.append(el('span', 'bpm', `♩ ${bpm}`));
-      if (!s.player) m.append(el('span', '', 'sem áudio'));
+      const rj = typeof Robo !== 'undefined' && Robo.job(s.id);
+      if (rj && Robo.running(rj)) m.append(el('span', 'bpm', `Malak ${rj.progresso || 0}%`));
+      else if (!s.player) m.append(el('span', '', rj && rj.status === 'erro' ? 'Malak falhou' : 'sem áudio'));
+      else if (s.player.conferido === false) m.append(el('span', '', 'conferir'));
       b.append(el('span', 'n', String(s.order ?? '').padStart(2, '0')), t, m, el('span', 'go', '→'));
       b.onclick = () => open(s.id);
       li.append(b); return li;
@@ -2108,7 +2194,7 @@ const Home = (() => {
   }
   $('#homeBtn').onclick = show;
   document.body.classList.add('at-home');
-  return { render, show, hide, setRole, isOpen: () => !home.hidden };
+  return { render, show, hide, setRole, isOpen: () => !home.hidden, refresh: () => { if (!home.hidden) render(); } };
 })();
 
 /* ---------- reading mode: just the score, full screen ---------- */

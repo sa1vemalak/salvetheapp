@@ -2,10 +2,14 @@
   "name": "salvetheapp-functions",
   "private": true,
   "main": "index.js",
-  "engines": { "node": "22" },
+  "engines": {
+    "node": "22"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "1.14.0",
+    "fast-xml-parser": "^4.5.0",
     "firebase-admin": "^13.0.0",
-    "firebase-functions": "^6.0.0"
+    "firebase-functions": "^6.0.0",
+    "google-auth-library": "^9.15.0"
   }
 }

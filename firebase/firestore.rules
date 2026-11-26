@@ -76,7 +76,18 @@ service cloud.firestore {
       // songs, layout, ann (the shared "Em comum" layer), versions
       match /{col}/{doc} {
         allow read: if member(b);
-        allow write: if editor(b) && !(col in ['members', 'invites', 'shows']);
+        allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs']);
+      }
+      // robot jobs (score -> audio + bar map): an editor asks, only the server updates them
+      match /jobs/{j} {
+        allow read: if member(b);
+        allow create: if editor(b) && request.resource.data.keys().hasOnly(['song', 'tipo', 'bpm', 'status', 'criadoEm', 'uid', 'fonte']) &&
+          (!('fonte' in request.resource.data) || request.resource.data.fonte in ['pdf', 'lido']) &&
+          request.resource.data.song is string && request.resource.data.song.size() <= 120 &&
+          request.resource.data.tipo == 'audio' && request.resource.data.status == 'pendente' &&
+          request.resource.data.uid == request.auth.uid && request.resource.data.criadoEm is int &&
+          (!('bpm' in request.resource.data) || (request.resource.data.bpm is number && request.resource.data.bpm >= 20 && request.resource.data.bpm <= 320));
+        allow delete: if editor(b);
       }
     }
 
