@@ -544,7 +544,7 @@ body.at-home .palette { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261126182433';
+window.APP_VERSION = '20261126182454';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;

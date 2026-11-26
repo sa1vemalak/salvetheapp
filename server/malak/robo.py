@@ -9,6 +9,7 @@ Runs as a Cloud Run Job. Input: env JOB = "bands/{band}/jobs/{job}". The job doc
   4. writes the files to Storage and the results to Firestore; the song is marked "aguardando conferência".
 """
 import json, os, re, subprocess, sys, tempfile, time, traceback, uuid, glob, shutil, zipfile
+import xml.etree.ElementTree as ET
 import urllib.request, urllib.parse
 
 import numpy as np
@@ -126,7 +127,9 @@ def omr(pdf, out_dir):
     # text reading (part names, tempo marks, lyrics): Portuguese, English, Italian (tempo words) and German
     tess = next((d for d in glob.glob('/usr/share/tesseract-ocr/*/tessdata') if os.path.isdir(d)), None)
     env = dict(os.environ, TESSDATA_PREFIX=tess) if tess else os.environ
-    cmd = [AUDIVERIS, '-batch', '-option', 'org.audiveris.omr.text.Language.defaultSpecification=por+eng+ita+deu', '-export', '-output', out_dir, '--', pdf]
+    # no text reading inside Audiveris: it splits a part in pieces when the (abbreviated) names change between pages.
+    # Names, tempo and chord symbols come from the PDF's own text layer instead (pdf_text).
+    cmd = [AUDIVERIS, '-batch', '-export', '-output', out_dir, '--', pdf]
     if shutil.which('xvfb-run'):
         cmd = ['xvfb-run', '-a'] + cmd  # some of its libraries want a display even in batch mode
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=2400, env=env)
@@ -137,7 +140,206 @@ def omr(pdf, out_dir):
     return found  # one file per "movement"; usually one
 
 
-def load_score(files):
+def _systems(part):
+    """measures of a part grouped by staff line (system), as read"""
+    out = []
+    for m in part.iter('measure'):
+        pr = m.find('print')
+        if not out or (pr is not None and (pr.get('new-system') == 'yes' or pr.get('new-page') == 'yes')):
+            out.append([])
+        out[-1].append(m)
+    return out
+
+
+def fill_missing_bars(root, boxes):
+    """The reader sometimes skips a bar inside a staff line. The PDF bar map (layout2) has every bar: where a line has
+    fewer bars than the PDF, find the missing one by its horizontal place and insert an empty bar there, in every part,
+    so everything after it (repeats, voltas, chords) stays on the right bar."""
+    import collections, copy
+    lines = collections.OrderedDict()
+    for b in boxes:
+        lines.setdefault((b[2], round(b[4], 2)), []).append(b)
+    pdf_lines = list(lines.values())
+    parts = list(root.iter('part'))
+    if not parts:
+        return 0
+    sys0 = _systems(parts[0])
+    if len(sys0) != len(pdf_lines):
+        print('linhas diferentes entre PDF e leitura:', len(pdf_lines), len(sys0), '- não preenchi compassos', flush=True)
+        return 0
+    inserts = []  # (line index, position inside the line)
+    for li, (pb, om) in enumerate(zip(pdf_lines, sys0)):
+        if len(pb) <= len(om):
+            continue
+        x0, x1 = pb[0][3], pb[-1][5]
+        centers = [((b[3] + b[5]) / 2 - x0) / max(1e-6, x1 - x0) for b in pb]
+        w = [float(m.get('width') or 1) for m in om]
+        edges = [sum(w[:i]) / sum(w) for i in range(len(w) + 1)]
+        owner = [max(0, min(len(om) - 1, next((i for i in range(len(om)) if edges[i] <= c < edges[i + 1]), len(om) - 1))) for c in centers]
+        seen = set(); missing = []
+        for k, o in enumerate(owner):
+            if o in seen:
+                missing.append(k)
+            seen.add(o)
+        while len(missing) < len(pb) - len(om):
+            missing.append(len(pb) - 1 - len(missing))
+        inserts += [(li, k) for k in missing[:len(pb) - len(om)]]
+    for part in parts:
+        systems = _systems(part)
+        if len(systems) != len(pdf_lines):
+            continue
+        for li, k in sorted(inserts, reverse=True):
+            line = systems[li]
+            ref = line[min(k, len(line)) - 1] if k > 0 else line[0]
+            new = ET.Element('measure', {'number': '0', 'implicit': 'no'})
+            note = ET.SubElement(new, 'note'); r = ET.SubElement(note, 'rest', {'measure': 'yes'})
+            ET.SubElement(note, 'duration').text = '1'
+            ET.SubElement(note, 'voice').text = '1'
+            kids = list(part)
+            pos = kids.index(ref) + (1 if k > 0 else 0)
+            if k == 0:  # keep the line-break marker on the first bar of the line
+                pr = ref.find('print')
+                if pr is not None:
+                    ref.remove(pr); new.insert(0, pr)
+            part.insert(pos, new)
+        for i, m in enumerate(part.iter('measure'), 1):
+            m.set('number', str(i))
+    if inserts:
+        print('compassos que a leitura pulou e foram preenchidos:', len(inserts), flush=True)
+    return len(inserts)
+
+
+def fix_endings(root):
+    """Voltas as read: an ending 2 that the reader cut in two (\"2 start+discontinue\" then a stray \"1 start\" on the next
+    bar) becomes one ending 2 over both bars."""
+    fixed = 0
+    for part in root.iter('part'):
+        ms = list(part.iter('measure'))
+        for i in range(len(ms) - 1):
+            e1 = [e for b in ms[i].findall('barline') for e in b.findall('ending')]
+            e2 = [e for b in ms[i + 1].findall('barline') for e in b.findall('ending')]
+            starts1 = [e for e in e1 if e.get('type') == 'start']
+            ends1 = [e for e in e1 if e.get('type') in ('stop', 'discontinue')]
+            if not (starts1 and ends1 and starts1[0].get('number') == ends1[0].get('number') and starts1[0].get('number') != '1'):
+                continue
+            if not e2 or any(b.find('repeat') is not None and b.find('repeat').get('direction') == 'forward' for b in ms[i + 1].findall('barline')):
+                continue
+            num = starts1[0].get('number')
+            for b in ms[i].findall('barline'):  # the ending 2 starts here and does not end here
+                for e in list(b.findall('ending')):
+                    if e.get('type') in ('stop', 'discontinue'):
+                        b.remove(e)
+            for b in ms[i + 1].findall('barline'):  # ...and ends on the next bar
+                for e in list(b.findall('ending')):
+                    b.remove(e)
+            bl = next((b for b in ms[i + 1].findall('barline') if b.get('location') == 'right'), None)
+            if bl is None:
+                bl = ET.SubElement(ms[i + 1], 'barline', {'location': 'right'})
+            ET.SubElement(bl, 'ending', {'number': num, 'type': 'discontinue'})
+            fixed += 1
+    return fixed
+
+
+def repeat_plan(root):
+    """The order in which the bars are played (repeats, 1st/2nd endings), from the first part. Returns bar indexes."""
+    part = next(iter(root.iter('part')), None)
+    if part is None:
+        return None
+    meas = []
+    open_end = None
+    for m in part.iter('measure'):
+        info = {'start': False, 'end': 0, 'volta': None}
+        for b in m.findall('barline'):
+            r = b.find('repeat')
+            if r is not None and r.get('direction') == 'forward':
+                info['start'] = True
+            if r is not None and r.get('direction') == 'backward':
+                info['end'] = int(r.get('times') or 2)
+            for e in b.findall('ending'):
+                nums = [int(x) for x in re.findall(r'\d+', e.get('number') or '1')] or [1]
+                if e.get('type') == 'start':
+                    open_end = (nums, len(meas))
+                if e.get('type') in ('stop', 'discontinue') and open_end:
+                    for j in range(open_end[1], len(meas) + 1):
+                        if j < len(meas):
+                            meas[j]['volta'] = set(open_end[0])
+                    info['volta'] = set(open_end[0]); open_end = None
+        if open_end and info['volta'] is None and open_end[1] == len(meas):
+            info['volta'] = set(open_end[0])
+        meas.append(info)
+    order, i, start, pas, jumped, guard = [], 0, 0, 1, False, 0
+    while i < len(meas) and guard < 20000:
+        guard += 1
+        m = meas[i]
+        if m['start'] and not jumped:
+            start, pas = i, 1
+        jumped = False
+        if m['volta'] and pas not in m['volta']:
+            i += 1; continue
+        order.append(i)
+        if m['end']:
+            if pas < m['end']:
+                pas += 1; i = start; jumped = True; continue
+            pas, start = 1, i + 1
+        i += 1
+    return order
+
+
+LAST_PLAN = None
+
+
+def sanitize_musicxml(path, boxes=None, voltas=None):
+    """Fix what the reader sometimes writes and music21 can't open: <divisions>0</divisions> (whole-bar rests),
+    and whole-bar rests whose duration doesn't fill the bar. Returns the path of a fixed .musicxml."""
+    import zipfile
+    if path.lower().endswith('.mxl'):
+        with zipfile.ZipFile(path) as z:
+            names = [n for n in z.namelist() if n.lower().endswith('.xml') and not n.startswith('META-INF')]
+            raw = z.read(names[0])
+    else:
+        raw = open(path, 'rb').read()
+    root = ET.fromstring(raw)
+    fixed = 0
+    if boxes:
+        fixed += fill_missing_bars(root, boxes)
+    fixed += fix_endings(root)
+    global LAST_PLAN
+    LAST_PLAN = repeat_plan(root)
+    for part in root.iter('part'):
+        div, beats, btype = None, 4, 4
+        for meas in part.iter('measure'):
+            for at in meas.iter('attributes'):
+                d = at.find('divisions')
+                if d is not None:
+                    v = int(float(d.text or 0))
+                    if v <= 0:
+                        d.text = str(div or 1); fixed += 1
+                    div = int(d.text)
+                t = at.find('time')
+                if t is not None and t.findtext('beats') and t.findtext('beat-type'):
+                    try:
+                        beats, btype = int(t.findtext('beats').split('+')[0]), int(t.findtext('beat-type'))
+                    except ValueError:
+                        pass
+            if div is None:
+                div = 1
+            bar = int(round(beats * 4 / btype * div))
+            for n in meas.iter('note'):
+                r = n.find('rest')
+                du = n.find('duration')
+                if r is not None and r.get('measure') == 'yes' and du is not None and int(float(du.text or 0)) != bar:
+                    du.text = str(max(1, bar)); fixed += 1
+                if du is not None and int(float(du.text or 0)) <= 0 and n.find('grace') is None:
+                    du.text = '1'; fixed += 1
+    out = os.path.splitext(path)[0] + '.limpo.musicxml'
+    ET.ElementTree(root).write(out, encoding='UTF-8', xml_declaration=True)
+    if fixed:
+        print('MusicXML consertado em', fixed, 'pontos', flush=True)
+    return out
+
+
+def load_score(files, boxes=None):
+    files = [sanitize_musicxml(f, boxes if len(files) == 1 else None) if f.lower().endswith(('.mxl', '.musicxml', '.xml')) else f for f in files]
     s = None
     for f in files:
         x = m21.converter.parse(f)
@@ -263,6 +465,61 @@ def comping_part(score, bar_chords, name='Base'):
             last = sym
         part.append(nm)
     return part
+
+
+# transposing instruments: (words in the part name, interval from written to sounding)
+TRANSP = [
+    (r'sax\w*\s*(tenor)|tenor\s*sax|sax\.?\s*t\b', '-M9'), (r'sax\w*\s*(bar[ií]tono|baritone)|bari\s*sax', '-M13'),
+    (r'sax\w*\s*alto|alto\s*sax|sax\.?\s*a\b', '-M6'), (r'sax\w*\s*soprano|soprano\s*sax', '-M2'),
+    (r'clarone|bass\s*clarinet', '-M9'), (r'(clarinete|clarineta|clarinet|requinta).*(e\s*b|mi\s*b|e♭)', 'm3'),
+    (r'(trompete|trumpet|cornet|flugel|clarinete|clarineta|clarinet|tpt)', '-M2'),
+    (r'(trompa|french horn|horn|tpa)', '-P5'),
+]
+
+
+def set_transposition(part, name):
+    """A part read from a PDF comes at written pitch: give it the instrument's transposition, so it sounds right."""
+    n = (name or '').lower()
+    if re.search(r'\b(em|in)\s*(d[oó]|c)\b', n):
+        return None  # 'Trompete em Dó' etc.: concert pitch
+    for pat, iv in TRANSP:
+        if re.search(pat, n):
+            inst = part.getInstrument(returnDefault=True)
+            inst.transposition = m21.interval.Interval(iv)
+            part.atSoundingPitch = False
+            return iv
+    return None
+
+
+def unfold(score, plan):
+    """Write the repeats out: bars in playing order (our plan; music21's expandRepeats as a fallback)."""
+    import copy
+    n = len(score.parts[0].getElementsByClass('Measure')) if len(score.parts) else 0
+    if plan and len(plan) > n and max(plan) < n:
+        out = m21.stream.Score()
+        for p in score.parts:
+            ms = list(p.getElementsByClass('Measure'))
+            np_ = m21.stream.Part(); np_.partName = p.partName
+            inst = p.getInstrument(returnDefault=False)
+            if inst is not None:
+                np_.insert(0, copy.deepcopy(inst))
+            np_.atSoundingPitch = p.atSoundingPitch
+            off = 0.0
+            for i in plan:
+                if i < len(ms):
+                    m = copy.deepcopy(ms[i])
+                    for r in list(m.getElementsByClass(m21.bar.Repeat)):
+                        m.remove(r)
+                    np_.insert(off, m); off += float(ms[i].barDuration.quarterLength if ms[i].barDuration else ms[i].duration.quarterLength)
+            out.insert(0, np_)
+        for mm in score.recurse().getElementsByClass('MetronomeMark'):
+            pass
+        print('repetições escritas:', n, '->', len(plan), 'compassos', flush=True)
+        return out
+    try:
+        return score.expandRepeats()
+    except Exception:
+        return score
 
 
 # ---------------- 2. timing ----------------
@@ -473,7 +730,11 @@ def run(job):
         else:
             score, names = m21.stream.Score(), []
             for p, files, tinfo, _pdf in src_files:
-                sc = load_score(files)
+                try:  # the PDF bar map: fills bars the reader skipped, so repeats and chords land on the right bar
+                    tinfo['boxes'], _w = layout2.layout(_pdf, None)
+                except Exception as e:
+                    tinfo['boxes'] = None; print('mapa de compassos do PDF:', e)
+                sc = load_score(files, tinfo['boxes'])
                 if len(sc.parts) > 1 and len(tinfo['names']) >= len(sc.parts):
                     for pt, nm in zip(sc.parts, tinfo['names'][:len(sc.parts)]):
                         pt.partName = nm
@@ -491,9 +752,8 @@ def run(job):
             for p, files, tinfo, pdf in src_files:
                 if not tinfo['chords']:
                     continue
-                try:
-                    boxes, _w = layout2.layout(pdf, None)
-                except Exception:
+                boxes = tinfo.get('boxes')
+                if not boxes:
                     continue
                 bars = chords_to_bars(tinfo['chords'], boxes)
                 if len(bars) < 2:
@@ -504,6 +764,12 @@ def run(job):
                         newp = comping_part(score, bars, names[i])
                         score.replace(pt, newp)
                         print('base gerada das cifras:', names[i], len(bars), 'compassos com cifra', flush=True)
+        # PDFs are read at written pitch: trumpet in Bb, saxes, horn... need their transposition to sound in tune
+        if not how.startswith('arquivo original'):
+            for pt, nm in zip(score.parts, names):
+                iv = set_transposition(pt, nm)
+                if iv:
+                    print('transposição', nm, iv, flush=True)
         # corrections asked for (bar by bar), then keep the score as read (before repeats are written out)
         keys_all = part_keys(names)
         corr = song.get('correcoes') or []
@@ -517,10 +783,7 @@ def run(job):
             score.write('musicxml', fp=xml_lido)
         except Exception as e:
             print('não guardei o MusicXML lido:', e); xml_lido = None
-        try:
-            score = score.expandRepeats()
-        except Exception:
-            pass  # repeats the reader couldn't make sense of: play straight through
+        score = unfold(score, LAST_PLAN)
 
         tmap, had_tempo = tempo_map(score, bpm or (locals().get('bpm_text')))
         if not bpm and locals().get('bpm_text'):
