@@ -504,10 +504,10 @@ def comping_part(score, bar_chords, name='Base'):
             sym = [t for oo, t in changes if oo <= o + 1e-6][-1]
             tones, bass = voicing(sym)
             if tones:
-                ch = m21.chord.Chord(tones, quarterLength=end - o); ch.volume.velocity = 64
+                # one chord with the bass inside: a chord and a note at the same offset are written one after the other in
+                # MusicXML (the bar doubles when the score is read back); render_part sends the low notes to the bass
+                ch = m21.chord.Chord([bass] + tones, quarterLength=end - o); ch.volume.velocity = 64
                 nm.insert(o, ch)
-                bn = m21.note.Note(m21.pitch.Pitch(midi=bass), quarterLength=end - o); bn.volume.velocity = 92
-                nm.insert(o, bn)
             last = sym
         part.append(nm)
     return part
@@ -647,10 +647,15 @@ def render_part(part, tmap, prog, drums, path_wav, tmp, split_bass=False):
         low, high = m21.stream.Stream(), m21.stream.Stream()
         for n in flat.notes:
             ps = n.pitches if n.isChord else [n.pitch]
-            if not n.isChord and ps[0].midi < 48:
-                low.insert(n.offset, m21.note.Note(ps[0], quarterLength=n.quarterLength))
-            else:
-                high.insert(n.offset, n)
+            lo_ps = [p for p in ps if p.midi < 48]
+            hi_ps = [p for p in ps if p.midi >= 48]
+            for p in lo_ps[:1]:  # the bass note, a little louder, like the tour base
+                b = m21.note.Note(p, quarterLength=n.quarterLength); b.volume.velocity = 92
+                low.insert(n.offset, b)
+            if hi_ps:
+                h = m21.chord.Chord(hi_ps, quarterLength=n.quarterLength) if len(hi_ps) > 1 else m21.note.Note(hi_ps[0], quarterLength=n.quarterLength)
+                h.volume.velocity = n.volume.velocity or 64
+                high.insert(n.offset, h)
         if len(low.notes):
             groups = [(high, prog, False, 0), (low, 33, False, 1)]
     s = m21.stream.Score()
