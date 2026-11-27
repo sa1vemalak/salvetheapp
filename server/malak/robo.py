@@ -708,6 +708,44 @@ def unfold(score, plan):
         return score
 
 
+def align_bars(score):
+    """Every part's bar N starts at the same moment. A bar read short or long (a dropped 16th rest, a lost tuplet)
+    would otherwise push every later note of that part early or late, for the rest of the song. Each bar's length is
+    taken from the time signature when some part agrees with it, else from what most parts read (the longest on a
+    tie); a pickup (first bar short in the parts) keeps its reading. Returns the bars that were fixed, per part."""
+    from collections import Counter
+    parts = list(score.parts)
+    bars = [list(p.getElementsByClass('Measure')) for p in parts]
+    n = max((len(b) for b in bars), default=0)
+    ref = []
+    for i in range(n):
+        lens = [round(float(b[i].duration.quarterLength), 4) for b in bars if i < len(b)]
+        sig = next((round(float(b[i].barDuration.quarterLength), 4) for b in bars if i < len(b) and b[i].barDuration), None)
+        if sig is not None and sig in lens and not (i == 0 and Counter(lens).most_common(1)[0][0] < sig):
+            ref.append(sig)
+        else:
+            c = Counter(lens).most_common()
+            top = c[0][1]
+            ref.append(max(v for v, k in c if k == top))
+    starts = [0.0]
+    for r in ref:
+        starts.append(starts[-1] + r)
+    fixed = {}
+    for p, bs in zip(parts, bars):
+        moved, changed = [], False
+        for i, m in enumerate(bs):
+            got = round(float(m.duration.quarterLength), 4)
+            if abs(got - ref[i]) > 1e-3:
+                moved.append((m.number, got, ref[i]))
+            if abs(float(m.offset) - starts[i]) > 1e-6:
+                p.setElementOffset(m, starts[i]); changed = True
+        if changed:
+            p.coreElementsChanged()
+        if moved:
+            fixed[p.partName or '?'] = moved
+    return fixed
+
+
 # ---------------- 2. timing ----------------
 def tempo_map(score, bpm_default):
     """[(offset in quarters, quarter bpm)] from the score's metronome marks (or the default)"""
@@ -1145,6 +1183,8 @@ def run(job):
             except Exception as e:
                 print('não montei a partitura editável:', e); traceback.print_exc(); xml_master = None
         score = unfold(score, LAST_PLAN)
+        for nm, moved in align_bars(score).items():  # a bar read short no longer shifts the rest of that part
+            print('compassos com duração errada (alinhados):', nm, moved, flush=True)
 
         tmap, had_tempo = tempo_map(score, bpm or (locals().get('bpm_text')))
         if not bpm and locals().get('bpm_text'):
