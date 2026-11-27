@@ -167,6 +167,8 @@ body.reading .page .num { display: none; }
 /* Player: a collapsible band under the top bar, so it never covers the score or the tool palette. */
 .player { display: flex; flex-direction: column; gap: 8px; background: var(--chrome); border-bottom: 1px solid var(--line);
   padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+/* the player band never takes more than half the screen: it scrolls inside, so the score below always has room */
+.player { max-height: 50vh; max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; flex: none; }
 .prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .pplay { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; }
 .pplay svg { width: 20px; height: 20px; }
@@ -186,6 +188,12 @@ body.reading .page .num { display: none; }
 .pfield select, .pfield input { padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font-family: var(--f-mono); font-size: 13px; }
 .pfield input { width: 52px; text-align: center; }
 .pmsg { font-size: 13.5px; color: var(--muted); }
+.pmsg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pmsg-title { font-family: var(--f-display); font-size: 14px; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmsg-toggle { flex: none; min-height: 36px; }
+.pmsg-body { margin-top: 6px; }
+.pmsg-body[hidden] { display: none; }
+.pmsg-body > .robo:first-child > b { display: none; } /* already shown as the title */
 .mixer { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
 .mixer button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
   background: transparent; font-weight: 500; font-size: 14px; white-space: nowrap; color: var(--muted); }
@@ -1345,9 +1353,21 @@ const Robo = (() => {
       row.append(el('b', '', `“${song.title}” ainda não tem áudio`), el('span', '', j && j.status === 'erro' ? 'A última tentativa falhou: ' + (j.msg || '') : 'O Malak lê a partitura (PDF ou arquivo original), gera o som de cada instrumento e marca onde fica cada compasso.'));
       if (S.canWrite) row.append(controls(song, data, false)); else row.append(el('span', 'hint', 'Peça para o dono ou um editor da banda gerar o áudio.'));
     }
-    box.append(row);
-    if (song.arranjo && !running(j)) box.append(arranjoCard(song));
-    box.hidden = !box.childNodes.length || ![...box.childNodes].some(n => n.childNodes.length);
+    const body = el('div', 'pmsg-body'); body.id = 'pMsgBody';
+    if (row.childNodes.length) body.append(row);
+    if (song.arranjo && !running(j)) body.append(arranjoCard(song));
+    box.hidden = !body.childNodes.length;
+    if (box.hidden) return;
+    // the notice can be minimized, so it never hides the score (remembered per song on this device)
+    const min = ls.get('pmsgmin:' + song.id, false);
+    const head = el('div', 'pmsg-head');
+    const title = body.querySelector('b')?.textContent || 'Aviso';
+    const tg = el('button', 'iconbtn pmsg-toggle', min ? 'Mostrar' : 'Minimizar'); tg.type = 'button';
+    tg.setAttribute('aria-expanded', String(!min)); tg.setAttribute('aria-controls', 'pMsgBody');
+    tg.onclick = () => { ls.set('pmsgmin:' + song.id, !min); paint(...lastPaint); };
+    head.append(el('span', 'pmsg-title', title), tg);
+    body.hidden = min;
+    box.append(head, body);
   }
   function controls(song, data, done) {
     const c = el('div', 'robo-row');
