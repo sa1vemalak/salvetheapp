@@ -161,7 +161,7 @@ body.reading .page .num { display: none; }
 .readexit svg { width: 20px; height: 20px; }
 .readexit.faded { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .readexit { transition: none; } }
-.toast { position: fixed; z-index: 40; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+.toast { position: fixed; z-index: 40; left: 50%; top: calc(64px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); box-sizing: border-box; }
 
 
 /* Player: a collapsible band under the top bar, so it never covers the score or the tool palette. */
@@ -370,10 +370,17 @@ body.at-home .palette { display: none; }
 .mkf input, .mkanc input, .mkshift input { width: 82px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); font: inherit; margin-left: 4px; }
 .mkanc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; margin: 6px 0; }
 .mkrow details summary { cursor: pointer; font-size: 13.5px; color: var(--accent); font-weight: 600; }
-.mknow, .mkdel, .mkadd, .mkok { padding: 4px 10px; font-size: 13px; }
-.mkanc input[data-a="daw"] { width: 96px; }
-.mkok { font-weight: 600; }
-.mkok.done { color: #2fb36b; border-color: color-mix(in srgb, #2fb36b 55%, transparent); }
+.mknow, .mkdel, .mkadd { padding: 4px 10px; font-size: 13px; }
+.syncmark { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 14%, transparent); outline: 3px solid var(--accent); border-radius: 4px; }
+.syncsheet { position: fixed; z-index: 45; left: 16px; right: 16px; margin: 0 auto; width: fit-content; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: center; background: var(--chrome); color: var(--fg); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 18px; box-sizing: border-box; }
+.syncsheet .ssq { font-size: 12.5px; color: var(--muted); margin-bottom: 2px; }
+.syncsheet .ssbig { font-size: 20px; white-space: nowrap; }
+.syncsheet .ssm { color: var(--muted); }
+.syncsheet .sseq { font-size: 24px; color: var(--muted); }
+.syncsheet .ssdaw { font-family: var(--f-mono); font-size: 20px; font-weight: 700; padding: 3px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: #1d1e22; white-space: nowrap; }
+.syncsheet .ssbtns { display: flex; gap: 10px; }
+.syncsheet .btn { padding: 10px 18px; font-size: 16px; }
+.syncsheet .btn.primary { padding: 10px 30px; font-weight: 700; }
 .mkshift { font-size: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
 .mkshift select, .mkanc select { padding: 5px 6px; border-radius: 8px; border: 1px solid var(--line); font: inherit; }
 .mkerr { color: #c0392b; font-size: 14px; }
@@ -2032,6 +2039,15 @@ const Player = (() => {
     if (best < 0) return false;
     audio.currentTime = m[best][1]; P.lastBar = null; P.holdUntil = 0; paint(); return true;
   }
+  // a box over the tapped bar, to show which bar is being marked
+  function barElFromEvent(e) {
+    const pageEl = e.target.closest?.('.page'); if (!pageEl) return null;
+    const pane = panes.find(p => p.views.some(v => v.root === pageEl)); if (!pane) return null;
+    const v = pane.views.find(v => v.root === pageEl); const b = barAt(pane, v, e); if (!b) return null;
+    const d = el('div', 'syncmark');
+    d.style.left = (b[3] * 100) + '%'; d.style.top = (b[4] * 100) + '%'; d.style.width = ((b[5] - b[3]) * 100) + '%'; d.style.height = ((b[6] - b[4]) * 100) + '%';
+    v.root.append(d); return d;
+  }
   function barFromEvent(e) {
     const pageEl = e.target.closest?.('.page'); if (!pageEl) return null;
     const pane = panes.find(p => p.views.some(v => v.root === pageEl)); if (!pane) return null;
@@ -2040,7 +2056,7 @@ const Player = (() => {
   }
   document.addEventListener('click', e => {
     if (S.tool !== 'read' || !P.data) return;
-    if (S.logic?.active) { const n = barFromEvent(e); if (n != null) S.logic.tapBar(n); return; }
+    if (S.logic?.active || S.logic?.canMark) { const n = barFromEvent(e); if (n != null) S.logic.tapBar(n, barElFromEvent(e)); return; }
     if (!P.open) return;
     const n = barFromEvent(e); if (n == null) return;
     if (seekToBar(n)) toast(`Tocando do compasso ${n}`);
@@ -2658,7 +2674,7 @@ const Logic = (() => {
     cfg: { markers: MARKERS, beatsPerBar: 4 }, anchors: {}, wraw: null, since: 0, audio: null, clockTimes: [], rate: 1, live: null, pub: null, pubBusy: false, pubNext: null, unsub: null, cur: null };
   const btn = $('#logicBtn');
   const active = () => L.on && !!L.cur && L.cur.playing;
-  S.logic = { get active() { return active(); }, tapBar };
+  S.logic = { get active() { return active(); }, get canMark() { return L.on && S.canWrite && !!(L.source ? L.srcPos : L.cur); }, tapBar };
   window.__playing = () => !!S.logic?.active;
 
   /* ----- map: Logic quarter-note position -> song + played-bar index ----- */
@@ -2976,26 +2992,45 @@ const Logic = (() => {
   }
 
   /* ----- correction: tap the bar that is really playing ----- */
-  function tapBar(n) {
+  /* Mark sync: tap a bar of the score and confirm on a small sheet that this bar starts where the DAW is now
+     (stopped: exactly where it was stopped, e.g. 78 1 1; playing: at the start of the bar on screen). Saved only on OK. */
+  const posTxt = (lq, bpb) => { const b = Math.floor(lq / bpb + 1e-6) + 1; return `${b} ${Math.round(lq - (b - 1) * bpb) + 1} 1`; };
+  let sheet = null;
+  function closeSheet() { if (sheet) { sheet.remove(); sheet = null; } document.querySelectorAll('.syncmark').forEach(x => x.remove()); }
+  function tapBar(n, barEl) {
+    const drop = () => { if (barEl) barEl.remove(); };
     const pos = L.source ? L.srcPos : L.cur;
-    if (!pos || !pos.song || pos.song !== S.songId) return;
-    if (!S.canWrite) { toast('Só o administrador corrige o compasso ' + dawDo() + '.'); return; }
-    const song = S.songs.find(s => s.id === pos.song); const m = song?.player?.measures; if (!m) return;
-    const here = pos.idx ?? 0;
+    if (!pos || pos.lq == null) return drop();
+    if (!S.canWrite) { toast('Só o administrador marca a sincronia com a DAW.'); return drop(); }
+    // playing: only in the song the DAW is in; stopped: the song open on screen
+    if (pos.playing && pos.song !== S.songId) return drop();
+    const songId = S.songId;
+    const song = S.songs.find(s => s.id === songId); const m = song?.player?.measures; if (!m) return drop();
+    const here = pos.song === songId ? (pos.idx ?? 0) : 0;
     let best = -1;
     for (let i = 0; i < m.length; i++) if (m[i][0] === n && (best < 0 || Math.abs(i - here) < Math.abs(best - here))) best = i;
-    if (best < 0) return;
-    // the bar on screen started at the current bar's start in Logic
+    if (best < 0) return drop();
     const bpb = L.cfg.beatsPerBar || 4;
-    const lq = pos.lqb != null ? pos.lqb : Math.floor((pos.lq || 0) / bpb) * bpb;
-    const list = (L.anchors[pos.song] || []).filter(a => Math.abs(a.lq - lq) > 0.01);
-    list.push({ lq, idx: best });
-    list.sort((a, b) => a.lq - b.lq);
-    L.anchors[pos.song] = list;
-    S.db.collection('logic').doc('anchors-' + pos.song).set({ list, song: pos.song, updated: Date.now() })
-      .then(() => toast(`Certo: daqui em diante ${dawO()} segue a partir do compasso ${n}.`), () => toast('Não consegui salvar a correção.'));
-    if (L.source) { lastKey = ''; update(); }
-    else { L.cur = { ...pos, idx: best, bar: n }; lastShown = ''; apply(L.cur); }
+    const lq = pos.playing ? (pos.song === songId && pos.lqb != null ? pos.lqb : Math.floor(pos.lq / bpb) * bpb) : Math.max(0, Math.round(pos.lq));
+    document.querySelectorAll('.syncmark').forEach(x => { if (x !== barEl) x.remove(); }); if (sheet) { sheet.remove(); sheet = null; }
+    sheet = el('div', 'syncsheet'); sheet.setAttribute('role', 'dialog');
+    sheet.innerHTML = `<div><div class="ssq">Marcar sincronia</div><b class="ssbig">Compasso ${n}</b> <span class="ssm">da partitura</span></div>
+      <div class="sseq">=</div>
+      <div><div class="ssq">Posição na DAW ${pos.playing ? '' : 'agora'}</div><span class="ssdaw">${posTxt(lq, bpb)}</span></div>
+      <div class="ssbtns"><button class="btn" type="button" data-x>Cancelar</button><button class="btn primary" type="button" data-ok>OK</button></div>`;
+    document.body.append(sheet);
+    sheet.querySelector('[data-x]').onclick = closeSheet;
+    sheet.querySelector('[data-ok]').onclick = () => {
+      closeSheet();
+      const list = (L.anchors[songId] || []).filter(a => Math.abs(a.lq - lq) > 0.01 && a.idx !== best);
+      list.push({ lq, idx: best });
+      list.sort((a, b) => a.lq - b.lq);
+      L.anchors[songId] = list;
+      S.db.collection('logic').doc('anchors-' + songId).set({ list, song: songId, updated: Date.now() })
+        .then(() => toast(`Marcado: compasso ${n} = ${posTxt(lq, bpb)} na DAW.`), () => toast('Não consegui salvar a marcação.'));
+      if (L.source) { lastKey = ''; update(); }
+      else if (pos.song === songId) { L.cur = { ...pos, idx: best, bar: n }; lastShown = ''; apply(L.cur); }
+    };
   }
   function clearAnchors() {
     const id = S.songId; if (!id || !S.canWrite) return;
@@ -3057,8 +3092,7 @@ const Logic = (() => {
       const anchors = (L.anchors[id] || []).map(a => {
         const bar = meas[a.idx]?.[0];
         let vez = 0; for (let i = 0; i <= a.idx && i < meas.length; i++) if (meas[i][0] === bar) vez++;
-        const daw = Math.floor(a.lq / bpb + 1e-6) + 1, beat = Math.round(a.lq - (daw - 1) * bpb) + 1;
-        return { bar, vez: vez || 1, daw, beat, idx: a.idx, ok: true };
+        return { bar, vez: vez || 1, daw: Math.round(a.lq / bpb) + 1, idx: a.idx };
       });
       return { id, title: song.title, tag: song.tag || '', c1, sw: (L.cfg.switchBars || {})[id] ?? null, oldC1: c1, anchors, meas };
     }).filter(Boolean);
@@ -3067,14 +3101,10 @@ const Logic = (() => {
     const close = () => { scrim.remove(); m.remove(); };
     scrim.onclick = () => { if (confirm('Fechar sem salvar?')) close(); };
     const num = v => { const n = parseInt(v, 10); return Number.isFinite(n) && n > 0 ? n : null; };
-    // a DAW position as the DAW shows it: "78", "78 1 1" or "78.2.1" (bar, beat; the rest is ignored)
-    const dawPos = v => { const p = String(v ?? '').trim().split(/[\s.:,]+/).map(x => parseInt(x, 10)); const bar = p[0] > 0 ? p[0] : null, beat = p[1] > 0 && p[1] <= bpb ? p[1] : 1; return { bar, beat }; };
-    const posTxt = a => a.daw ? a.daw + ' ' + (a.beat || 1) + ' 1' : '';
     function render() {
-      const openRows = [...m.querySelectorAll('.mkrow')].filter(x => x.querySelector('details')?.open).map(x => x.dataset.i);
       const here = nowDawBar();
       m.innerHTML = `<h3>Inícios das músicas na DAW</h3>
-        <div class="hint">Use os números de compasso do projeto ${escH(dawDo())}. <b>Troca a partitura</b>: onde a tela passa para a música (pode ser um pouco antes do começo). <b>Compasso 1</b>: onde fica o primeiro compasso da partitura. <b>Pontos de voz</b> (opcional): um compasso da partitura que você sabe onde cai, como a entrada da voz; deixam o alinhamento exato. Escreva a posição como a DAW mostra (ex.: <b>78 1 1</b>) e toque em <b>OK</b> para confirmar: a marcação já vale para o sync.${here ? ` Agora ${escH(dawO())} está no compasso <b>${here}</b>.` : ''}</div>
+        <div class="hint">Use os números de compasso do projeto ${escH(dawDo())}. <b>Troca a partitura</b>: onde a tela passa para a música (pode ser um pouco antes do começo). <b>Compasso 1</b>: onde fica o primeiro compasso da partitura. <b>Pontos de voz</b> (opcional): um compasso da partitura que você sabe onde cai, como a entrada da voz; deixam o alinhamento exato.${here ? ` Agora ${escH(dawO())} está no compasso <b>${here}</b>.` : ''}</div>
         <div class="mklist">${rows.map((r, i) => `
           <div class="mkrow${r.c1 ? '' : ' off'}" data-i="${i}">
             <div class="mkhead"><b>${r.c1 ? String(rows.filter((x, k) => x.c1 && k <= i).length).padStart(2, '0') + ' · ' : ''}${escH(r.title)}</b>${r.tag ? ` <small>${escH(r.tag)}</small>` : ''}${r.c1 ? '' : ' <small>· fora do show (preencha o compasso 1 para incluir)</small>'}</div>
@@ -3085,7 +3115,7 @@ const Logic = (() => {
               ${here ? `<button class="btn mknow" type="button" data-f="c1">usar ${here}</button>` : ''}
             </div>
             <details${r.anchors.length ? '' : ''}><summary>Pontos de voz (${r.anchors.length})</summary>
-              ${r.anchors.map((a, j) => `<div class="mkanc" data-j="${j}">compasso <input type="number" min="1" data-a="bar" value="${a.bar ?? ''}"> da partitura${r.meas.some((x, k) => x[0] === a.bar && r.meas.findIndex(y => y[0] === a.bar) !== k) ? ` (<select data-a="vez">${[1, 2, 3, 4].map(v => `<option${v === a.vez ? ' selected' : ''}>${v}</option>`).join('')}</select>ª vez)` : ''} = <input type="text" inputmode="decimal" data-a="daw" value="${posTxt(a)}" placeholder="78 1 1" title="Posição na DAW: compasso, tempo (ex.: 78 1 1)"> na DAW <button class="btn mkok${a.ok ? ' done' : ''}" type="button" title="Confirmar esta marcação e já usar no sync">${a.ok ? '✓ OK' : 'OK'}</button> <button class="btn mkdel" type="button" title="Apagar">✕</button></div>`).join('')}
+              ${r.anchors.map((a, j) => `<div class="mkanc" data-j="${j}">compasso <input type="number" min="1" data-a="bar" value="${a.bar ?? ''}"> da partitura${r.meas.some((x, k) => x[0] === a.bar && r.meas.findIndex(y => y[0] === a.bar) !== k) ? ` (<select data-a="vez">${[1, 2, 3, 4].map(v => `<option${v === a.vez ? ' selected' : ''}>${v}</option>`).join('')}</select>ª vez)` : ''} = compasso <input type="number" min="1" data-a="daw" value="${a.daw ?? ''}"> ${escH(dawDo())} <button class="btn mkdel" type="button" title="Apagar">✕</button></div>`).join('')}
               <button class="btn mkadd" type="button">+ ponto de voz</button>
             </details>
           </div>`).join('')}</div>
@@ -3100,20 +3130,10 @@ const Logic = (() => {
         rowEl.querySelectorAll('.mknow').forEach(b => b.onclick = () => { r[b.dataset.f] = nowDawBar(); render(); });
         rowEl.querySelectorAll('.mkanc').forEach(ae => {
           const a = r.anchors[+ae.dataset.j];
-          const okB = ae.querySelector('.mkok');
-          ae.querySelectorAll('[data-a]').forEach(inp => inp.oninput = inp.onchange = () => {
-            if (inp.dataset.a === 'daw') { const d = dawPos(inp.value); a.daw = d.bar; a.beat = d.beat; } else a[inp.dataset.a] = num(inp.value);
-            a.ok = false; okB.classList.remove('done'); okB.textContent = 'OK';
-          });
-          ae.querySelectorAll('input').forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); okB.click(); } });
-          okB.onclick = () => {
-            if (!a.bar || !a.daw) { toast('Preencha o compasso da partitura e a posição na DAW.'); return; }
-            if (!r.meas.some(x => x[0] === a.bar)) { toast(`O compasso ${a.bar} não existe na partitura de ${r.title}.`); return; }
-            save(true, `Marcado: ${r.title} compasso ${a.bar} = ${posTxt(a)} na DAW.`, () => { a.ok = true; });
-          };
+          ae.querySelectorAll('[data-a]').forEach(inp => inp.oninput = inp.onchange = () => { a[inp.dataset.a] = num(inp.value); });
           ae.querySelector('.mkdel').onclick = () => { r.anchors.splice(+ae.dataset.j, 1); render(); m.querySelector(`.mkrow[data-i="${rowEl.dataset.i}"] details`).open = true; };
         });
-        rowEl.querySelector('.mkadd').onclick = () => { r.anchors.push({ bar: null, vez: 1, daw: nowDawBar(), beat: 1 }); render(); m.querySelector(`.mkrow[data-i="${rowEl.dataset.i}"] details`).open = true; };
+        rowEl.querySelector('.mkadd').onclick = () => { r.anchors.push({ bar: null, vez: 1, daw: nowDawBar() }); render(); m.querySelector(`.mkrow[data-i="${rowEl.dataset.i}"] details`).open = true; };
       });
       m.querySelector('#mkShift').onclick = () => {
         const from = m.querySelector('#mkFrom').value, by = parseInt(m.querySelector('#mkBy').value, 10) || 0;
@@ -3122,12 +3142,10 @@ const Logic = (() => {
         rows.forEach(r => { if (r.c1 && r.c1 >= start) { r.c1 += by; if (r.sw) r.sw += by; r.anchors.forEach(a => { if (a.daw) a.daw += by; }); } });
         render(); toast(`Movidas ${by > 0 ? '+' : ''}${by} compassos. Confira e salve.`);
       };
-      openRows.forEach(i => { const d = m.querySelector(`.mkrow[data-i="${i}"] details`); if (d) d.open = true; });
       m.querySelector('#mkCancel').onclick = close;
-      m.querySelector('#mkSave').onclick = () => save();
+      m.querySelector('#mkSave').onclick = save;
     }
-    // keepOpen: the OK of one marking saves everything now and leaves the screen open, so the sync uses it at once
-    function save(keepOpen, msg, done) {
+    function save() {
       const err = m.querySelector('#mkErr'); err.textContent = '';
       const show = rows.filter(r => r.c1).sort((a, b) => a.c1 - b.c1);
       const problems = [];
@@ -3154,7 +3172,7 @@ const Logic = (() => {
           let n = 0, idx = -1;
           for (let i = 0; i < r.meas.length; i++) if (r.meas[i][0] === a.bar && ++n === (a.vez || 1)) { idx = i; break; }
           if (idx < 0) for (let i = 0; i < r.meas.length; i++) if (r.meas[i][0] === a.bar) { idx = i; break; }
-          if (idx >= 0) list.push({ idx, lq: (a.daw - 1) * bpb + ((a.beat || 1) - 1) });
+          if (idx >= 0) list.push({ idx, lq: (a.daw - 1) * bpb });
         });
         list.sort((a, b) => a.lq - b.lq);
         const before = JSON.stringify((L.anchors[r.id] || []).map(a => [a.idx, a.lq]));
@@ -3165,7 +3183,6 @@ const Logic = (() => {
       L.cfg.markers = markers; L.cfg.switchBars = switchBars;
       const bad = rows.filter(r => r.anchors.some(a => a.bar && !r.meas.some(x => x[0] === a.bar)));
       Promise.all(writes).then(() => {
-        if (keepOpen) { rows.forEach(x => x.anchors.forEach(y => { if (y.bar && y.daw) y.ok = true; })); if (done) done(); toast(msg || 'Salvo.'); refresh(); render(); return; }
         toast('Inícios das músicas salvos.' + (bad.length ? ' Atenção: ' + bad.map(r => r.title).join(', ') + ' tem ponto de voz num compasso que não existe na partitura.' : ''));
         close(); refresh();
       }, () => { err.textContent = 'Não consegui salvar. Confira a conexão e tente de novo.'; });
@@ -3186,7 +3203,7 @@ const Logic = (() => {
       <label class="lgrow"><input type="checkbox" id="lgAudio"> <span><b>Tocar o áudio do app junto</b><br><small>O som do player (com os instrumentos escolhidos no mixer) toca junto com ${dawO()}. Deixe desligado no computador que já toca ${dawO()}.</small></span></label>
       <label class="lgrow lgoff"><span><b>Ajuste de atraso deste aparelho: <output id="lgOffV"></output></b><br><small>Se a partitura ou o som deste aparelho vier atrasado em relação à DAW, arraste para a direita (adianta). Se vier adiantado, para a esquerda.</small><br><input type="range" id="lgOff" min="-500" max="1500" step="5" style="width:100%"></span></label>
       <div class="lgstate" id="lgState"></div>
-      <div class="hint">Marcou o compasso errado? Com ${dawO()} tocando, no modo Ler, toque no compasso certo da partitura. O app aprende a partir dali.</div>
+      <div class="hint"><b>Marcar sincronia:</b> pare a DAW no ponto que quiser, toque no compasso certo da partitura (modo Ler) e confirme com <b>OK</b>.</div>
       <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap"><button class="btn" id="lgClear"></button><button class="btn primary" id="lgClose">Fechar</button></div>`;
     document.body.append(scrim, panel);
     const shut = () => { scrim.remove(); panel.remove(); panel = null; };
