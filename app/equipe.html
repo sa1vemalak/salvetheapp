@@ -23,6 +23,15 @@
   --bg: #16171b; --chrome: #202127; --line: #34353d; --fg: #ececef; --muted: #9a9ba3;
   --accent: #8a9cff; --accent-ink: #11131c; --paper: #202127; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.45);
   color-scheme: dark }
+/* Noite: o mesmo preto e branco do app */
+:root, :root[data-theme="dark"], :root:not([data-theme="light"]) {
+  --bg: #060607; --chrome: #0e0e10; --line: rgba(255,255,255,.12); --fg: #f3f3f4; --muted: #8d8d95;
+  --accent: #f3f3f4; --accent-ink: #0a0a0b; --paper: #151518;
+  --shadow: 0 0 0 1px rgba(255,255,255,.06), 0 12px 32px rgba(0,0,0,.55); color-scheme: dark; }
+.tab, .card, button { transition: transform .35s cubic-bezier(.34,1.56,.64,1), background-color .25s, box-shadow .3s; }
+.tab:active, button:active { transform: scale(.94); transition-duration: .08s; }
+.tab[aria-selected="true"] { box-shadow: 0 0 22px rgba(255,255,255,.12); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--f-body); }
 header { position: sticky; top: 0; z-index: 2; background: var(--chrome); border-bottom: 1px solid var(--line); padding: 12px 16px; }
