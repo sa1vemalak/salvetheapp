@@ -9,6 +9,7 @@ Runs as a Cloud Run Job. Input: env JOB = "bands/{band}/jobs/{job}". The job doc
   4. writes the files to Storage and the results to Firestore; the song is marked "aguardando conferência".
 """
 import json, os, re, subprocess, sys, tempfile, time, traceback, uuid, glob, shutil, zipfile
+from fractions import Fraction
 import xml.etree.ElementTree as ET
 import urllib.request, urllib.parse
 
@@ -923,7 +924,10 @@ def write_m4a(a, path, tmp):
 
 
 # ---------------- corrections (from Caio or the band) ----------------
-TOKEN = re.compile(r'^(R|[A-G](?:#|b|##|bb)?-?\d(?:\+[A-G](?:#|b|##|bb)?-?\d)*):(\d+(?:\.\d+)?|\d+/\d+)$')
+TOKEN = re.compile(r'^(R|[A-G](?:#|b|##|bb)?-?\d(?:\+[A-G](?:#|b|##|bb)?-?\d)*):(\d+(?:\.\d+)?(?:/\d+)?)([>.\-^~()@]*)$')
+# the same note language as app/partitura.js: dynamics and hairpin words before a note, marks after the duration
+DYN_WORDS = {'pppp', 'ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'ffff', 'sf', 'sfz', 'sffz', 'sfp', 'fp', 'fz', 'rf', 'rfz'}
+HAIRPIN_WORDS = {'cresc', 'dim', 'fim'}
 
 
 def part_keys(names):
@@ -937,20 +941,39 @@ def part_keys(names):
 
 
 def parse_tokens(text):
-    """'D5:1 E5:0.5 F#5:0.5 R:2 C4+E4+G4:1' -> music21 notes (written pitch, durations in quarter notes)"""
+    """'mf D5:1> E5:1/3 F#5:1/3 G5:1/3 R:2 C4+E4+G4:1@' -> music21 notes (written pitch, durations in quarter notes).
+    Dynamics come back as zero-length music21 Dynamic objects placed before their note; hairpins and slurs are only
+    drawn on the page, so here they are accepted and skipped."""
     out = []
     for tok in str(text).replace(',', ' ').split():
+        w = tok.strip().lower()
+        if w in DYN_WORDS:
+            out.append(m21.dynamics.Dynamic(w)); continue
+        if w in HAIRPIN_WORDS:
+            continue
         m = TOKEN.match(tok.strip())
         if not m:
             raise ValueError(f'não entendi "{tok}"')
-        what, dur = m.group(1), m.group(2)
-        ql = float(eval(dur)) if '/' in dur else float(dur)
+        what, dur, marks = m.group(1), m.group(2), m.group(3) or ''
+        a, _, b = dur.partition('/')
+        ql = float(a) / float(b) if b else float(a)
+        if abs(ql * 3 - round(ql * 3)) < 0.01 and abs(ql * 8 - round(ql * 8)) > 0.01:
+            ql = Fraction(round(ql * 24), 24)   # 0.333 -> 1/3, so a triplet sums exactly
         if what == 'R':
-            out.append(m21.note.Rest(quarterLength=ql))
+            n = m21.note.Rest(quarterLength=ql)
         else:
             ps = [x.replace('b', '-') if len(x) > 1 and x[1] == 'b' else x for x in what.split('+')]
             ps = [p[0] + p[1:].replace('b', '-') for p in ps]
-            out.append(m21.chord.Chord(ps, quarterLength=ql) if len(ps) > 1 else m21.note.Note(ps[0], quarterLength=ql))
+            n = m21.chord.Chord(ps, quarterLength=ql) if len(ps) > 1 else m21.note.Note(ps[0], quarterLength=ql)
+            arts = {'>': m21.articulations.Accent, '.': m21.articulations.Staccato, '-': m21.articulations.Tenuto, '^': m21.articulations.StrongAccent}
+            for ch in marks:
+                if ch in arts:
+                    n.articulations.append(arts[ch]())
+            if '~' in marks:
+                n.tie = m21.tie.Tie('start')
+        if '@' in marks:
+            n.expressions.append(m21.expressions.Fermata())
+        out.append(n)
     return out
 
 
@@ -967,7 +990,7 @@ def apply_corrections(score, keys, corrections):
             m = meas[0]
             bar_len = float(m.barDuration.quarterLength) if m.barDuration else 4.0
             notes = parse_tokens(c['notas'])
-            total = sum(float(n.quarterLength) for n in notes)
+            total = float(sum(Fraction(n.quarterLength) for n in notes))
             if total > bar_len + 1e-6:
                 raise ValueError(f'as durações somam {total} tempos e o compasso tem {bar_len}')
             for el in list(m.recurse().notesAndRests):

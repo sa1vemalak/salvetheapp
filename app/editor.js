@@ -79,10 +79,9 @@ const Editor = (() => {
   function restore(xml) { st.P = new Partitura(xml); }
   function changed() { st.dirty++; paintBar(); render(true); }
   function ev() { return st.sel ? st.P.events(st.sel.pi, st.sel.num) : null; }
-  function tok(e) { return (e.rest ? 'R' : e.pitches.join('+')) + ':' + (Math.round(e.dur * 1000) / 1000) + e.arts + (e.tie ? '~' : ''); }
   function write(list) {
     const { pi, num } = st.sel;
-    try { snapshot(); st.P.setTokens(pi, num, list.map(tok).join(' ')); st.changed.add(`${pi}:${num}`); changed(); }
+    try { snapshot(); st.P.setTokens(pi, num, Partitura.joinTokens(list)); st.changed.add(`${pi}:${num}`); changed(); }
     catch (e) { st.undo.pop(); toast(e.message); }
   }
   // change the selected event's length; the bar keeps its size (rests fill, following notes give way)
@@ -122,7 +121,7 @@ const Editor = (() => {
   function dynamic(mark) { snapshot(); st.P.setDynamic(st.sel.pi, st.sel.num, st.sel.idx, mark); st.changed.add(`${st.sel.pi}:${st.sel.num}`); changed(); }
   function typeBar() {
     const { pi, num } = st.sel, cur = st.P.tokens(pi, num), { len } = st.P.context(pi, num);
-    const v = prompt(`Compasso ${num} (${len} tempos), som escrito. Ex.: D5:1 E5:0.5. R:0.5 F#5:2>\n> acento  . staccato  - tenuto  ^ marcato  ~ liga na próxima`, cur);
+    const v = prompt(`Compasso ${num} (${len} tempos), som escrito. Ex.: mf D5:1 E5:0.5.( R:0.5 F#5:2>)\n> acento  . staccato  - tenuto  ^ marcato  @ fermata  ~ liga na próxima  ( ) ligadura de frase\nTercina: E5:1/3 E5:1/3 E5:1/3 · dinâmica antes da nota: p mf f · cresc / dim ... fim`, cur);
     if (v == null || v.trim() === cur) return;
     try { snapshot(); st.P.setTokens(pi, num, v.trim()); st.changed.add(`${pi}:${num}`); changed(); } catch (e) { st.undo.pop(); toast(e.message); }
   }

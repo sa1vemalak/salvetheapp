@@ -4,6 +4,8 @@
 - `node testes/rapido.js`: abre o app daqui num navegador e confere botões, "Editar com o Caio" (com o servidor
   simulado), "Refazer o áudio" e erros de JavaScript. Não precisa de conta nem internet do Firebase.
 - `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
+- `node testes/caio_servidor.js` (depois de `cd server/functions && npm ci`): o Caio lê a partitura com o mesmo código do app
+  (tercinas, dinâmicas, ligaduras), acha compassos com tempo errado, vê os avisos do Malak e tem a proposta testada antes de chegar ao usuário.
 - Publicação: `python3 ferramentas/deploy.py` confere as partituras e áudios só confirmando que existem (~3 s).
 
 **Completo (FULL, só quando pedirem "teste full"):** pesado e com calma.

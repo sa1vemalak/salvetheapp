@@ -111,9 +111,41 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     const r = P.addPart('sax-alto', { copiarDe: 1 });
     return { pulados: r.pulados, c1: P.tokens(r.pi, 1), c2: P.tokens(r.pi, 2), c3: P.tokens(r.pi, 3) };
   });
-  confere('copia compasso com tercina', dif.c1 === 'G4:0.333 A4:0.333 B4:0.333 C5:3', dif.c1);
+  confere('copia compasso com tercina', dif.c1 === 'G4:1/3 A4:1/3 B4:1/3 C5:3', dif.c1);
   confere('compasso curto na origem ganha pausa no fim', dif.c2 === 'D5:1 E5:1 F#5:1 R:1', dif.c2);
   confere('compasso longo demais na origem fica de fora e é avisado', JSON.stringify(dif.pulados) === '["3"]' && dif.c3 === 'R:4', JSON.stringify(dif));
+  // a partitura inteira na língua de notas: tercinas, dinâmicas, crescendo/diminuendo, ligadura de frase e fermata
+  const ln = await p.evaluate(() => {
+    const P = new Partitura(Partitura.blank({ instrumentos: ['trompete', 'sax-tenor'], compassos: 4 }));
+    const out = {};
+    P.setTokens(0, 1, 'mf C5:1/3( D5:1/3 E5:1/3) cresc F5:1 G5:2 fim');
+    P.setTokens(0, 2, 'p A5:2/3 B5:1/3 dim C6:1/6 B5:1/6 A5:1/6 G5:1/2 F5:2@');
+    P.setTokens(0, 3, 'R:0.333 D5:0.333 E5:0.333 F5:3');   // tercina escrita em decimal também vale
+    let erro = ''; try { P.setTokens(0, 4, 'C5:1/3 D5:1/3 E5:3'); } catch (e) { erro = e.message; }
+    const Q = new Partitura(P.toString());
+    out.c1 = Q.tokens(0, 1); out.c2 = Q.tokens(0, 2); out.c3 = Q.tokens(0, 3); out.erro = erro;
+    const m1 = Q.measure(0, 1), m2 = Q.measure(0, 2);
+    out.tm = m1.getElementsByTagName('time-modification').length; out.tup1 = [...m1.getElementsByTagName('tuplet')].map(t => t.getAttribute('type')).join();
+    out.tup2 = [...m2.getElementsByTagName('tuplet')].map(t => t.getAttribute('type')).join();
+    out.tipos = [...m1.getElementsByTagName('type')].map(t => t.textContent).join();
+    // reescrever de novo não duplica dinâmica nem crescendo
+    Q.setTokens(0, 1, Q.tokens(0, 1)); out.dyn = Q.measure(0, 1).getElementsByTagName('dynamics').length; out.wedge = Q.measure(0, 1).getElementsByTagName('wedge').length;
+    // transpor mantém as marcas
+    Q.transpose(2, 1, 1, 0); out.tr = Q.tokens(0, 1);
+    // o editor à mão (mudar a altura de uma nota) não apaga as marcas do compasso
+    const ev = Q.events(0, 2); ev[0] = { ...ev[0], pitches: ['G5'] }; Q.setTokens(0, 2, Partitura.joinTokens(ev)); out.mao = Q.tokens(0, 2);
+    return out;
+  });
+  console.log('Língua de notas completa');
+  confere('tercina, dinâmica, ligadura e crescendo voltam iguais', ln.c1 === 'mf C5:1/3( D5:1/3 E5:1/3) cresc F5:1 G5:2 fim', ln.c1);
+  confere('tercinas misturadas, sextina, diminuendo e fermata', ln.c2 === 'p A5:2/3 B5:1/3 dim C6:1/6 B5:1/6 A5:1/6 G5:0.5 F5:2@', ln.c2);
+  confere('tercina escrita em decimal vale', ln.c3 === 'R:1/3 D5:1/3 E5:1/3 F5:3', ln.c3);
+  confere('soma errada com tercina é recusada', /soma/.test(ln.erro), ln.erro);
+  confere('tercina vira 3 colcheias com o 3 em cima', ln.tm === 3 && ln.tup1 === 'start,stop' && ln.tipos.startsWith('eighth,eighth,eighth'), JSON.stringify(ln));
+  confere('dois grupos de tercina no compasso 2', ln.tup2 === 'start,stop,start,stop', ln.tup2);
+  confere('reescrever não duplica dinâmica', ln.dyn === 1 && ln.wedge === 2, ln.dyn + ' ' + ln.wedge);
+  confere('transpor mantém as marcas', ln.tr === 'mf D5:1/3( E5:1/3 F#5:1/3) cresc G5:1 A5:2 fim', ln.tr);
+  confere('editar à mão mantém as marcas', ln.mao === 'p G5:2/3 B5:1/3 dim C6:1/6 B5:1/6 A5:1/6 G5:0.5 F5:2@', ln.mao);
   // o botão Aplicar com uma proposta "nova_parte" + notas para ela: salva uma versão nova com a parte e a lista de instrumentos
   const ap = await p.evaluate(async () => {
     const xml = Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'sax-tenor', 'trombone', 'base'], formula: '4/4', fifths: 0, compassos: 4 });

@@ -9,7 +9,8 @@ const { GoogleAuth } = require('google-auth-library');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const bus = require('./llm/bus');
-const { XMLParser } = require('fast-xml-parser');
+const { DOMParser } = require('linkedom');
+const Partitura = require('./partitura');   // the same file as app/partitura.js (ferramentas/atualizar_robos.sh copies it)
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -17,7 +18,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 
 const ORIGINS = ['https://salvetheapp.web.app', 'https://salvetheapp.firebaseapp.com', 'https://salvetheapp-3cceb.web.app',
   'https://salvetheapp-3cceb.firebaseapp.com', 'http://localhost:8795'];
-const MAX_STEPS = 10;           // model turns per question
+const MAX_STEPS = 14;           // model turns per question (reading, checking and a retried proposal)
 const TIME_BUDGET_MS = 330e3;   // stop starting new model turns after this, so the answer arrives before the 540 s limit
 const DAILY_LIMIT = 300;        // questions per band per day
 const DAILY_PER_PERSON = 80;    // questions per person per day
@@ -40,7 +41,9 @@ const TOOLS = [
   { name: 'ver_show', description: 'O show aberto: nome, músicas na ordem (id, título, rótulo, partes) e marcadores da DAW (compasso da DAW onde cada música começa e onde a partitura troca).', input_schema: obj({}), strict: true },
   { name: 'ver_musica', description: 'Detalhes de uma música: partes, quantos compassos cada parte tem e em quantas páginas, letras de ensaio se houver, andamentos e as notas de texto da música.', input_schema: obj({ musica: str('id da música, como aparece em ver_show') }), strict: true },
   { name: 'ver_anotacoes', description: 'Anotações escritas em comum nas partituras de uma música (a camada "Em comum", que todos da banda veem), com o compasso aproximado de cada uma.', input_schema: obj({ musica: str('id da música'), parte: str('chave da parte (ex.: grade, base, trumpet, tenor-sax, trombone) ou "todas"') }), strict: true },
-  { name: 'ver_notas', description: 'As notas de uma parte, compasso por compasso, da partitura editável da música (alturas escritas, como o músico lê), com a fórmula e os tempos de cada compasso. Formato de cada nota: ALTURA:DURAÇÃO em tempos de semínima e depois as marcas (ex.: D5:1, F#4:0.5>, Bb3:2~, R:4 é pausa, C4+E4+G4:1 é acorde; > acento, . staccato, - tenuto, ^ marcato, ~ ligada na próxima).', input_schema: obj({ musica: str('id da música'), parte: str('chave do instrumento (veja ver_musica > instrumentos)'), de: int('primeiro compasso'), ate: int('último compasso (no máximo 24 compassos por vez)') }), strict: true },
+  { name: 'ver_notas', description: 'As notas de uma parte, compasso por compasso, da partitura editável da música (alturas escritas, como o músico lê), com a fórmula e os tempos de cada compasso, as cifras e o que mais o compasso mostra (texto, letra de ensaio, andamento, repetição). Formato de cada nota: ALTURA:DURAÇÃO em tempos de semínima e depois as marcas (ex.: D5:1, F#4:0.5>, Bb3:2~, R:4 é pausa, C4+E4+G4:1 é acorde). Tercinas e sextinas em fração: E5:1/3 (colcheia de tercina), D5:2/3 (semínima de tercina), C5:1/6 (semicolcheia de sextina); três E5:1/3 seguidas somam 1 tempo e ganham o 3 em cima. Marcas depois da duração: > acento, . staccato, - tenuto, ^ marcato, @ fermata, ( começa ligadura de frase, ) termina ligadura de frase, ~ ligada na próxima nota (mesma altura). Palavras soltas antes de uma nota valem a partir dela: dinâmicas (pp p mp mf f ff fff sfz fp), cresc (começa crescendo), dim (começa diminuendo), fim (termina o crescendo/diminuendo; no fim do compasso termina na barra). Ex.: "p C5:1/3( D5:1/3 E5:1/3) cresc F5:1 G5:2 fim".', input_schema: obj({ musica: str('id da música'), parte: str('chave do instrumento (veja ver_musica > instrumentos)'), de: int('primeiro compasso'), ate: int('último compasso (no máximo 24 compassos por vez)') }), strict: true },
+  { name: 'conferir_partitura', description: 'Procura em todas as partes da música os compassos cujas notas não fecham a fórmula (tempo a mais ou a menos) e os compassos com duas vozes. Use quando pedirem para revisar a partitura, quando o Malak avisar de compasso errado, ou antes de mexer em muitos compassos.', input_schema: obj({ musica: str('id da música') }), strict: true },
+  { name: 'ver_malak', description: 'O que o Malak (o robô que lê a partitura, desenha os PDFs e gera o áudio de estudo) fez com esta música: os últimos trabalhos (na fila, rodando, pronto ou erro), a mensagem e os avisos dele, a versão da partitura, PDFs que ainda vai desenhar e correções que ele recusou. Use quando perguntarem se o áudio ou o PDF ficou pronto, se deu erro, ou depois de uma mudança aprovada.', input_schema: obj({ musica: str('id da música') }), strict: true },
   {
     name: 'propor_mudancas',
     description: 'Entrega ao usuário uma lista de mudanças para ele aprovar. Use uma vez, no fim, quando o pedido for para mudar algo. Nada é aplicado sem aprovação.',
@@ -56,7 +59,7 @@ const TOOLS = [
             obj({ tipo: { type: 'string', enum: ['ordem_show'] }, ordem: { type: 'array', items: { type: 'string' }, description: 'ids de TODAS as músicas do show, na nova ordem' }, descricao: str('o que é') }),
             obj({ tipo: { type: 'string', enum: ['marcador_daw'] }, musica: str('id'), compasso_daw: int('compasso da DAW onde a partitura desta música deve aparecer'), descricao: str('o que é') }),
             obj({ tipo: { type: 'string', enum: ['nota_musica'] }, musica: str('id'), texto: str('texto completo que fica nas notas da música (substitui o atual)'), descricao: str('o que é') }),
-            obj({ tipo: { type: 'string', enum: ['corrigir_notas'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas'), compasso: int('número do compasso'), notas: str('o compasso inteiro, corrigido, no formato de ver_notas (ex.: "D5:1 E5:1 F#5:2"); as durações devem somar exatamente "tempos" daquele compasso em ver_notas (2 num 2/4, 3 num 3/4, 4 num 4/4)'), descricao: str('o que muda, em palavras de músico (ex.: "a 3ª nota é Fá#, não Fá")') }),
+            obj({ tipo: { type: 'string', enum: ['corrigir_notas'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas'), compasso: int('número do compasso'), notas: str('o compasso inteiro, corrigido, no formato de ver_notas, com as dinâmicas, ligaduras e marcas que devem ficar (ex.: "mf D5:1( E5:1) F#5:2@" ou "C5:1/3 D5:1/3 E5:1/3 F5:3"); as durações devem somar exatamente "tempos" daquele compasso em ver_notas (2 num 2/4, 3 num 3/4, 4 num 4/4). O que você não escrever some do compasso (dinâmica, ligadura, acento).'), descricao: str('o que muda, em palavras de músico (ex.: "a 3ª nota é Fá#, não Fá")') }),
             obj({ tipo: { type: 'string', enum: ['cifras'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas (normalmente a Base)'), compasso: int('número do compasso'), cifras: str('as cifras do compasso inteiro, em ordem, separadas por espaço (ex.: "Am7" ou "Am7 D7" para dividir ao meio, ou "Am7:3 D7:1" dizendo os tempos de cada); vazio apaga'), descricao: str('o que muda') }),
             obj({ tipo: { type: 'string', enum: ['nova_parte'] }, musica: str('id'), instrumento: { type: 'string', enum: Object.keys(INSTRUMENTOS), description: 'o instrumento novo: ' + Object.entries(INSTRUMENTOS).map(([k, n]) => k + ' = ' + n).join(', ') }, copiar_de: str('chave de uma parte que já existe para a nova começar dobrando (mesmo som, o app transpõe sozinho para o instrumento novo), ou vazio para começar só com pausas'), oitava: int('com copiar_de: 0 no mesmo som, 1 uma oitava acima, -1 uma oitava abaixo; sem copiar_de use 0'), descricao: str('o que é, em palavras simples') }),
             obj({ tipo: { type: 'string', enum: ['renomear_musica'] }, musica: str('id'), titulo: str('novo título'), rotulo: str('novo rótulo curto, ou vazio'), descricao: str('o que é') }),
@@ -78,12 +81,14 @@ O que você consegue fazer:
 - responder sobre o show aberto: ordem das músicas, partes de cada uma, quantos compassos, anotações, onde cada música começa na DAW;
 - propor mudanças que o app sabe aplicar: escrever ou apagar anotações nas partituras (camada "Em comum"), acrescentar um instrumento novo na partitura, mudar a ordem do show, ajustar em que compasso da DAW a partitura troca de música, editar as notas de texto de uma música, renomear uma música.
 
-- editar a partitura (é o centro do app): leia os compassos com ver_notas (som escrito de cada instrumento, com a fórmula e os tempos de cada compasso), entenda o que o usuário quer — corrigir notas, mudar ritmo, pôr articulações (> acento, . staccato, - tenuto, ^ marcato, ~ ligadura), transpor um trecho, simplificar, dobrar uma voz, escrever um contracanto — e proponha corrigir_notas com cada compasso inteiro reescrito. Depois de aprovado, a partitura ganha uma nova versão e o Malak refaz o áudio sozinho.
+- editar a partitura (é o centro do app): leia os compassos com ver_notas (som escrito de cada instrumento, com a fórmula e os tempos de cada compasso), entenda o que o usuário quer e proponha corrigir_notas com cada compasso inteiro reescrito. Você consegue: corrigir alturas e ritmos, tercinas e sextinas (durações em fração, 1/3, 2/3, 1/6), acordes, pausas, articulações (> acento, . staccato, - tenuto, ^ marcato, @ fermata), ligadura de frase ( e ), ligadura de prolongamento ~, dinâmicas (pp a fff, sfz, fp) e crescendo/diminuendo (cresc, dim, fim), transpor um trecho, simplificar, dobrar uma voz, escrever um contracanto. Ao reescrever um compasso, copie de ver_notas tudo o que deve continuar (dinâmicas, ligaduras, acentos), porque o compasso é trocado inteiro. Mudanças longas (ex.: crescendo do compasso 5 ao 8) viram vários compassos: cresc antes da nota do 5 e fim no fim do 8. Antes de entregar, a proposta é testada na partitura: se voltar erro, corrija e proponha de novo. Depois de aprovado, a partitura ganha uma nova versão e o Malak refaz o áudio e os PDFs sozinho.
+- trabalhar junto com o Malak (o robô que lê as partituras, desenha os PDFs e gera o áudio de estudo): com ver_malak você vê se o trabalho dele terminou, deu erro ou deixou avisos; com conferir_partitura você acha os compassos com tempo a mais ou a menos e os corrige você mesmo com corrigir_notas (compare com as outras partes no mesmo compasso). Quando o usuário disser que o áudio ou o PDF está estranho, olhe primeiro ver_malak e conferir_partitura.
 - acrescentar um instrumento numa música que já tem partitura editável (ex.: "cria um sax alto", "põe uma flauta"): você mesmo faz isso, com a mudança "nova_parte" — nunca mande o usuário criar a partitura de novo nem refazer nada à mão. A parte nova entra com os mesmos compassos, fórmulas, tom (já no tom escrito do instrumento, ex.: sax alto em Mi bemol), letras de ensaio e barras da música, e sua chave é a do instrumento (ex.: sax-alto). Ela pode começar dobrando uma parte existente (copiar_de, com oitava) ou em branco. Na MESMA proposta, já escreva as notas dela com "corrigir_notas" usando essa chave: leia as outras partes com ver_notas e escreva as alturas escritas do instrumento novo (sax alto soa uma 6ª maior abaixo do escrito: escrito = som real + 9 semitons; em relação ao sax tenor escrito, o alto escreve uma 4ª justa abaixo para o mesmo som; em relação ao trompete escrito, uma 5ª justa acima). Os compassos que você não escrever ficam com o que veio de copiar_de (ou pausa). Se a música for longa, escreva no máximo uns 40 compassos por proposta (leia só as partes de que precisa) e diga que continua no próximo pedido; quando pedirem "continua", siga do compasso seguinte ao último que já tem notas.
 - criar partitura: quando a música tem uma partitura nova, em branco (o usuário cria em Editar › Criar partitura, escolhendo instrumentos, fórmula, tom e número de compassos), ajude a escrever: proponha as cifras da Base com mudanças "cifras" e as linhas dos instrumentos com "corrigir_notas", compasso por compasso, sempre conferindo os tempos de cada compasso em ver_notas. Partes que mostram "só cifra" são da base: mude só as cifras delas.
 
-O que você ainda não consegue: mudar o PDF (a diagramação) e corrigir notas de músicas que não passaram pelo Malak. Se pedirem, diga isso com clareza e, se ajudar, proponha uma anotação no lugar (ex.: escrever "tocar 8ª abaixo" no compasso).
-Ao corrigir notas: mude só o que foi pedido, mantenha o resto do compasso igual ao lido, e confira que as durações somam o compasso (4/4 = 4). As alturas são as escritas na parte (trompete em Si bemol, sax etc. como o músico lê).
+Atenção com o PDF: só nas músicas com partitura criada no app o Malak redesenha os PDFs das partes depois de cada mudança. Nas músicas que vieram do PDF do arranjador, a mudança vale para a partitura editável e o áudio de estudo, mas o PDF que o músico lê na estante continua o do arranjador (só uma parte nova ganha PDF próprio); diga isso ao propor e, se ajudar, proponha também uma anotação no compasso para o músico ver.
+O que você ainda não consegue: mudar a fórmula de compasso, o tom ou o andamento, pôr ou tirar compassos, letras de ensaio, repetições e casas, textos na pauta ("solo", "só na 2ª"), letra de música, notas de enfeite e compassos com duas vozes (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar (ex.: escrever "tocar 8ª abaixo" no compasso). Nunca diga que fez algo que não está na proposta.
+Ao corrigir notas: mude só o que foi pedido, mantenha o resto do compasso igual ao lido (inclusive dinâmicas, ligaduras e marcas), e confira que as durações somam o compasso (4/4 = 4). As alturas são as escritas na parte (trompete em Si bemol, sax etc. como o músico lê).
 
 Como trabalhar:
 - Sempre consulte as ferramentas antes de afirmar algo sobre o show; nunca invente compasso, parte ou música.
@@ -162,44 +167,52 @@ async function runTool(name, input, ctx) {
   if (name === 'ver_notas') {
     if (!(await inShow(input.musica))) return { erro: 'Essa música não está no show aberto.' };
     const s = await data(band.collection('songs').doc(input.musica));
-    const pl = s?.player || {};
-    const fonteXml = s?.partitura?.xml || pl.lido;
-    if (!fonteXml) return { erro: 'Esta música ainda não tem partitura editável (o Malak cria a partir do PDF ou do arquivo original).' };
+    const P = await abrir(ctx, s);
+    if (!P) return { erro: 'Esta música ainda não tem partitura editável (o Malak cria a partir do PDF ou do arquivo original).' };
     const partes = partesDe(s), keys = partes.map(x => x.key);
     const idx = keys.indexOf(input.parte);
-    if (idx < 0) return { erro: 'Instrumento não encontrado. Use uma destas chaves: ' + keys.join(', ') };
-    const doc = await (ctx.cache[fonteXml] = ctx.cache[fonteXml] || fetch(fonteXml).then(r => r.text()).then(xml =>  // one download per question
-      new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure', 'note', 'score-part', 'harmony'].includes(n) }).parse(xml)));
-    const part = doc['score-partwise'].part[idx];
+    if (idx < 0 || !P.parts()[idx]) return { erro: 'Instrumento não encontrado. Use uma destas chaves: ' + keys.join(', ') };
     const de = Math.max(1, input.de | 0), ate = Math.min(de + 23, input.ate | 0 || de);
-    let divisions = 1, beats = 4, beatType = 4; const out = [];
-    const STEP_ALTER = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': '##' };
-    for (const m of part.measure) {
-      const at = m.attributes; if (at) { const a = Array.isArray(at) ? at[0] : at; if (a.divisions) divisions = +a.divisions;
-        if (a.time && a.time.beats) { beats = parseInt(a.time.beats) || beats; beatType = parseInt(a.time['beat-type']) || beatType; } }
-      const num = parseInt(m['@number']); if (!(num >= de && num <= ate)) continue;
-      const toks = []; let voices = new Set();
-      for (const n of m.note || []) {
-        voices.add(String(n.voice || 1));
-        if (String(n.voice || 1) !== '1' || n.grace !== undefined) continue;
-        const dur = Math.round(((+n.duration || 0) / divisions) * 1000) / 1000;
-        const p = n.pitch ? n.pitch.step + (STEP_ALTER[String(Math.round(+n.pitch.alter || 0))] || '') + n.pitch.octave : 'R';
-        const ar = (n.notations && n.notations.articulations) || {};
-        const marks = (ar.accent !== undefined ? '>' : '') + (ar.staccato !== undefined ? '.' : '') + (ar.tenuto !== undefined ? '-' : '') + (ar['strong-accent'] !== undefined ? '^' : '');
-        const ties = [].concat(n.tie || []); const tie = n.pitch && ties.some(t => t && t['@type'] === 'start') ? '~' : '';
-        if (n.chord !== undefined && toks.length) { const last = toks.pop(); const [ps, d] = last.split(':'); toks.push(ps + '+' + p + ':' + d); }
-        else toks.push(p + ':' + dur + marks + tie);
-      }
-      const ac = { '-1': 'b', '1': '#' }, KS = { major: '', minor: 'm', augmented: '+', diminished: 'dim', dominant: '7', 'major-seventh': 'maj7', 'minor-seventh': 'm7', 'diminished-seventh': 'dim7', 'augmented-seventh': '+7', 'half-diminished': 'm7b5', 'major-minor': 'm(maj7)', 'major-sixth': '6', 'minor-sixth': 'm6', 'dominant-ninth': '9', 'major-ninth': 'maj9', 'minor-ninth': 'm9', 'dominant-11th': '11', 'major-11th': 'maj11', 'minor-11th': 'm11', 'dominant-13th': '13', 'major-13th': 'maj13', 'minor-13th': 'm13', 'suspended-second': 'sus2', 'suspended-fourth': 'sus4', power: '5' }, kindTxt = k => (k && typeof k === 'object') ? (k['@text'] ?? KS[k['#text']] ?? '') : (KS[k] ?? '');
-      const cifras = (m.harmony || []).map(h => (h.root?.['root-step'] || '') + (ac[String(h.root?.['root-alter'] ?? '')] || '') + kindTxt(h.kind) + (h.bass ? '/' + h.bass['bass-step'] + (ac[String(h.bass['bass-alter'] ?? '')] || '') : '')).filter(Boolean);
-      const barra = toks.length && toks.every(t => /^B4:/.test(t)) && (m.note || []).some(n => n.notehead === 'slash' || n.notehead?.['#text'] === 'slash');
-      out.push({ compasso: num, formula: `${beats}/${beatType}`, tempos: beats * 4 / beatType, notas: barra ? '(só cifra: o músico faz a levada)' : toks.join(' '), ...(cifras.length ? { cifras: cifras.join(' ') } : {}), ...(voices.size > 1 ? { aviso: 'tem mais de uma voz; mostrei só a voz 1' } : {}) });
+    const chart = P.isChart(idx), out = [];
+    for (const m of P.measures(idx)) {
+      const num = parseInt(m.getAttribute('number')); if (!(num >= de && num <= ate)) continue;
+      const c = P.context(idx, num), cif = P.chords(idx, num).map(x => x.text);
+      const info = P.barInfo(idx, num), voices = P.voices(idx, num);
+      out.push({ compasso: num, formula: `${c.beats}/${c.type}`, tempos: c.len, notas: chart ? '(só cifra: o músico faz a levada)' : P.tokens(idx, num),
+        ...(cif.length ? { cifras: cif.join(' ') } : {}), ...(Object.keys(info).length ? { tambem: info } : {}),
+        ...(voices > 1 ? { aviso: 'tem mais de uma voz; mostrei só a voz 1 e este compasso ainda não pode ser reescrito' } : {}) });
     }
     return { musica: input.musica, parte: input.parte, nome: partes[idx].name, compassos: out };
   }
+  if (name === 'conferir_partitura') {
+    if (!(await inShow(input.musica))) return { erro: 'Essa música não está no show aberto.' };
+    const s = await data(band.collection('songs').doc(input.musica));
+    const P = await abrir(ctx, s);
+    if (!P) return { erro: 'Esta música ainda não tem partitura editável.' };
+    const keys = partesDe(s).map(x => x.key), r = P.checkBars();
+    const k = pi => keys[pi] || P.parts()[pi]?.name || 'parte ' + (pi + 1);
+    return { musica: input.musica,
+      compassos_com_tempo_errado: r.compassos.slice(0, 60).map(x => ({ parte: k(x.pi), compasso: +x.num, soma: x.tem, deveria: x.deveria })),
+      total_com_tempo_errado: r.compassos.length,
+      compassos_com_duas_vozes: r.duasVozes.slice(0, 40).map(x => ({ parte: k(x.pi), compasso: +x.num })),
+      dica: r.compassos.length ? 'Leia esses compassos com ver_notas e proponha corrigir_notas com o compasso inteiro somando o certo (compare com as outras partes no mesmo compasso).' : 'Todos os compassos fecham.' };
+  }
+  if (name === 'ver_malak') {
+    if (!(await inShow(input.musica))) return { erro: 'Essa música não está no show aberto.' };
+    const s = await data(band.collection('songs').doc(input.musica));
+    const FP = admin.firestore.FieldPath.documentId();
+    const snap = await band.collection('jobs').orderBy(FP).startAt(input.musica + '__').endAt(input.musica + '__\uf8ff').limitToLast(3).get();
+    const quando = t => t ? new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : null;
+    const trabalhos = snap.docs.map(d => d.data()).reverse().map(j => ({ robo: j.tipo === 'arranjo' ? 'Mestrinho' : 'Malak', de_onde: j.fonte || null, status: j.status, mensagem: j.msg || '',
+      avisos: (j.avisos || []).slice(0, 12), pedido_em: quando(j.criadoEm), atualizado_em: quando(j.atualizado) }));
+    const pt = s?.partitura || {}, pl = s?.player || {};
+    return { musica: input.musica, trabalhos, partitura_versao: pt.versao || null, partitura_editada_em: quando(pt.editadaEm),
+      audio_feito_em: pl.made || null, audio_conferido: pl.conferido !== false, pdfs_por_fazer: pt.partesSemPdf || [],
+      correcoes_recusadas: (s?.correcoesRecusadas || []).slice(0, 12), correcoes_na_fila: (s?.correcoes || []).length };
+  }
   if (name === 'propor_mudancas') {
-    const ruins = await conferirDuracoes(band, input.mudancas || []);
-    if (ruins.length) return { erro: 'Algumas correções não somam o tamanho do compasso (veja "tempos" em ver_notas; a introdução pode estar em 2/4). Corrija e chame propor_mudancas de novo: ' + ruins.join('; ') };
+    const ruins = await conferirProposta(band, input.mudancas || [], ctx);
+    if (ruins.length) return { erro: 'Testei a proposta na partitura e estas mudanças não entram (veja "tempos" em ver_notas; a introdução pode estar em 2/4). Corrija e chame propor_mudancas de novo: ' + ruins.join('; ') };
     ctx.proposta = { resumo: input.resumo, mudancas: input.mudancas };
     return { ok: true, aviso: 'Proposta entregue ao usuário. Ela só é aplicada se um dono ou editor aprovar no app.' };
   }
@@ -211,28 +224,47 @@ function partesDe(s) {
   const p = s?.partitura?.partes; if (Array.isArray(p) && p.length) return p;
   return s?.player?.instrumentos || [];
 }
-// length (in quarter notes) of every bar of a song's read score, to check corrections before proposing them
-async function tamanhosDosCompassos(band, musica) {
-  const s = await data(band.collection('songs').doc(musica));
-  const pl = s?.player || {}; const src = s?.partitura?.xml || pl.lido; if (!src) return null;
-  const xml = await (await fetch(src)).text();
-  const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure'].includes(n) }).parse(xml);
-  const out = {}; let beats = 4, beatType = 4;
-  for (const m of doc['score-partwise'].part[0].measure) {
-    const at = m.attributes; const a = at ? (Array.isArray(at) ? at[0] : at) : null;
-    if (a && a.time && a.time.beats) { beats = parseInt(a.time.beats) || beats; beatType = parseInt(a.time['beat-type']) || beatType; }
-    out[parseInt(m['@number'])] = beats * 4 / beatType;
-  }
-  return out;
+// the song's score as a Partitura (the edited one, else the one the Malak read), one download per question
+async function abrir(ctx, s) {
+  const src = s?.partitura?.xml || s?.player?.lido; if (!src) return null;
+  const xml = await (ctx.cache[src] = ctx.cache[src] || fetch(src).then(r => r.text()));
+  return new Partitura(xml, { DOMParser, XMLSerializer: XmlOut });
 }
-async function conferirDuracoes(band, mudancas) {
-  const ruins = []; const cache = {};
-  for (const m of mudancas) {
-    if (m.tipo !== 'corrigir_notas') continue;
-    if (!(m.musica in cache)) cache[m.musica] = await tamanhosDosCompassos(band, m.musica).catch(() => null);
-    const tam = cache[m.musica]?.[m.compasso]; if (!tam) continue;
-    const soma = String(m.notas || '').trim().split(/\s+/).reduce((t, tok) => t + (parseFloat(tok.split(':')[1]) || 0), 0);
-    if (Math.abs(soma - tam) > 1e-6) ruins.push(`${m.parte} c.${m.compasso}: soma ${soma}, o compasso tem ${tam}`);
+class XmlOut { serializeToString(doc) { return doc.toString(); } }
+
+// try the proposal on a copy of each score, exactly as the app will apply it, so Caio fixes mistakes before
+// the person sees them (wrong sums, words the app doesn't know, bars with two voices, a part that doesn't exist)
+async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
+  const ruins = [], porMusica = {};
+  for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
+  for (const [id, lista] of Object.entries(porMusica)) {
+    const s = await data(band.collection('songs').doc(id));
+    let P; try { P = await abrir(ctx, s); } catch (e) { ruins.push(`${id}: não consegui abrir a partitura (${e.message})`); continue; }
+    if (!P) { ruins.push(`${id}: a música não tem partitura editável`); continue; }
+    const soLida = !s?.partitura?.xml;   // corrections to a score only the Malak read go to the Malak's queue
+    const keys = partesDe(s).map(x => x.key);
+    for (const c of lista.filter(x => x.tipo === 'nova_parte')) {
+      try {
+        if (soLida) throw new Error('parte nova só em partitura editável');
+        if (keys.includes(c.instrumento)) throw new Error('a música já tem esse instrumento');
+        const src = c.copiar_de ? keys.indexOf(c.copiar_de) : null;
+        if (c.copiar_de && src < 0) throw new Error(`não achei a parte "${c.copiar_de}"`);
+        const r = P.addPart(c.instrumento, { copiarDe: src, oitava: c.oitava | 0 });
+        keys.splice(r.pi, 0, c.instrumento);
+      } catch (e) { ruins.push(`nova parte ${c.instrumento}: ${e.message}`); }
+    }
+    for (const c of lista.filter(x => x.tipo !== 'nova_parte')) {
+      const pi = keys.indexOf(c.parte);
+      try {
+        if (pi < 0) throw new Error('instrumento não encontrado (use as chaves de ver_musica)');
+        if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras);
+        else if (soLida) {
+          const ev = Partitura.parseTokens(c.notas), len = P.context(pi, c.compasso).len;
+          const soma = ev.reduce((t, e) => t + e.dur, 0);
+          if (Math.abs(soma - len) > 1e-3) throw new Error(`soma ${Partitura.fmtDur(soma)}, o compasso tem ${Partitura.fmtDur(len)}`);
+        } else P.setTokens(pi, c.compasso, c.notas);
+      } catch (e) { ruins.push(`${c.parte} c.${c.compasso}: ${e.message}`); }
+    }
   }
   return ruins.slice(0, 12);
 }
@@ -298,6 +330,7 @@ async function handle(req, res) {
 
 exports.agente = onRequest({ region: 'southamerica-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB', cors: ORIGINS, maxInstances: 10 }, handle);
 Object.defineProperty(exports, '__handle', { value: handle, enumerable: false });  // for local tests only
+Object.defineProperty(exports, '__runTool', { value: runTool, enumerable: false });
 
 /* robot: an editor asks for a song's audio (bands/{b}/jobs/{j}); this starts the Cloud Run Job "robo" for it */
 const gauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
@@ -351,4 +384,4 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
     await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
   }
 });
-exports.__conferirDuracoes = (bandId, mudancas) => conferirDuracoes(db.collection('bands').doc(bandId), mudancas);  // tests
+exports.__conferirProposta = (bandId, mudancas) => conferirProposta(db.collection('bands').doc(bandId), mudancas);  // tests
