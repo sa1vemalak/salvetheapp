@@ -1,8 +1,8 @@
 """Publica o app (pasta app/ do repositório) no Firebase Hosting.
 
 Uso (da raiz do repositório):
-    python3 ferramentas/deploy.py            # publica nos dois sites (pnpl10y e salvetheapp-3cceb)
-    SITE=pnpl10y python3 ferramentas/deploy.py
+    python3 ferramentas/deploy.py            # publica no salvetheapp-3cceb (o site principal)
+    SITE=salvetheapp-3cceb,salvetheapp python3 ferramentas/deploy.py   # vários sites
     DRY=1 python3 ferramentas/deploy.py      # só confere, não publica
 
 Chave: ferramentas/.t, ou a variável TOKEN, ou `gcloud auth print-access-token`.
@@ -23,7 +23,7 @@ AQUI = os.path.dirname(os.path.abspath(__file__))
 RAIZ = os.path.dirname(AQUI)
 PROJ = 'salvetheapp-3cceb'
 API = 'https://firebasehosting.googleapis.com/v1beta1'
-SITES = os.environ['SITE'].split(',') if os.environ.get('SITE') else ['pnpl10y', 'salvetheapp-3cceb']
+SITES = os.environ['SITE'].split(',') if os.environ.get('SITE') else ['salvetheapp-3cceb']
 DADOS = re.compile(r'^/?(scores|_blob)/')          # dados das bandas: ficam no ar, não no repositório
 GERADOS = {'index.html', 'fb.js', 'version.json', 'local/manifest.json', 'local/index.html', 'local/local.js'}
 DRY, FORCE = bool(os.environ.get('DRY')), bool(os.environ.get('FORCE'))
