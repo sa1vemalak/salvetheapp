@@ -18,6 +18,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 const ORIGINS = ['https://salvetheapp.web.app', 'https://salvetheapp.firebaseapp.com', 'https://salvetheapp-3cceb.web.app',
   'https://salvetheapp-3cceb.firebaseapp.com', 'http://localhost:8795'];
 const MAX_STEPS = 10;           // model turns per question
+const TIME_BUDGET_MS = 330e3;   // stop starting new model turns after this, so the answer arrives before the 540 s limit
 const DAILY_LIMIT = 300;        // questions per band per day
 const DAILY_PER_PERSON = 80;    // questions per person per day
 
@@ -78,7 +79,7 @@ O que você consegue fazer:
 - propor mudanças que o app sabe aplicar: escrever ou apagar anotações nas partituras (camada "Em comum"), acrescentar um instrumento novo na partitura, mudar a ordem do show, ajustar em que compasso da DAW a partitura troca de música, editar as notas de texto de uma música, renomear uma música.
 
 - editar a partitura (é o centro do app): leia os compassos com ver_notas (som escrito de cada instrumento, com a fórmula e os tempos de cada compasso), entenda o que o usuário quer — corrigir notas, mudar ritmo, pôr articulações (> acento, . staccato, - tenuto, ^ marcato, ~ ligadura), transpor um trecho, simplificar, dobrar uma voz, escrever um contracanto — e proponha corrigir_notas com cada compasso inteiro reescrito. Depois de aprovado, a partitura ganha uma nova versão e o Malak refaz o áudio sozinho.
-- acrescentar um instrumento numa música que já tem partitura editável (ex.: "cria um sax alto", "põe uma flauta"): você mesmo faz isso, com a mudança "nova_parte" — nunca mande o usuário criar a partitura de novo nem refazer nada à mão. A parte nova entra com os mesmos compassos, fórmulas, tom (já no tom escrito do instrumento, ex.: sax alto em Mi bemol), letras de ensaio e barras da música, e sua chave é a do instrumento (ex.: sax-alto). Ela pode começar dobrando uma parte existente (copiar_de, com oitava) ou em branco. Na MESMA proposta, já escreva as notas dela com "corrigir_notas" usando essa chave: leia as outras partes com ver_notas e escreva as alturas escritas do instrumento novo (sax alto soa uma 6ª maior abaixo do escrito: escrito = som real + 9 semitons; em relação ao sax tenor escrito, o alto escreve uma 4ª justa abaixo para o mesmo som; em relação ao trompete escrito, uma 5ª justa acima). Os compassos que você não escrever ficam com o que veio de copiar_de (ou pausa). Se a música for longa, faça a primeira parte da música nesta proposta e diga que continua no próximo pedido.
+- acrescentar um instrumento numa música que já tem partitura editável (ex.: "cria um sax alto", "põe uma flauta"): você mesmo faz isso, com a mudança "nova_parte" — nunca mande o usuário criar a partitura de novo nem refazer nada à mão. A parte nova entra com os mesmos compassos, fórmulas, tom (já no tom escrito do instrumento, ex.: sax alto em Mi bemol), letras de ensaio e barras da música, e sua chave é a do instrumento (ex.: sax-alto). Ela pode começar dobrando uma parte existente (copiar_de, com oitava) ou em branco. Na MESMA proposta, já escreva as notas dela com "corrigir_notas" usando essa chave: leia as outras partes com ver_notas e escreva as alturas escritas do instrumento novo (sax alto soa uma 6ª maior abaixo do escrito: escrito = som real + 9 semitons; em relação ao sax tenor escrito, o alto escreve uma 4ª justa abaixo para o mesmo som; em relação ao trompete escrito, uma 5ª justa acima). Os compassos que você não escrever ficam com o que veio de copiar_de (ou pausa). Se a música for longa, escreva no máximo uns 40 compassos por proposta (leia só as partes de que precisa) e diga que continua no próximo pedido; quando pedirem "continua", siga do compasso seguinte ao último que já tem notas.
 - criar partitura: quando a música tem uma partitura nova, em branco (o usuário cria em Editar › Criar partitura, escolhendo instrumentos, fórmula, tom e número de compassos), ajude a escrever: proponha as cifras da Base com mudanças "cifras" e as linhas dos instrumentos com "corrigir_notas", compasso por compasso, sempre conferindo os tempos de cada compasso em ver_notas. Partes que mostram "só cifra" são da base: mude só as cifras delas.
 
 O que você ainda não consegue: mudar o PDF (a diagramação) e corrigir notas de músicas que não passaram pelo Malak. Se pedirem, diga isso com clareza e, se ajudar, proponha uma anotação no lugar (ex.: escrever "tocar 8ª abaixo" no compasso).
@@ -167,8 +168,8 @@ async function runTool(name, input, ctx) {
     const partes = partesDe(s), keys = partes.map(x => x.key);
     const idx = keys.indexOf(input.parte);
     if (idx < 0) return { erro: 'Instrumento não encontrado. Use uma destas chaves: ' + keys.join(', ') };
-    const xml = await (await fetch(fonteXml)).text();
-    const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure', 'note', 'score-part', 'harmony'].includes(n) }).parse(xml);
+    const doc = await (ctx.cache[fonteXml] = ctx.cache[fonteXml] || fetch(fonteXml).then(r => r.text()).then(xml =>  // one download per question
+      new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure', 'note', 'score-part', 'harmony'].includes(n) }).parse(xml)));
     const part = doc['score-partwise'].part[idx];
     const de = Math.max(1, input.de | 0), ate = Math.min(de + 23, input.ate | 0 || de);
     let divisions = 1, beats = 4, beatType = 4; const out = [];
@@ -261,12 +262,18 @@ async function handle(req, res) {
   // the conversation so far, as plain text turns (the app keeps it; tool calls stay on the server)
   const messages = conversa.slice(-20).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.texto || '').slice(0, 2000) })).filter(m => m.content);
   if (!messages.length || messages[0].role !== 'user') return fail(400, 'a conversa precisa começar com uma pergunta');
-  const ctx = { band, show, role: member.role, proposta: null };
+  const ctx = { band, show, role: member.role, proposta: null, cache: {} };
+  const t0 = Date.now();
   const quem = { band, uid: user.uid };
 
   try {
     let texto = '';
     for (let step = 0; step < MAX_STEPS; step++) {
+      if (Date.now() - t0 > TIME_BUDGET_MS) {  // a long job: hand over what is ready instead of being cut off
+        texto = ctx.proposta ? 'Preparei a primeira parte (abaixo). Depois de aplicar, peça "continua" que eu sigo de onde parei.'
+          : 'Esse pedido ficou grande demais para uma vez só. Peça por trechos, por exemplo: "sax alto do compasso 1 ao 40".';
+        break;
+      }
       const out = await bus.turn(db, { modulo: 'agente', system: editar ? SYSTEM + EDITAR(musica) : SYSTEM, messages, tools: TOOLS, maxTokens: 8000, quem });
       if (out.stop_reason === 'refusal') { texto = 'Não posso ajudar com esse pedido.'; break; }
       messages.push({ role: 'assistant', content: out.content });
@@ -289,7 +296,7 @@ async function handle(req, res) {
 }
 
 
-exports.agente = onRequest({ region: 'southamerica-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB', cors: ORIGINS, maxInstances: 10 }, handle);
+exports.agente = onRequest({ region: 'southamerica-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB', cors: ORIGINS, maxInstances: 10 }, handle);
 Object.defineProperty(exports, '__handle', { value: handle, enumerable: false });  // for local tests only
 
 /* robot: an editor asks for a song's audio (bands/{b}/jobs/{j}); this starts the Cloud Run Job "robo" for it */
