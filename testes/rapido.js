@@ -29,7 +29,7 @@ const srv = http.createServer((req, res) => {
   if (!f.startsWith(APP) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
   let b = fs.readFileSync(f);
   // só no teste: deixa o teste ver o estado do app, que fica guardado dentro de uma função fechada
-  if (f.endsWith('index.html')) b = String(b).replace('boot();\n})();', 'window.__t = { S, Robo, Caio };\nboot();\n})();')
+  if (f.endsWith('index.html')) b = String(b).replace('boot();\n})();', 'window.__t = { S, Robo, Caio, subscribeAnn, loadPart, panes, layoutPanes };\nboot();\n})();')
     .replace('  function applyMix(keep = true) {', '  window.__mix = () => ({ P, applyMix, mixKey, feito, audio });\n  function applyMix(keep = true) {');
   res.writeHead(200, { 'Content-Type': TIPOS[path.extname(f)] || 'application/octet-stream' }); res.end(b);
 });
@@ -328,6 +328,63 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   await p.waitForFunction(() => !document.querySelector('.caio-anexo .fotos').hidden && /2 páginas/.test(document.querySelector('.caio-anexo .fotos').textContent), null, { timeout: 8000 }).catch(() => {});
   confere('foto e PDF de papel anotado entram como páginas', /2 páginas vão/.test(await p.textContent('.caio-anexo .fotos')), await p.textContent('.caio-anexo .fotos'));
   await p.evaluate(() => document.querySelector('#caioX').click());
+  // Minha versão: o músico pede ao Caio, a mudança vai só para a versão dele, e a estante mostra "Minha versão"
+  const mv = await p.evaluate(async () => {
+    const { S, subscribeAnn, loadPart, panes, layoutPanes } = window.__t, out = {};
+    if (!panes.length) layoutPanes();
+    const mem = new Map(), subs = [];
+    const avisa = () => subs.forEach(f => f());
+    const col = path => ({
+      onSnapshot: () => () => {},
+      doc: id => ({ get: async () => ({ exists: mem.has(path + '/' + id), data: () => mem.get(path + '/' + id) }),
+        set: async d => { mem.set(path + '/' + id, JSON.parse(JSON.stringify(d))); avisa(); }, delete: async () => { mem.delete(path + '/' + id); avisa(); } }),
+      where: (f, op, v) => ({ onSnapshot: cb => { const run = () => cb({ docs: [...mem].filter(([k, d]) => k.startsWith(path + '/') && !k.slice(path.length + 1).includes('/') && d[f] === v).map(([k, d]) => ({ id: k.split('/').pop(), data: () => d })), docChanges: () => [] }); subs.push(run); run(); return () => {}; } }),
+    });
+    S.db = { collection: col };
+    const P = new Partitura(Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'base'], compassos: 4 })); P.setTokens(0, 1, 'C5:1 D5:1 E5:2');
+    const song = { title: 'Minha Teste', parts: [{ key: 'trompete', name: 'Trompete', src: '/pagina.pdf' }], partitura: { xml: URL.createObjectURL(new Blob([P.toString()])), versao: 2, partes: [{ key: 'trompete', name: 'Trompete' }, { key: 'base', name: 'Base' }] } };
+    mem.set('songs/mv', song);
+    S.songs = [{ id: 'mv', ...song }]; S.songId = 'mv'; S.canWrite = false; S.uid = 'u1';
+    let pedido = null;
+    const f0 = window.fetch; window.fetch = async (u, o) => { if (!String(u).includes('agente')) return f0(u, o); pedido = JSON.parse(o.body);
+      return new Response(JSON.stringify({ texto: 'Pus na sua versão.', podeAplicar: true, destino: 'pessoal', proposta: { resumo: 'x', mudancas: [
+        { tipo: 'corrigir_notas', musica: 'mv', parte: 'trompete', compasso: 1, notas: 'G5:4', descricao: 'trompete segura a nota no compasso 1' },
+        { tipo: 'corrigir_notas', musica: 'mv', parte: 'trompete', compasso: 2, notas: 'G5:3', descricao: 'soma errada' }] } }), { status: 200 }); };
+    document.querySelector('#editCaioBtn').click();
+    const d = document.querySelector('.drawer.caio');
+    out.abriu = !!d; if (!d) return out;
+    out.destinoTexto = d.querySelector('.caio-destino')?.textContent || '';
+    d.querySelector('#caioTxt').value = 'segura a primeira nota'; d.querySelector('#caioGo').click();
+    for (let i = 0; i < 60 && !d.querySelector('.caio-prop .btn.primary'); i++) await new Promise(r => setTimeout(r, 50));
+    out.pedido = pedido && { destino: pedido.destino, musica: pedido.musica };
+    const bt = d.querySelector('.caio-prop .btn.primary'); out.botao = bt?.textContent;
+    bt.click();
+    for (let i = 0; i < 100 && !d.querySelector('.caio-prop .hint'); i++) await new Promise(r => setTimeout(r, 50));
+    out.feito = d.querySelector('.caio-prop .hint')?.textContent || '';
+    out.salvo = mem.get('data/users/u1/pessoal__mv__trompete');
+    out.banda = mem.get('songs/mv').partitura.versao;
+    d.querySelector('#caioX').click();
+    // estante
+    subscribeAnn('mv');
+    S.minha[0] = true; loadPart(panes[0]);
+    for (let i = 0; i < 200 && !document.querySelector('.page.minha svg'); i++) await new Promise(r => setTimeout(r, 50));
+    out.chip = [...document.querySelectorAll('.chip')].map(c => c.textContent + (c.getAttribute('aria-pressed') === 'true' ? '*' : ''));
+    out.svg = !!document.querySelector('.page.minha svg');
+    out.aviso = document.querySelector('.minha-aviso')?.textContent || '';
+    // voltar para a da banda
+    [...document.querySelectorAll('.minha-aviso button')].find(b => /da banda/.test(b.textContent))?.click();
+    await new Promise(r => setTimeout(r, 300));
+    out.voltou = !document.querySelector('.page.minha') && !S.minha[0];
+    return out;
+  });
+  console.log('Minha versão');
+  confere('músico abre "Editar com o Caio" e vê que vale só para a versão dele', mv.abriu && /só para a sua versão/.test(mv.destinoTexto), JSON.stringify(mv));
+  confere('o pedido vai como versão pessoal', mv.pedido?.destino === 'pessoal' && mv.pedido?.musica === 'mv', JSON.stringify(mv.pedido));
+  confere('botão "Pôr na minha versão"', mv.botao === 'Pôr na minha versão', mv.botao);
+  confere('a mudança boa entra na versão dele; a de soma errada é recusada', mv.salvo?.mudancas?.length === 1 && mv.salvo.mudancas[0].notas === 'G5:4' && /Não deu/.test(mv.feito), JSON.stringify(mv.salvo) + ' / ' + mv.feito);
+  confere('a partitura da banda não muda', mv.banda === 2, mv.banda);
+  confere('a estante mostra "Minha versão" e desenha a versão dele', mv.chip?.includes('Minha versão*') && mv.svg && /1 mudança que só você vê/.test(mv.aviso), JSON.stringify([mv.chip, mv.aviso]));
+  confere('"Ver a da banda" volta para o PDF da banda', mv.voltou);
   console.log('Página');
   confere('nenhum erro de JavaScript', !erros.length, erros.join(' | '));
 

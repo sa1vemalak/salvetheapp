@@ -131,6 +131,14 @@ Como responder neste modo:
 - Se o pedido puder significar coisas diferentes, faça UMA pergunta curta com opções simples (ex.: "Mais suave só no começo ou na música toda?").
 - Não use termos técnicos na resposta; se precisar de um, explique em poucas palavras.`;
 
+// "Minha versão": the person's own copy of a part; the band's score stays as it is
+const PESSOAL = `
+
+MODO "MINHA VERSÃO". O que você propor vale SÓ para a versão pessoal de quem está falando com você, nunca para a banda toda.
+- As partes que você lê com ver_notas já mostram as mudanças pessoais desta pessoa por cima da partitura da banda.
+- Aqui você só pode propor: corrigir_notas, cifras e letra (o que muda as notas da parte dela) e anotar (vira anotação "Só eu" dela). Estrutura, instrumento novo, ordem do show, DAW, PDF e nomes são da banda: diga que isso só o dono muda e que ela pode enviar a versão dela para a banda pelo app ("Enviar para a banda"), e o dono aprova.
+- Diga que a mudança vai para a "Minha versão" dela, que aparece na estante tocando em "Minha versão" na parte.`;
+
 async function runTool(name, input, ctx) {
   const band = db.collection('bands').doc(ctx.band);
   const songsInShow = async () => {
@@ -188,7 +196,7 @@ async function runTool(name, input, ctx) {
   if (name === 'ver_notas') {
     if (!(await inShow(input.musica))) return { erro: 'Essa música não está no show aberto.' };
     const s = await data(band.collection('songs').doc(input.musica));
-    const P = await abrir(ctx, s);
+    const P = await abrir(ctx, s, input.musica);
     if (!P) return { erro: 'Esta música ainda não tem partitura editável (o Malak cria a partir do PDF ou do arquivo original).' };
     const partes = partesDe(s), keys = partes.map(x => x.key);
     const idx = keys.indexOf(input.parte);
@@ -209,7 +217,7 @@ async function runTool(name, input, ctx) {
   if (name === 'conferir_partitura') {
     if (!(await inShow(input.musica))) return { erro: 'Essa música não está no show aberto.' };
     const s = await data(band.collection('songs').doc(input.musica));
-    const P = await abrir(ctx, s);
+    const P = await abrir(ctx, s, input.musica);
     if (!P) return { erro: 'Esta música ainda não tem partitura editável.' };
     const keys = partesDe(s).map(x => x.key), r = P.checkBars();
     const k = pi => keys[pi] || P.parts()[pi]?.name || 'parte ' + (pi + 1);
@@ -236,7 +244,7 @@ async function runTool(name, input, ctx) {
     const ruins = await conferirProposta(band, input.mudancas || [], ctx);
     if (ruins.length) return { erro: 'Testei a proposta na partitura e estas mudanças não entram (veja "tempos" em ver_notas; a introdução pode estar em 2/4). Corrija e chame propor_mudancas de novo: ' + ruins.join('; ') };
     ctx.proposta = { resumo: input.resumo, mudancas: input.mudancas };
-    return { ok: true, aviso: 'Proposta entregue ao usuário. Ela só é aplicada se um dono ou editor aprovar no app.' };
+    return { ok: true, aviso: ctx.pessoal ? 'Proposta entregue. Se a pessoa aprovar, vale só na versão pessoal dela.' : 'Proposta entregue ao usuário. Ela só é aplicada se um dono ou editor aprovar no app.' };
   }
   return { erro: 'ferramenta desconhecida' };
 }
@@ -247,10 +255,37 @@ function partesDe(s) {
   return s?.player?.instrumentos || [];
 }
 // the song's score as a Partitura (the edited one, else the one the Malak read), one download per question
-async function abrir(ctx, s) {
+// In "Minha versão" (ctx.pessoal) the person's own changes go on top, as the app shows them.
+async function abrir(ctx, s, id) {
   const src = s?.partitura?.xml || s?.player?.lido; if (!src) return null;
   const xml = await (ctx.cache[src] = ctx.cache[src] || fetch(src).then(r => r.text()));
-  return new Partitura(xml, { DOMParser, XMLSerializer: XmlOut });
+  const P = new Partitura(xml, { DOMParser, XMLSerializer: XmlOut });
+  if (ctx.pessoal && id) {
+    const keys = partesDe(s).map(x => x.key);
+    for (const v of await versoesPessoais(ctx, id)) aplicarPessoal(P, keys.indexOf(v.parte), v.mudancas);
+  }
+  return P;
+}
+// "Minha versão": each person's own changes to one part of a song, kept in their private space
+// (users/{uid}/ann-{band}/pessoal__{song}__{part}, next to their "Só eu" notes); the band's score never changes
+const TIPOS_PESSOAIS = ['corrigir_notas', 'cifras', 'letra', 'anotar'];
+async function versoesPessoais(ctx, musica) {
+  const snap = await db.collection('users').doc(ctx.pessoal.uid).collection('ann-' + ctx.band).where('musica', '==', musica).get();
+  return snap.docs.map(d => dec(d.data())).filter(v => v && v.tipo === 'versao_pessoal' && Array.isArray(v.mudancas));
+}
+// the same order as the app (app/editor.js > versaoPessoal): notes and chords first, then lyrics; a change that no
+// longer fits the band's newer score is skipped (the app tells the person)
+function aplicarPessoal(P, pi, mudancas) {
+  if (pi < 0 || !P.parts()[pi]) return [];
+  const falhou = [];
+  for (const c of [...mudancas].sort((a, b) => (a.tipo === 'letra') - (b.tipo === 'letra'))) {
+    try {
+      if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras);
+      else if (c.tipo === 'letra') P.setLyrics(pi, c.compasso, c.silabas);
+      else if (c.tipo === 'corrigir_notas') P.setTokens(pi, c.compasso, c.notas);
+    } catch (e) { falhou.push(c); }
+  }
+  return falhou;
 }
 class XmlOut { serializeToString(doc) { return doc.toString(); } }
 
@@ -260,13 +295,15 @@ async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
   const ruins = [], porMusica = {};
   const TIPOS = ['anotar', 'remover_anotacao', 'ordem_show', 'marcador_daw', 'nota_musica', 'corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra', 'redesenhar_pdf', 'renomear_musica'];
   for (const m of mudancas) if (!m || !TIPOS.includes(m.tipo)) ruins.push(`mudança "${m && m.tipo}" não existe; use só os tipos da lista`);
+  if (ctx.pessoal) for (const m of mudancas) if (m && !TIPOS_PESSOAIS.includes(m.tipo))
+    ruins.push(`"${m.tipo}" não entra na versão pessoal (lá só notas, cifras, letra e anotações da própria parte); isso só o dono muda para a banda toda`);
   for (const m of mudancas) if (m && ['corrigir_notas', 'cifras', 'letra', 'estrutura', 'nova_parte', 'redesenhar_pdf'].includes(m.tipo) && typeof m.musica !== 'string') ruins.push(`${m.tipo}: falta a música`);
   for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
   for (const [id, lista] of Object.entries(porMusica)) {
     const s = await data(band.collection('songs').doc(id));
-    let P; try { P = await abrir(ctx, s); } catch (e) { ruins.push(`${id}: não consegui abrir a partitura (${e.message})`); continue; }
+    let P; try { P = await abrir(ctx, s, id); } catch (e) { ruins.push(`${id}: não consegui abrir a partitura (${e.message})`); continue; }
     if (!P) { ruins.push(`${id}: a música não tem partitura editável`); continue; }
-    const soLida = !s?.partitura?.xml;   // corrections to a score only the Malak read go to the Malak's queue
+    const soLida = !s?.partitura?.xml && !ctx.pessoal;   // corrections to a score only the Malak read go to the Malak's queue (a personal version is rewritten in the app)
     const keys = partesDe(s).map(x => x.key);
     for (const c of lista.filter(x => x.tipo === 'nova_parte')) {
       try {
@@ -333,7 +370,8 @@ async function handle(req, res) {
   let user;
   try { user = await admin.auth().verifyIdToken(String(req.headers.authorization || '').replace(/^Bearer /, '')); }
   catch { return fail(401, 'Entre no app de novo.'); }
-  const { band, show, conversa, modo, musica } = req.body || {};
+  const { band, show, conversa, modo, musica, destino } = req.body || {};
+  const pessoal = destino === 'pessoal';
   const editar = modo === 'editar' && typeof musica === 'string' && /^[\w.-]{1,120}$/.test(musica);
   if (typeof band !== 'string' || typeof show !== 'string' || !Array.isArray(conversa) || !conversa.length) return fail(400, 'pedido incompleto');
   const member = await data(db.collection('bands').doc(band).collection('members').doc(user.uid));
@@ -360,7 +398,7 @@ async function handle(req, res) {
     if (last.role !== 'user') return fail(400, 'as imagens vão junto com uma pergunta');
     last.content = [...fotos.blocos, { type: 'text', text: last.content }];
   }
-  const ctx = { band, show, role: member.role, proposta: null, cache: {} };
+  const ctx = { band, show, role: member.role, proposta: null, cache: {}, ...(pessoal ? { pessoal: { uid: user.uid } } : {}) };
   const t0 = Date.now();
   const quem = { band, uid: user.uid };
 
@@ -372,7 +410,7 @@ async function handle(req, res) {
           : 'Esse pedido ficou grande demais para uma vez só. Peça por trechos, por exemplo: "sax alto do compasso 1 ao 40".';
         break;
       }
-      const out = await bus.turn(db, { modulo: 'agente', system: editar ? SYSTEM + EDITAR(musica) : SYSTEM, messages, tools: TOOLS, maxTokens: 8000, quem });
+      const out = await bus.turn(db, { modulo: 'agente', system: (editar ? SYSTEM + EDITAR(musica) : SYSTEM) + (pessoal ? PESSOAL : ''), messages, tools: TOOLS, maxTokens: 8000, quem });
       if (out.stop_reason === 'refusal') { texto = 'Não posso ajudar com esse pedido.'; break; }
       messages.push({ role: 'assistant', content: out.content });
       texto = out.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || texto;
@@ -386,7 +424,8 @@ async function handle(req, res) {
       messages.push({ role: 'user', content: results });
       if (step === MAX_STEPS - 1) texto = texto || 'Esse pedido ficou grande demais. Tente dividir em partes menores.';
     }
-    res.json({ texto: texto || (ctx.proposta ? 'Preparei as mudanças abaixo.' : 'Pronto.'), proposta: ctx.proposta, podeAplicar: ['dono', 'editor'].includes(member.role) });
+    res.json({ texto: texto || (ctx.proposta ? 'Preparei as mudanças abaixo.' : 'Pronto.'), proposta: ctx.proposta,
+      podeAplicar: pessoal || ['dono', 'editor'].includes(member.role), ...(pessoal ? { destino: 'pessoal' } : {}) });
   } catch (e) {
     console.error(e);
     fail(e.status || 500, String(e.message || e));
@@ -451,4 +490,5 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
   }
 });
 exports.__fotosDoPedido = fotosDoPedido;  // tests
+exports.__aplicarPessoal = aplicarPessoal;
 exports.__conferirProposta = (bandId, mudancas) => conferirProposta(db.collection('bands').doc(bandId), mudancas);  // tests

@@ -308,6 +308,12 @@ const Editor = (() => {
   // then the structure ({tipo: 'estrutura', acao, ...}), then bar rewrites ({parte (instrument key), compasso, notas} or cifras)
   async function aplicarCorrecoes(song, lista) {
     const P = new Partitura(await (await fetch(song.partitura.xml)).text());
+    const { feitas, erros, partes, novas } = aplicarNaPartitura(P, song, lista);
+    if (feitas.length) await salvarPartitura(song, P.toString(), 'Antes das mudanças do Caio', novas.length ? { partes, semPdf: (song.partitura || {}).origem === 'criada no app' ? null : novas } : {});
+    return { feitas: feitas.length, erros };
+  }
+  // the changes on a Partitura already open (the band's score, or a copy for someone's "Minha versão")
+  function aplicarNaPartitura(P, song, lista) {
     const slugify = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const saved = ((song.partitura || {}).partes || (song.player || {}).instrumentos || []);
     // the score's instruments in order (key + name); parts the list doesn't cover get a key from their name
@@ -348,11 +354,34 @@ const Editor = (() => {
         else P.setTokens(pi, c.compasso, c.notas);
         feitas.push(c);
       }
-      catch (e) { erros.push(`${c.parte} c.${c.compasso}: ${e.message}`); }
+      catch (e) { erros.push(`${c.parte} c.${c.compasso}: ${e.message}`); c.__falhou = true; }
     }
-    if (feitas.length) await salvarPartitura(song, P.toString(), 'Antes das mudanças do Caio', novas.length ? { partes, semPdf: (song.partitura || {}).origem === 'criada no app' ? null : novas } : {});
-    return { feitas: feitas.length, erros };
+    return { feitas, erros, partes, novas, achar };
   }
-  return { open, criar, partitura: () => st.P, aplicarCorrecoes, salvarPartitura };
+
+  /* ---------- "Minha versão": the band's score with one person's own changes to one part ----------
+     The changes are kept as a list (not a copy of the score), so when the band's score gets a new version they are
+     done again on top of it; one that no longer fits is left out and the person is told. */
+  async function versaoPessoal(song, parte, mudancas) {
+    const src = song.partitura?.xml || song.player?.lido; if (!src) throw new Error('esta música ainda não tem partitura editável');
+    const P = new Partitura(await (await fetch(src)).text());
+    const lista = mudancas.map(m => ({ ...m, parte }));
+    const r = aplicarNaPartitura(P, song, lista);
+    const pi = r.achar(parte);
+    if (pi < 0) throw new Error('esta parte não está na partitura');
+    return { P, pi, xml: P.onlyPart(pi), falharam: lista.map((m, k) => m.__falhou ? mudancas[k] : null).filter(Boolean), erros: r.erros };
+  }
+  // draws a MusicXML (one part) into a box, page by page, for reading on the stand
+  async function desenhar(xml, box) {
+    await loadVerovio();
+    const w = Math.max(320, Math.min(1100, box.clientWidth || 800)), scale = 40;
+    tk.setOptions({ pageWidth: Math.round(w * 100 / scale), pageHeight: Math.round(w * 1.414 * 100 / scale), scale, adjustPageHeight: true,
+      pageMarginLeft: 30, pageMarginRight: 30, pageMarginTop: 40, footer: 'none', header: 'auto', breaks: 'auto', svgViewBox: true });
+    if (!tk.loadData(xml)) throw new Error('não consegui desenhar esta partitura');
+    const frag = document.createDocumentFragment();
+    for (let i = 1, n = tk.getPageCount(); i <= n; i++) { const pg = el('div', 'page minha'); pg.innerHTML = tk.renderToSVG(i); frag.append(pg); }
+    box.replaceChildren(frag);
+  }
+  return { open, criar, partitura: () => st.P, aplicarCorrecoes, salvarPartitura, versaoPessoal, desenhar };
 })();
 document.getElementById('editScoreBtn')?.addEventListener('click', () => Editor.open());
