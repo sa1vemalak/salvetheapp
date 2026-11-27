@@ -78,3 +78,10 @@ Pedido: "faça os 3" (validade dos links, juntar a branch na main, publicar as r
   local continuam respondendo.
 - **Atenção:** o editor de partitura ainda não está no repositório. Quem o fez precisa salvar o código-fonte, senão
   a próxima publicação feita a partir do repositório o apaga.
+
+**Editor de partitura salvo no repositório (mesmo dia).** `app/editor.js`, `app/partitura.js` e `app/index.html`
+foram copiados do que está no ar (versão 20261127040225). O `index.html` do ar já continha tudo o que estava no
+repositório e mais o editor; as linhas que parecem removidas na comparação são linhas estendidas (por exemplo,
+`corrigir_notas` passou a aceitar também `cifras`).
+- Ainda falta: o Caio no servidor (`server/functions/index.js`) do repositório só conhece `corrigir_notas`. Se o app
+  no ar usa `cifras`, a versão publicada das funções também está mais nova que o repositório e precisa ser salva.

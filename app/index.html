@@ -464,7 +464,39 @@ body.at-home .palette { display: none; }
 /* annotation palette: one "Anotar" button until you want to write */
 .palette.closed { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); transform: none; padding: 4px; border-radius: 999px; }
 .palette.closed > *:not(#annotBtn) { display: none; }
-.palette .tool[data-tool="read"] { display: none; }  /* "Fechar" goes back to reading */
+.palette .tool[data-tool="read"] { display: none; }
+/* score editor (editor.js) */
+.ed-screen { position: fixed; inset: 0; z-index: 45; background: var(--bg); display: flex; flex-direction: column; }
+body.editing-score .palette, body.editing-score .moremenu { display: none; }
+.ed-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px max(12px, env(safe-area-inset-left, 0px)); background: var(--chrome); border-bottom: 1px solid var(--line); }
+.ed-title { font: 700 16px var(--f-display); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+.ed-parts { flex: 1 1 200px; }
+.ed-acts { display: flex; gap: 6px; align-items: center; }
+.ed-acts .iconbtn { min-width: 40px; padding: 0 10px; font-size: 18px; }
+.ed-acts .iconbtn:disabled, .ed-tools .btn:disabled { opacity: .4; }
+.addblank { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.addblank input { margin-top: 3px; }
+.ed-new fieldset { border: 1px solid var(--line); border-radius: 12px; margin: 0; padding: 10px 12px; }
+.ed-new legend { font-weight: 500; font-size: 14px; padding: 0 4px; }
+.ed-ins { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
+.ed-ins label { display: flex; gap: 8px; align-items: center; font-size: 15px; min-height: 32px; }
+.ed-new .ed-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.ed-new .ed-row label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.ed-new select, .ed-new input[type=number] { padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font-size: 16px; }
+.ed-new .row { display: flex; justify-content: flex-end; gap: 8px; }
+.ed-pages { flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; padding: 12px; display: flex; flex-direction: column; align-items: center; gap: 12px; outline: none; }
+.ed-page { background: #fff; box-shadow: var(--shadow); border-radius: 4px; max-width: 100%; overflow: hidden; }
+.ed-page svg { display: block; height: auto; max-width: 100%; }
+.ed-page g.note, .ed-page g.rest, .ed-page g.chord, .ed-page g.mRest { cursor: pointer; }
+.ed-page .ed-sel, .ed-page .ed-sel * { fill: #2f45b5 !important; stroke: #2f45b5; }
+.ed-foot { background: var(--chrome); border-top: 1px solid var(--line); padding: 8px max(12px, env(safe-area-inset-left, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)); }
+.ed-info { margin: 0 0 6px; font-size: 14px; color: var(--muted); }
+.ed-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.ed-grp { display: flex; gap: 4px; align-items: center; }
+.ed-tools .btn { min-width: 40px; min-height: 40px; padding: 4px 10px; font-size: 18px; }
+.ed-tools .btn[data-k="rest"], .ed-tools .btn[data-k="type"] { font-size: 14px; }
+.ed-tools .btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.ed-dyn { min-height: 40px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; padding: 0 8px; font: 14px var(--f-body); }  /* "Fechar" goes back to reading */
 .tool.annot { flex-direction: row; gap: 8px; min-width: 0; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--fg); }
 .palette.closed .tool.annot { background: var(--accent); color: var(--accent-ink); }
 .palette.closed .tool.annot svg { color: var(--accent-ink); }
@@ -496,6 +528,7 @@ body.at-home .palette { display: none; }
   .palette:not(.closed) .sep:first-of-type { display: none; }
   .home-in { gap: 18px; }
 }
+@media (max-width: 420px) { #playerBtn .lbl { display: none; } }  /* small phones: room for the song name */
 </style>
 
 <div class="app">
@@ -507,6 +540,8 @@ body.at-home .palette { display: none; }
       <select id="song" aria-label="Música"></select>
     </div>
     <div class="actions">
+      <button class="iconbtn" id="editScoreBtn" title="Editar a partitura (notas, articulações, dinâmicas)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M3 4h7M3 8h5"/></svg><span class="lbl">Editar</span></button>
       <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a música (player)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Ouvir</span></button>
       <button class="iconbtn" id="moreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu" title="Mais opções">
@@ -519,14 +554,14 @@ body.at-home .palette { display: none; }
       <button class="iconbtn" id="readBtn" title="Só a partitura, em tela cheia">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span class="lbl">Tela cheia</span></button>
       <p class="mm-h">Música</p>
-      <button class="iconbtn" id="notesBtn" title="Notas do ensaio">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
       <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
-      <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
       <button class="iconbtn" id="logicBtn" aria-pressed="false" hidden title="A partitura segue a DAW">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9M11 15v-4M15 15V8M19 15v-2"/></svg><span class="lbl">Seguir a DAW (Logic)</span></button>
+      <button class="iconbtn" id="notesBtn" title="Notas do ensaio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
+      <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
       <button class="iconbtn" id="addBtn" title="Adicionar música ou parte">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar música ou parte</span></button>
       <p class="mm-h">Banda</p>
@@ -623,10 +658,11 @@ body.at-home .palette { display: none; }
 </nav>
 
 <script src="lib/pdf.min.js"></script>
+<script src="partitura.js"></script>
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261127024204';
+window.APP_VERSION = '20261127040225';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -1328,9 +1364,11 @@ const Caio = (() => {
     if (m.tipo === 'ordem_show') return 'Nova ordem do show: ' + m.ordem.map(t).join(' → ');
     if (m.tipo === 'marcador_daw') return `${t(m.musica)}: a partitura troca no compasso ${m.compasso_daw} da DAW`;
     if (m.tipo === 'nota_musica') return `${t(m.musica)}: notas da música passam a ser “${m.texto.slice(0, 120)}${m.texto.length > 120 ? '…' : ''}”`;
-    if (m.tipo === 'corrigir_notas') {
-      const inst = (S.songs.find(x => x.id === m.musica)?.player?.instrumentos || []).find(x => x.key === m.parte)?.name || m.parte;
-      return `${t(m.musica)} · ${inst} · compasso ${m.compasso}: ${m.descricao || 'corrigir notas'} (${m.notas})`;
+    if (m.tipo === 'corrigir_notas' || m.tipo === 'cifras') {
+      const sg = S.songs.find(x => x.id === m.musica);
+      const inst = (sg?.partitura?.partes || sg?.player?.instrumentos || []).find(x => x.key === m.parte)?.name || m.parte;
+      return m.tipo === 'cifras' ? `${t(m.musica)} · ${inst} · compasso ${m.compasso}: cifras ${m.cifras || '(apagar)'}`
+        : `${t(m.musica)} · ${inst} · compasso ${m.compasso}: ${m.descricao || 'corrigir notas'} (${m.notas})`;
     }
     if (m.tipo === 'renomear_musica') return `${t(m.musica)} passa a se chamar “${m.titulo}”${m.rotulo ? ' (' + m.rotulo + ')' : ''}`;
     return m.descricao || m.tipo;
@@ -1354,7 +1392,7 @@ const Caio = (() => {
         const chosen = p.mudancas.filter((_, k) => checks[k].checked); if (!chosen.length) return;
         ok.disabled = true; ok.textContent = 'Aplicando…';
         const r = await apply(chosen, p.resumo);
-        const notas = chosen.some(x => x.tipo === 'corrigir_notas');
+        const notas = chosen.some(x => x.tipo === 'corrigir_notas' || x.tipo === 'cifras');
         conversa[i].feito = r.erros.length ? `Apliquei ${r.ok} de ${chosen.length}. Não deu: ${r.erros.join('; ')}` : `Aplicado (${r.ok}). As músicas alteradas têm a versão anterior guardada em Versões.${notas ? ' O Malak está gerando o áudio corrigido (1 a 2 minutos).' : ''}`;
         keep(); paint(); toast(r.erros.length ? 'Algumas mudanças não foram aplicadas.' : 'Mudanças aplicadas.');
       };
@@ -1366,8 +1404,8 @@ const Caio = (() => {
 
   async function apply(list, resumo) {
     let ok = 0; const erros = [];
-    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas'].includes(m.tipo)).map(m => m.musica))];
-    const rerender = new Set();
+    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas', 'cifras'].includes(m.tipo)).map(m => m.musica))];
+    const rerender = new Set(); const porPartitura = {};
     for (const id of songsTouched) { try { await Versions.snapshot(id, 'Antes das mudanças do Caio: ' + (resumo || '')); } catch {} }
     for (const m of list) {
       try {
@@ -1392,9 +1430,14 @@ const Caio = (() => {
           await ref.update({ switchBars: { ...(cur.switchBars || {}), [m.musica]: m.compasso_daw }, updatedMarkers: Date.now() });
         } else if (m.tipo === 'nota_musica') {
           await S.db.collection('songs').doc(m.musica).update({ notes: m.texto });
+        } else if (m.tipo === 'cifras') {
+          const song = (await S.db.collection('songs').doc(m.musica).get()).data();
+          if (!song?.partitura?.xml) throw new Error('esta música ainda não tem partitura editável');
+          (porPartitura[m.musica] = porPartitura[m.musica] || []).push(m); continue;
         } else if (m.tipo === 'corrigir_notas') {
           const song = (await S.db.collection('songs').doc(m.musica).get()).data();
-          if (!song?.player?.lido) throw new Error('esta música não tem partitura lida pelo Malak');
+          if (song?.partitura?.xml) { (porPartitura[m.musica] = porPartitura[m.musica] || []).push(m); continue; }  // applied to the score below
+          if (!song?.player?.lido) throw new Error('esta música ainda não tem partitura editável');
           const fila = [...(song.correcoes || []).filter(c => !(c.parte === m.parte && c.compasso === m.compasso)),
             { parte: m.parte, compasso: m.compasso, notas: m.notas, descricao: m.descricao || '', por: SALVE.ctx().user.uid, em: Date.now() }];
           await S.db.collection('songs').doc(m.musica).update({ correcoes: fila });
@@ -1404,6 +1447,12 @@ const Caio = (() => {
         } else throw new Error('tipo desconhecido');
         ok++;
       } catch (e) { erros.push(label(m, Object.fromEntries(S.songs.map(s => [s.id, s.title]))) + ' (' + (e.message || e) + ')'); }
+    }
+    for (const [id, lista] of Object.entries(porPartitura)) {  // the edited score gets a new version (and new audio)
+      try {
+        const song = (await S.db.collection('songs').doc(id).get()).data(); song.id = id;
+        const r = await Editor.aplicarCorrecoes(song, lista); ok += r.feitas; erros.push(...r.erros);
+      } catch (e) { erros.push((e.message || String(e))); }
     }
     for (const id of rerender) await Robo.start(id, null, 'lido');  // the robot rebuilds the audio with the corrections
     return { ok, erros };
@@ -1430,12 +1479,12 @@ const Robo = (() => {
     try { await S.db.collection('jobs').doc(songId + '__' + Date.now()).set(job); toast('O Mestrinho começou a escutar. Leva uns 20 minutos; pode continuar usando o app.'); }
     catch { toast('Não consegui chamar o Mestrinho.'); }
   }
-  async function start(songId, bpm, fonte) {
-    if (!S.canWrite) { toast('Só o dono ou um editor pode gerar o áudio.'); return; }
+  async function start(songId, bpm, fonte, quiet) {
+    if (!S.canWrite) { if (!quiet) toast('Só o dono ou um editor pode gerar o áudio.'); return; }
     const job = { song: songId, tipo: 'audio', status: 'pendente', criadoEm: Date.now(), uid: SALVE.ctx().user.uid, fonte: fonte || 'pdf' };
     if (bpm) job.bpm = +bpm;
-    try { await S.db.collection('jobs').doc(songId + '__' + Date.now()).set(job); toast('O Malak começou. Leva alguns minutos; pode continuar usando o app.'); }
-    catch { toast('Não consegui chamar o Malak.'); }
+    try { await S.db.collection('jobs').doc(songId + '__' + Date.now()).set(job); if (!quiet) toast('O Malak começou. Leva alguns minutos; pode continuar usando o app.'); }
+    catch { if (!quiet) toast('Não consegui chamar o Malak.'); }
   }
   function paint(song, box, data) {
     lastPaint = [song, box, data]; watch();
@@ -1481,7 +1530,7 @@ const Robo = (() => {
     const bpm = document.createElement('input'); bpm.type = 'number'; bpm.min = 20; bpm.max = 320; bpm.placeholder = 'auto'; bpm.setAttribute('aria-label', 'Andamento (batidas por minuto)');
     if (data?.bpm && !data.tempoLido) bpm.value = Math.round(data.bpm);
     const lab = el('label', 'robo-bpm'); lab.append('Andamento ♩=', bpm);
-    const go = el('button', 'btn primary', done ? 'Gerar de novo' : 'Gerar áudio'); go.type = 'button'; go.onclick = () => start(song.id, bpm.value, data?.lido ? 'lido' : 'pdf');
+    const go = el('button', 'btn primary', done ? 'Gerar de novo' : 'Gerar áudio'); go.type = 'button'; go.onclick = () => start(song.id, bpm.value, song.partitura?.xml ? 'partitura' : data?.lido ? 'lido' : 'pdf');
     c.append(lab, go);
     if (done) { const ok = el('button', 'btn', 'Está certo, conferido'); ok.type = 'button'; ok.onclick = async () => { try { await S.db.collection('songs').doc(song.id).update({ 'player.conferido': true, status: 'pronta' }); toast('Música conferida.'); } catch { toast('Não consegui salvar.'); } }; c.append(ok); }
     return c;
@@ -1627,6 +1676,7 @@ function openAdd() {
   m.innerHTML = `<h3>Adicionar música</h3>
     <div class="field"><label for="newTitle">Música</label><input type="text" id="newTitle" list="songList" placeholder="Nome da música"></div>
     <datalist id="songList"></datalist>
+    <label class="addblank"><input type="checkbox" id="newBlank"> <span><b>Criar a partitura aqui no app</b><br><span class="hint">Começa em branco: você escolhe os instrumentos e escreve tocando nas notas ou pedindo ao Caio.</span></span></label>
     <div class="field"><label for="newFiles">PDFs das partes</label><input type="file" id="newFiles" accept="application/pdf,.pdf" multiple></div>
     <div class="hint">Um PDF por parte (grade, base, trompete…). Dê o nome de cada parte ao lado do arquivo. Se o nome da música já existir, as partes entram nela.</div>
     <div class="field"><label for="newSrc">Arquivo original <span class="hint" style="display:inline">(opcional)</span></label><input type="file" id="newSrc" accept=".musicxml,.mxl,.xml,.mscz,.mscx,.mid,.midi,.gp,.gpx,.gp5,.sib,.musx,.dorico" multiple></div>
@@ -1657,7 +1707,8 @@ function openAdd() {
     if (!title) { toast('Dê um nome para a música.'); return; }
     const srcs = [...($('#newSrc', m).files || [])];
     const guiaFile = ($('#newGuia', m).files || [])[0];
-    if (!files.length && !srcs.length && !guiaFile) { toast('Escolha pelo menos um PDF ou a gravação.'); return; }
+    const blank = $('#newBlank', m).checked;
+    if (!files.length && !srcs.length && !guiaFile && !blank) { toast('Escolha pelo menos um PDF ou a gravação, ou marque “Criar a partitura aqui no app”.'); return; }
     const btn = $('#doAdd', m); btn.disabled = true;
     const existing = S.songs.find(s => slug(s.title) === slug(title));
     const id = existing ? existing.id : slug(title);
@@ -1696,6 +1747,7 @@ function openAdd() {
       S.songId = id; ls.set('song', id);
       toast(existing ? 'Partes adicionadas.' : 'Música adicionada.');
       shut();
+      if (blank && !(existing?.partitura?.xml)) Editor.criar({ ...doc, id });
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Adicionar';
       toast(e?.code === 'too_large' ? 'Um dos arquivos passa de 200 MB.' : 'Não consegui enviar. Confira a internet e tente de novo.');
@@ -1809,10 +1861,36 @@ const Player = (() => {
     const lay = P.layout?.parts?.[pane.part]; if (!lay) return null;
     const bx = lay.boxes; let i = -1;
     for (let k = 0; k < bx.length; k++) { if (bx[k][0] <= n) i = k; else break; }
-    if (i < 0 || bx[i][1] <= bx[i][0] || n > bx[i][1]) return null;
-    let j = i;
-    while (j + 1 < bx.length && bx[j + 1][1] > bx[j + 1][0] && bx[j + 1][0] === bx[j][1] + 1) j++;  // rests split by a letter
-    return { left: bx[j][1] - n + 1, entry: bx[j + 1] || null };
+    if (i >= 0 && bx[i][1] > bx[i][0] && n <= bx[i][1]) {  // the PDF draws the long rest as one bar with a number
+      let a = i, j = i;
+      while (j + 1 < bx.length && bx[j + 1][1] > bx[j + 1][0] && bx[j + 1][0] === bx[j][1] + 1) j++;  // rests split by a letter
+      while (a > 0 && bx[a - 1][1] > bx[a - 1][0] && bx[a - 1][1] + 1 === bx[a][0]) a--;
+      return { left: bx[j][1] - n + 1, at: n - bx[a][0] + 1, total: bx[j][1] - bx[a][0] + 1, entry: bx[j + 1] || null };
+    }
+    // the PDF writes every empty bar: count from the app's own score (4 or more silent bars in a row)
+    const sp = (restSpans(pane.part) || []).find(x => x.from <= n && n <= x.to);
+    if (!sp) return null;
+    return { left: sp.to - n + 1, at: n - sp.from + 1, total: sp.bars, entry: boxFor(pane, sp.to + 1) || null };
+  }
+  // silent stretches per instrument, read from the song's editable score (loaded once per score version)
+  const rests = { url: null, parts: null, loading: null };
+  function restSpans(partKey) {
+    const song = currentSong(), url = song?.partitura?.xml;
+    if (!url || typeof Partitura === 'undefined') return null;
+    if (rests.url !== url) {
+      rests.url = url; rests.parts = null;
+      rests.loading = fetch(url).then(r => r.text()).then(t => {
+        if (rests.url !== url) return;
+        const X = new Partitura(t), keys = (song.player?.instrumentos || []).map(x => x.key), out = {};
+        const slug = v => String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        X.parts().forEach((p, i) => { out[keys[i] || slug(p.name)] = X.restSpans(i, 4); });
+        rests.parts = out;
+      }).catch(() => {});
+    }
+    if (!rests.parts) return null;
+    if (rests.parts[partKey]) return rests.parts[partKey];
+    const k = Object.keys(rests.parts).find(x => x.startsWith(partKey) || String(partKey).startsWith(x));
+    return k ? rests.parts[k] : null;
   }
   function placeBox(node, b) {
     node.style.left = (b[3] * 100) + '%'; node.style.top = (b[4] * 100) + '%';
@@ -1837,7 +1915,7 @@ const Player = (() => {
       if (ri) {
         if (!badge) { badge = el('div', 'restbadge'); hl.append(badge); }
         badge.className = 'restbadge' + (ri.left <= 2 ? ' soon' : '');
-        badge.textContent = ri.left > 1 ? `pausa · faltam ${ri.left}` : 'entra no próximo';
+        badge.textContent = ri.left > 1 ? `pausa ${ri.at} de ${ri.total} · faltam ${ri.left}` : `${ri.total} de ${ri.total} · entra no próximo`;
         const ev = ri.entry && pane.views[ri.entry[2] - 1];
         if (ev && ri.left <= 2) {
           const m = el('div', 'entrymark'); placeBox(m, ri.entry);
@@ -3120,5 +3198,6 @@ async function boot() {
 boot();
 })();
 </script>
+<script src="editor.js"></script>
 
 </body></html>
