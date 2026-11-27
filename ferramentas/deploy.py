@@ -4,6 +4,7 @@ Uso (da raiz do repositório):
     python3 ferramentas/deploy.py            # publica nos dois endereços do app (salvetheapp-3cceb e salvetheapp)
     SITE=salvetheapp python3 ferramentas/deploy.py   # só um deles
     DRY=1 python3 ferramentas/deploy.py      # só confere, não publica
+    FULL=1 python3 ferramentas/deploy.py     # conferência pesada depois de publicar (baixa todos os áudios)
 
 Chave: ferramentas/.t, ou a variável TOKEN, ou `gcloud auth print-access-token`.
 
@@ -27,6 +28,7 @@ SITES = os.environ['SITE'].split(',') if os.environ.get('SITE') else ['salvethea
 DADOS = re.compile(r'^/?(scores|_blob)/')          # dados das bandas: ficam no ar, não no repositório
 GERADOS = {'index.html', 'fb.js', 'version.json', 'local/manifest.json', 'local/index.html', 'local/local.js'}
 DRY, FORCE = bool(os.environ.get('DRY')), bool(os.environ.get('FORCE'))
+FULL = bool(os.environ.get('FULL'))  # conferência pesada: baixa cada arquivo das bandas inteiro (a normal só confirma que existe)
 
 
 def pare(msg):
@@ -44,6 +46,18 @@ def token():
     r = subprocess.run(['gcloud', 'auth', 'print-access-token'], capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip(): return r.stdout.strip()
     pare('sem chave: crie ferramentas/.t, defina TOKEN ou entre no gcloud')
+
+
+def existe(site, path):
+    """Confirma que o arquivo está no ar sem baixar (rápido); tenta de novo se a conexão cair."""
+    for i in range(4):
+        try:
+            urllib.request.urlopen(urllib.request.Request(f'https://{site}.web.app/{path}', method='HEAD'), timeout=30); return True
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return False
+        except Exception: pass
+        time.sleep(1 + i)
+    return True  # a conexão caiu 4 vezes: não dá para afirmar que sumiu
 
 
 def baixa(site, path):
@@ -216,7 +230,10 @@ for site in SITES:
         if v.get('v') == ver: break
         time.sleep(5)
     else: pare(f'{site}: version.json no ar é {v}, esperado {ver}')
-    faltam = [e['path'] for e in dados if baixa(site, urllib.parse.quote(e['path'])) is None]
+    q = [urllib.parse.quote(e['path']) for e in dados]
+    with ThreadPoolExecutor(16) as ex:
+        tem = list(ex.map((lambda x: baixa(site, x) is not None) if FULL else (lambda x: existe(site, x)), q))
+    faltam = [e['path'] for e, t in zip(dados, tem) if not t]
     if faltam:
         call(f'{API}/{S}/releases?versionName={atual}', {'message': 'volta automática: faltaram dados das bandas'})
         pare(f'{site}: {len(faltam)} arquivos das bandas sumiram; voltei para a versão anterior ({atual})')
