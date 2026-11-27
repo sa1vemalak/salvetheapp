@@ -293,7 +293,59 @@ def eventos(sk, arr):
     return {k: [x[:6] for x in v] for k, v in res.items()}
 
 
-def musicxml(sk, arr, path, titulo='Arranjo do Mestrinho'):
+def _cs(name):
+    """chord name as heard (Bbm7, F#, C6...) -> music21 ChordSymbol"""
+    import music21 as m21
+    m = re.fullmatch(r'([A-G])([#b]?)(.*)', name or '')
+    if not m:
+        return None
+    try:
+        return m21.harmony.ChordSymbol(m.group(1) + m.group(2).replace('b', '-') + m.group(3))
+    except Exception:
+        return None
+
+
+def voicing(name):
+    """the tour charts' voicing (same as the Malak): chord in the middle register, bass in the low octave"""
+    cs = _cs(name)
+    if cs is None:
+        return None, None
+    root = cs.root().pitchClass
+    bass = cs.bass().pitchClass if cs.bass() is not None else root
+    iv = sorted({(p.pitchClass - root) % 12 for p in cs.pitches})
+    base = 53 + ((root - 53) % 12)
+    tones = sorted(base + x for x in iv)
+    while tones[-1] > 76:
+        tones = sorted(tones[:-1] + [tones[-1] - 12])
+    return tones[:4], 36 + ((bass - 36) % 12)
+
+
+def base_part(sk, last):
+    """chord symbols + held piano chord with the bass inside, one per chord change (the Malak plays it as piano + bass)"""
+    import music21 as m21
+    part = m21.stream.Part(); part.partName = 'Base'; part.insert(0, m21.instrument.Piano())
+    cif = {b['n']: b['cifra'] for b in sk['compassos']}
+    prev = None
+    for n in range(1, last + 1):
+        m = m21.stream.Measure(number=n)
+        if n == 1:
+            m.insert(0, m21.meter.TimeSignature('4/4'))
+        c = cif.get(n) or prev
+        tones, bass = voicing(c) if c else (None, None)
+        if tones:
+            if c != prev:
+                cs = _cs(c); cs.writeAsChord = False; cs.quarterLength = 0
+                m.insert(0, cs)
+            ch = m21.chord.Chord([bass] + tones, quarterLength=4); ch.volume.velocity = 64
+            m.insert(0, ch)
+        else:
+            m.insert(0, m21.note.Rest(quarterLength=4))
+        prev = c
+        part.append(m)
+    return part
+
+
+def musicxml(sk, arr, path, titulo='Arranjo do Mestrinho', base=True):
     import music21 as m21
     insts = [('tpt', m21.instrument.Trumpet(), 'Trompete em B♭'), ('sax', m21.instrument.TenorSaxophone(), 'Sax Tenor'),
              ('tbn', m21.instrument.Trombone(), 'Trombone')]
@@ -342,6 +394,8 @@ def musicxml(sk, arr, path, titulo='Arranjo do Mestrinho'):
     except Exception:
         pass
     written = score.toWrittenPitch(inPlace=False)
+    if base:
+        written.insert(0, base_part(sk, last))
     written.write('musicxml', fp=path)
     return path
 

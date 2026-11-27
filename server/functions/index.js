@@ -229,21 +229,27 @@ const gauth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-p
 exports.robo = onDocumentCreated({ document: 'bands/{b}/jobs/{j}', region: 'southamerica-east1' }, async event => {
   const ref = event.data.ref, job = event.data.data() || {};
   if (job.status !== 'pendente') return;
-  // at most 3 robot jobs at once per band, and 60 per day
+  // tipo 'arranjo' (recording -> AI horn arrangement) runs the Mestrinho: it costs an AI call, so 5 per band per day;
+  // everything else runs the Malak (score -> audio + bar map), 60 per band per day
+  const arranjo = job.tipo === 'arranjo';
+  const robot = arranjo ? { job: 'mestrinho', name: 'O Mestrinho', limit: 5, counter: 'uso-mestrinho' }
+                        : { job: 'robo', name: 'O Malak', limit: 60, counter: 'uso-robo' };
   const day = new Date().toISOString().slice(0, 10);
-  const usage = db.collection('sistema').doc('uso-robo').collection(day).doc(event.params.b);
+  const usage = db.collection('sistema').doc(robot.counter).collection(day).doc(event.params.b);
   const n = await db.runTransaction(async t => { const s = await t.get(usage); const k = (s.exists ? s.data().n : 0) + 1; t.set(usage, { n: k }, { merge: true }); return k; });
-  if (n > 60) return ref.update({ status: 'erro', msg: 'A banda chegou ao limite de 60 processamentos hoje.' });
+  if (n > robot.limit) {
+    return ref.update({ status: 'erro', msg: arranjo ? 'A banda chegou ao limite de 5 arranjos por dia.' : 'A banda chegou ao limite de 60 processamentos hoje.' });
+  }
   try {
     const client = await gauth.getClient();
     const project = process.env.GCLOUD_PROJECT || 'salvetheapp-3cceb';
     await client.request({
-      url: `https://run.googleapis.com/v2/projects/${project}/locations/southamerica-east1/jobs/robo:run`, method: 'POST',
+      url: `https://run.googleapis.com/v2/projects/${project}/locations/southamerica-east1/jobs/${robot.job}:run`, method: 'POST',
       data: { overrides: { containerOverrides: [{ env: [{ name: 'JOB', value: ref.path }] }] } },
     });
-    await ref.update({ status: 'na fila', msg: 'O Malak vai começar em instantes.', atualizado: Date.now() });
+    await ref.update({ status: 'na fila', msg: `${robot.name} vai começar em instantes.`, atualizado: Date.now() });
   } catch (e) {
     console.error(e?.response?.data || e);
-    await ref.update({ status: 'erro', msg: 'Não consegui ligar o Malak. Tente de novo em alguns minutos.' });
+    await ref.update({ status: 'erro', msg: `Não consegui ligar ${robot.name.toLowerCase()}. Tente de novo em alguns minutos.` });
   }
 });

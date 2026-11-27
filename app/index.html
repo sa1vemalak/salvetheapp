@@ -386,6 +386,8 @@ body.at-home .palette { display: none; }
 .robo b { font-family: var(--f-display); font-size: 16px; }
 .robo-bar { display: block; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) var(--p), var(--line) var(--p)); transition: background .4s; }
 .robo-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+.robo.arranjo { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.robo-row.stars .btn { min-width: 40px; padding-left: 0; padding-right: 0; }
 .robo-bpm { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 .robo-bpm input { width: 72px; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font: 14px var(--f-mono); }
 .setfirst { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; font-family: var(--f-body); font-size: 14px; line-height: 1.45; color: #55565c; }
@@ -544,7 +546,7 @@ body.at-home .palette { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261126182454';
+window.APP_VERSION = '20261126233510';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -1310,7 +1312,13 @@ const Robo = (() => {
       if (typeof Home !== 'undefined' && Home.refresh) Home.refresh();
     }, () => {});
   }
-  const running = j => j && ['pendente', 'na fila', 'rodando'].includes(j.status) && Date.now() - (j.atualizado || j.criadoEm) < 45 * 60e3;
+  const running = j => j && ['pendente', 'na fila', 'rodando'].includes(j.status) && Date.now() - (j.atualizado || j.criadoEm) < (j.tipo === 'arranjo' ? 90 : 45) * 60e3;
+  async function arranjo(songId) {
+    if (!S.canWrite) { toast('Só o dono ou um editor pode pedir um arranjo.'); return; }
+    const job = { song: songId, tipo: 'arranjo', fonte: 'audio', status: 'pendente', criadoEm: Date.now(), uid: SALVE.ctx().user.uid };
+    try { await S.db.collection('jobs').doc(songId + '__' + Date.now()).set(job); toast('O Mestrinho começou a escutar. Leva uns 20 minutos; pode continuar usando o app.'); }
+    catch { toast('Não consegui chamar o Mestrinho.'); }
+  }
   async function start(songId, bpm, fonte) {
     if (!S.canWrite) { toast('Só o dono ou um editor pode gerar o áudio.'); return; }
     const job = { song: songId, tipo: 'audio', status: 'pendente', criadoEm: Date.now(), uid: SALVE.ctx().user.uid, fonte: fonte || 'pdf' };
@@ -1324,17 +1332,22 @@ const Robo = (() => {
     const j = jobs.get(song.id); box.replaceChildren();
     const row = el('div', 'robo');
     if (running(j)) {
-      row.append(el('b', '', 'Malak trabalhando nesta música'), el('span', '', `${j.msg || 'Na fila…'}${j.progresso ? ' · ' + j.progresso + '%' : ''}`));
+      row.append(el('b', '', j.tipo === 'arranjo' ? 'Mestrinho escrevendo o arranjo desta música' : 'Malak trabalhando nesta música'), el('span', '', `${j.msg || 'Na fila…'}${j.progresso ? ' · ' + j.progresso + '%' : ''}`));
       const bar = el('i', 'robo-bar'); bar.style.setProperty('--p', (j.progresso || 3) + '%'); row.append(bar);
     } else if (data && data.conferido === false) {
       row.append(el('b', '', 'Áudio gerado pelo Malak: aguardando conferência'),
         el('span', '', `Lido de ${data.source || 'partitura'} · andamento ${Math.round(data.bpm || 0)}${data.tempoLido ? ' (da partitura)' : ''}. Ouça junto com a partitura; se alguma nota ou o andamento estiver errado, peça ao Caio ou gere de novo com outro andamento.`));
       if (S.canWrite) row.append(controls(song, data, true));
+    } else if (!data && song.guia && !(song.parts || []).length) {
+      row.append(el('b', '', `“${song.title}” só tem a gravação`), el('span', '', j && j.status === 'erro' ? 'A última tentativa falhou: ' + (j.msg || '') : 'O Mestrinho escuta a gravação e a IA arranjadora escreve os metais; depois o Malak gera a partitura e o áudio de estudo.'));
+      if (S.canWrite) { const go = el('button', 'btn primary', 'Escrever o arranjo de metais'); go.type = 'button'; go.onclick = () => arranjo(song.id); const c = el('div', 'robo-row'); c.append(go); row.append(c); }
     } else if (!data) {
       row.append(el('b', '', `“${song.title}” ainda não tem áudio`), el('span', '', j && j.status === 'erro' ? 'A última tentativa falhou: ' + (j.msg || '') : 'O Malak lê a partitura (PDF ou arquivo original), gera o som de cada instrumento e marca onde fica cada compasso.'));
       if (S.canWrite) row.append(controls(song, data, false)); else row.append(el('span', 'hint', 'Peça para o dono ou um editor da banda gerar o áudio.'));
     }
-    box.append(row); box.hidden = !row.childNodes.length;
+    box.append(row);
+    if (song.arranjo && !running(j)) box.append(arranjoCard(song));
+    box.hidden = !box.childNodes.length || ![...box.childNodes].some(n => n.childNodes.length);
   }
   function controls(song, data, done) {
     const c = el('div', 'robo-row');
@@ -1346,7 +1359,41 @@ const Robo = (() => {
     if (done) { const ok = el('button', 'btn', 'Está certo, conferido'); ok.type = 'button'; ok.onclick = async () => { try { await S.db.collection('songs').doc(song.id).update({ 'player.conferido': true, status: 'pronta' }); toast('Música conferida.'); } catch { toast('Não consegui salvar.'); } }; c.append(ok); }
     return c;
   }
-  return { start, paint, job: id => jobs.get(id), running, watch };
+  // the AI arrangement: what it wrote and each musician's rating (1 to 5)
+  const rated = new Map(); const ratingSubs = new Map();
+  function arranjoCard(song) {
+    const a = song.arranjo, card = el('div', 'robo arranjo');
+    card.append(el('b', '', 'Arranjo de metais escrito pela IA arranjadora'),
+      el('span', '', (a.resumo || '') + (a.tom ? ` Tom: ${a.tom}.` : '')),
+      el('span', 'hint', 'É uma sugestão a partir da gravação: confira com os ouvidos e peça mudanças ao Caio.'));
+    const stars = el('div', 'robo-row stars'); stars.setAttribute('role', 'group'); stars.setAttribute('aria-label', 'Sua nota para o arranjo');
+    const info = el('span', 'hint');
+    const me = SALVE.ctx().user;
+    const paintStars = () => {
+      const list = rated.get(song.id) || [];
+      const mine = list.find(r => r.id === me.uid);
+      stars.replaceChildren(el('span', '', 'Sua nota:'));
+      for (let n = 1; n <= 5; n++) {
+        const b = el('button', 'btn' + (mine && mine.nota >= n ? ' primary' : ''), '★'); b.type = 'button';
+        b.setAttribute('aria-label', `${n} de 5`); b.setAttribute('aria-pressed', String(!!(mine && mine.nota === n)));
+        b.onclick = async () => {
+          try { await S.db.collection(`songs/${song.id}/avaliacoes`).doc(me.uid).set({ nota: n, criadoEm: Date.now(), nome: (me.displayName || me.email || '').slice(0, 80) }); toast('Nota guardada. Obrigado!'); }
+          catch { toast('Não consegui guardar a nota.'); }
+        };
+        stars.append(b);
+      }
+      const avg = list.length ? (list.reduce((s, r) => s + r.nota, 0) / list.length).toFixed(1) : null;
+      info.textContent = avg ? `Média da banda: ${avg} (${list.length} ${list.length > 1 ? 'notas' : 'nota'})` : 'Ninguém deu nota ainda.';
+    };
+    if (!ratingSubs.has(song.id)) {
+      ratingSubs.set(song.id, S.db.collection(`songs/${song.id}/avaliacoes`).onSnapshot(snap => {
+        rated.set(song.id, snap.docs.map(d => ({ id: d.id, ...d.data() }))); if (lastPaint) paint(...lastPaint);
+      }, () => {}));
+    }
+    paintStars(); card.append(stars, info);
+    return card;
+  }
+  return { start, arranjo, paint, job: id => jobs.get(id), running, watch };
 })();
 const Versions = (() => {
   const escH = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1448,6 +1495,8 @@ function openAdd() {
     <div class="hint">Um PDF por parte (grade, base, trompete…). Dê o nome de cada parte ao lado do arquivo. Se o nome da música já existir, as partes entram nela.</div>
     <div class="field"><label for="newSrc">Arquivo original <span class="hint" style="display:inline">(opcional)</span></label><input type="file" id="newSrc" accept=".musicxml,.mxl,.xml,.mscz,.mscx,.mid,.midi,.gp,.gpx,.gp5,.sib,.musx,.dorico" multiple></div>
     <div class="hint">MusicXML, MuseScore, MIDI ou Guitar Pro. Fica guardado na música para o Malak e para o Caio.</div>
+    <div class="field"><label for="newGuia">Só tenho a gravação <span class="hint" style="display:inline">(sem partitura)</span></label><input type="file" id="newGuia" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg"></div>
+    <div class="hint">Mande o áudio da música (ensaio, demo ou disco): o Mestrinho escuta, a IA arranjadora escreve trompete, sax tenor e trombone, e o Malak gera a partitura de cada um com o áudio de estudo. Leva uns 20 minutos.</div>
     <div class="filelist" id="fileList"></div>
     <div class="noteedit-row" style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelAdd">Cancelar</button><button class="btn primary" id="doAdd">Adicionar</button></div>`;
   document.body.append(scrim, m);
@@ -1471,14 +1520,20 @@ function openAdd() {
     const title = $('#newTitle', m).value.trim();
     if (!title) { toast('Dê um nome para a música.'); return; }
     const srcs = [...($('#newSrc', m).files || [])];
-    if (!files.length && !srcs.length) { toast('Escolha pelo menos um PDF.'); return; }
+    const guiaFile = ($('#newGuia', m).files || [])[0];
+    if (!files.length && !srcs.length && !guiaFile) { toast('Escolha pelo menos um PDF ou a gravação.'); return; }
     const btn = $('#doAdd', m); btn.disabled = true;
     const existing = S.songs.find(s => slug(s.title) === slug(title));
     const id = existing ? existing.id : slug(title);
     let parts = existing ? [...(existing.parts || [])] : [];
     let fontes = existing ? [...(existing.fontes || [])] : [];
-    const total = files.length + srcs.length;
+    const total = files.length + srcs.length + (guiaFile ? 1 : 0);
+    let guia = existing?.guia || null;
     try {
+      if (guiaFile) {
+        const res = await S.assets.upload(guiaFile, { onProgress: x => { btn.textContent = `Enviando a gravação · ${Math.round(x * 100)}%`; } });
+        guia = { name: guiaFile.name, src: res.url, path: res.id, at: Date.now() };
+      }
       for (let k = 0; k < srcs.length; k++) {
         const f = srcs[k];
         const res = await S.assets.upload(f, { onProgress: x => { btn.textContent = `Enviando ${k + 1}/${total} · ${Math.round(x * 100)}%`; } });
@@ -1497,9 +1552,11 @@ function openAdd() {
       if (existing) { try { await Versions.snapshot(id, 'Antes de adicionar partes'); } catch {} }
       const { id: _i, order: _o, ...keep } = existing || {};
       const doc = { ...keep, title, tag: existing?.tag || '', parts, fontes, notes: existing?.notes || '' };
+      if (guia) doc.guia = guia;
       await S.db.collection('songs').doc(id).set(doc);
       if (window.SALVE) { const c = SALVE.ctx(); if (!(c.order || []).includes(id)) await SALVE.saveShow(c.show, { order: [...(c.order || []), id] }); }
       if (window.SALVE && (files.length || srcs.length)) Robo.start(id, null, 'pdf');
+      else if (window.SALVE && guiaFile) Robo.arranjo(id);
       S.songId = id; ls.set('song', id);
       toast(existing ? 'Partes adicionadas.' : 'Música adicionada.');
       shut();

@@ -78,16 +78,31 @@ service cloud.firestore {
         allow read: if member(b);
         allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs']);
       }
-      // robot jobs (score -> audio + bar map): an editor asks, only the server updates them
+      // robot jobs: an editor asks, only the server updates them.
+      // tipo 'audio' = Malak (score -> audio + bar map); tipo 'arranjo' = Mestrinho (recording -> horn arrangement)
       match /jobs/{j} {
         allow read: if member(b);
         allow create: if editor(b) && request.resource.data.keys().hasOnly(['song', 'tipo', 'bpm', 'status', 'criadoEm', 'uid', 'fonte']) &&
-          (!('fonte' in request.resource.data) || request.resource.data.fonte in ['pdf', 'lido']) &&
           request.resource.data.song is string && request.resource.data.song.size() <= 120 &&
-          request.resource.data.tipo == 'audio' && request.resource.data.status == 'pendente' &&
+          request.resource.data.status == 'pendente' &&
           request.resource.data.uid == request.auth.uid && request.resource.data.criadoEm is int &&
-          (!('bpm' in request.resource.data) || (request.resource.data.bpm is number && request.resource.data.bpm >= 20 && request.resource.data.bpm <= 320));
+          ((request.resource.data.tipo == 'audio' &&
+            (!('fonte' in request.resource.data) || request.resource.data.fonte in ['pdf', 'lido']) &&
+            (!('bpm' in request.resource.data) || (request.resource.data.bpm is number && request.resource.data.bpm >= 20 && request.resource.data.bpm <= 320))) ||
+           (request.resource.data.tipo == 'arranjo' && request.resource.data.get('fonte', '') == 'audio' &&
+            !('bpm' in request.resource.data)));
         allow delete: if editor(b);
+      }
+      // each musician's rating (1-5) of an AI arrangement: one doc per person, only their own
+      match /songs/{s}/avaliacoes/{u} {
+        allow read: if member(b);
+        allow create, update: if member(b) && u == request.auth.uid &&
+          request.resource.data.keys().hasOnly(['nota', 'comentario', 'criadoEm', 'nome']) &&
+          request.resource.data.nota is int && request.resource.data.nota >= 1 && request.resource.data.nota <= 5 &&
+          request.resource.data.criadoEm is int &&
+          (!('comentario' in request.resource.data) || (request.resource.data.comentario is string && request.resource.data.comentario.size() <= 500)) &&
+          (!('nome' in request.resource.data) || (request.resource.data.nome is string && request.resource.data.nome.size() <= 80));
+        allow delete: if (member(b) && u == request.auth.uid) || owner(b);
       }
     }
 
