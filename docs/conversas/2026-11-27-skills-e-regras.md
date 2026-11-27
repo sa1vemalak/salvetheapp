@@ -99,6 +99,8 @@ no pacote não foram trazidos.
 `agente` (Caio) já rodava desde 03:40, igual ao `server/functions/index.js` do repositório. Foi trocado só o código
 (API do Cloud Functions, `buildConfig.source`); gatilhos, segredos e configurações ficaram como estavam. O `agente`
 não foi republicado, porque já rodava essa versão. As três funções terminaram ativas.
+- Depois disso entrou na `main` (PR #6) uma linha a mais no Caio, que traduz o tipo do acorde (m7, sus4, maj7…).
+  Ela ainda não está no ar em nenhuma das três funções.
 
 ## Terceira rodada: script de publicação seguro
 
