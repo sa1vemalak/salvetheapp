@@ -140,3 +140,9 @@ não foi republicado, porque já rodava essa versão. As três funções termina
 - `salvetheapp.web.app` (site do projeto `pnpl10y` que roda o app) mantido e atualizado (20261127132358): aviso de
   convite vencido, metrônomo/bateria novos, 235 arquivos das bandas, página abre sem erros. O `deploy.py` agora
   publica nos dois endereços oficiais juntos: `salvetheapp-3cceb` e `salvetheapp`.
+
+## Sexta rodada: robôs pelo Cloud Shell
+
+- `ferramentas/atualizar_robos.sh`: roda no Cloud Shell; publica as funções e recria as imagens do Malak (`robo`) e
+  do Mestrinho (`mestrinho`) com uma etiqueta de data, troca a imagem dos Cloud Run Jobs e mostra o comando para
+  voltar à imagem anterior.
