@@ -4,6 +4,7 @@
 #     bash ferramentas/atualizar_robos.sh            # tudo: Caio e funções, Malak, Mestrinho
 #     bash ferramentas/atualizar_robos.sh funcoes    # só uma parte: funcoes, malak, mestrinho ou site
 #     bash ferramentas/atualizar_robos.sh site       # publica o app nos dois endereços (usa a conta do Cloud Shell)
+#     bash ferramentas/atualizar_robos.sh regras     # publica as regras do banco (firebase/firestore.rules)
 # O Malak leva uns 15-30 minutos e o Mestrinho uns 30-60 (a montagem roda no Google; não feche a aba).
 set -euo pipefail
 P=salvetheapp-3cceb
@@ -44,6 +45,17 @@ fi
 if [[ $QUAIS == tudo || $QUAIS == mestrinho ]]; then
   passo "3/3 Mestrinho (gravação -> arranjo)"
   robo mestrinho mestrinho
+fi
+
+if [[ $QUAIS == regras ]]; then
+  passo "Regras do banco (firebase/firestore.rules)"
+  tmp=$(mktemp -d)
+  cp ../firebase/firestore.rules "$tmp/firestore.rules"
+  echo '{ "firestore": { "rules": "firestore.rules" } }' > "$tmp/firebase.json"
+  export GOOGLE_CLOUD_QUOTA_PROJECT="$P"
+  (cd "$tmp" && npx -y firebase-tools@13 deploy --only firestore:rules --project "$P" --non-interactive)
+  rm -rf "$tmp"
+  echo "OK: regras do banco publicadas."
 fi
 
 if [[ $QUAIS == site ]]; then

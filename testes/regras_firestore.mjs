@@ -38,4 +38,26 @@ await t('criador da banda entra como dono', assertSucceeds((async () => { const 
   await setDoc(doc(d, 'bands/B2'), { name: 'Nova', owner: 'c1', createdAt: now });
   await setDoc(doc(d, 'bands/B2/members/c1'), { role: 'dono', name: 'C', email: 'c@x.com', joinedAt: now }); })()));
 await t('membro lê convite', assertSucceeds(getDoc(doc(db('novo'), 'bands/B/invites/M1'))));
+// propostas: o músico manda a versão dele; só o dono aprova ou recusa
+await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
+  await setDoc(doc(d, 'bands/B/members/mu1'), { role: 'musico' }); await setDoc(doc(d, 'bands/B/members/mu2'), { role: 'musico' });
+  await setDoc(doc(d, 'bands/B/members/ed9'), { role: 'editor' }); });
+const prop = (autor, extra = {}) => ({ autor, nome: 'Mu', musica: 'm1', parte: 'trompete', mudancas: [{ tipo: 'corrigir_notas', compasso: 1, notas: 'G5:4' }], resumo: '1 mudança', status: 'aberta', criadoEm: now, ...extra });
+await t('músico envia a versão dele para a banda', assertSucceeds(setDoc(doc(db('mu1'), 'bands/B/propostas/P1'), prop('mu1'))));
+await t('músico NÃO envia em nome de outro', assertFails(setDoc(doc(db('mu1'), 'bands/B/propostas/P2'), prop('mu2'))));
+await t('músico NÃO envia já aprovada', assertFails(setDoc(doc(db('mu1'), 'bands/B/propostas/P3'), prop('mu1', { status: 'aprovada' }))));
+await t('músico NÃO envia com campo extra', assertFails(setDoc(doc(db('mu1'), 'bands/B/propostas/P4'), prop('mu1', { lixo: 1 }))));
+await t('quem não é da banda NÃO envia', assertFails(setDoc(doc(db('fora'), 'bands/B/propostas/P5'), prop('fora'))));
+await t('músico NÃO aprova a própria', assertFails(updateDoc(doc(db('mu1'), 'bands/B/propostas/P1'), { status: 'aprovada', decididoEm: now, decididoPor: 'mu1' })));
+await t('editor NÃO aprova (só o dono)', assertFails(updateDoc(doc(db('ed9'), 'bands/B/propostas/P1'), { status: 'aprovada', decididoEm: now, decididoPor: 'ed9' })));
+await t('editor NÃO reescreve a proposta', assertFails(setDoc(doc(db('ed9'), 'bands/B/propostas/P1'), prop('mu1', { status: 'aprovada' }))));
+await t('dono NÃO muda as notas da proposta ao aprovar', assertFails(updateDoc(doc(db('dono1'), 'bands/B/propostas/P1'), { status: 'aprovada', decididoEm: now, decididoPor: 'dono1', mudancas: [] })));
+await t('outro músico lê a proposta', assertSucceeds(getDoc(doc(db('mu2'), 'bands/B/propostas/P1'))));
+await t('outro músico NÃO apaga a proposta', assertFails(deleteDoc(doc(db('mu2'), 'bands/B/propostas/P1'))));
+await t('dono aprova', assertSucceeds(updateDoc(doc(db('dono1'), 'bands/B/propostas/P1'), { status: 'aprovada', decididoEm: now, decididoPor: 'dono1' })));
+await t('decidida NÃO muda de novo', assertFails(updateDoc(doc(db('dono1'), 'bands/B/propostas/P1'), { status: 'recusada', decididoEm: now, decididoPor: 'dono1' })));
+await t('autor apaga a dele', assertSucceeds(deleteDoc(doc(db('mu1'), 'bands/B/propostas/P1'))));
+await t('músico continua sem escrever nas músicas da banda', assertFails(setDoc(doc(db('mu1'), 'bands/B/songs/m1'), { title: 'x' })));
+await t('versão pessoal na área particular do músico', assertSucceeds(setDoc(doc(db('mu1'), 'users/mu1/ann-B/pessoal__m1__trompete'), { tipo: 'versao_pessoal', musica: 'm1', parte: 'trompete', mudancas: [] })));
+await t('ninguém lê a versão pessoal de outro', assertFails(getDoc(doc(db('mu2'), 'users/mu1/ann-B/pessoal__m1__trompete'))));
 console.log(`\n${ok} passaram, ${fail} falharam`); await env.cleanup(); process.exit(fail ? 1 : 0);

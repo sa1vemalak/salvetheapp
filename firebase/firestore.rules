@@ -101,7 +101,27 @@ service cloud.firestore {
       // songs, layout, ann (the shared "Em comum" layer), versions
       match /{col}/{doc} {
         allow read: if member(b);
-        allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs']);
+        allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs', 'propostas']);
+      }
+      // a musician's "Minha versão" sent to the band: any member sends their own; only the owner approves or
+      // refuses it (approving applies the changes with the owner's own permissions, in the app)
+      match /propostas/{p} {
+        allow read: if member(b);
+        allow create: if member(b) &&
+          request.resource.data.keys().hasOnly(['autor', 'nome', 'musica', 'parte', 'mudancas', 'resumo', 'status', 'criadoEm']) &&
+          request.resource.data.autor == request.auth.uid && request.resource.data.status == 'aberta' &&
+          request.resource.data.musica is string && request.resource.data.musica.size() > 0 && request.resource.data.musica.size() <= 120 &&
+          request.resource.data.parte is string && request.resource.data.parte.size() > 0 && request.resource.data.parte.size() <= 60 &&
+          request.resource.data.mudancas is list && request.resource.data.mudancas.size() > 0 && request.resource.data.mudancas.size() <= 200 &&
+          request.resource.data.criadoEm is int &&
+          (!('nome' in request.resource.data) || (request.resource.data.nome is string && request.resource.data.nome.size() <= 80)) &&
+          (!('resumo' in request.resource.data) || (request.resource.data.resumo is string && request.resource.data.resumo.size() <= 300));
+        allow update: if owner(b) && resource.data.status == 'aberta' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'decididoEm', 'decididoPor', 'motivo']) &&
+          request.resource.data.status in ['aprovada', 'recusada'] && request.resource.data.decididoPor == request.auth.uid &&
+          request.resource.data.decididoEm is int &&
+          (!('motivo' in request.resource.data) || (request.resource.data.motivo is string && request.resource.data.motivo.size() <= 300));
+        allow delete: if owner(b) || (member(b) && resource.data.autor == request.auth.uid);
       }
       // robot jobs: an editor asks, only the server updates them.
       // tipo 'audio' = Malak (score -> audio + bar map); tipo 'arranjo' = Mestrinho (recording -> horn arrangement)

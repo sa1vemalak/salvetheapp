@@ -337,7 +337,8 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     const col = path => ({
       onSnapshot: () => () => {},
       doc: id => ({ get: async () => ({ exists: mem.has(path + '/' + id), data: () => mem.get(path + '/' + id) }),
-        set: async d => { mem.set(path + '/' + id, JSON.parse(JSON.stringify(d))); avisa(); }, delete: async () => { mem.delete(path + '/' + id); avisa(); } }),
+        set: async d => { mem.set(path + '/' + id, JSON.parse(JSON.stringify(d))); avisa(); },
+        update: async d => { mem.set(path + '/' + id, { ...mem.get(path + '/' + id), ...JSON.parse(JSON.stringify(d)) }); avisa(); }, delete: async () => { mem.delete(path + '/' + id); avisa(); } }),
       where: (f, op, v) => ({ onSnapshot: cb => { const run = () => cb({ docs: [...mem].filter(([k, d]) => k.startsWith(path + '/') && !k.slice(path.length + 1).includes('/') && d[f] === v).map(([k, d]) => ({ id: k.split('/').pop(), data: () => d })), docChanges: () => [] }); subs.push(run); run(); return () => {}; } }),
     });
     S.db = { collection: col };
@@ -345,6 +346,8 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     const song = { title: 'Minha Teste', parts: [{ key: 'trompete', name: 'Trompete', src: '/pagina.pdf' }], partitura: { xml: URL.createObjectURL(new Blob([P.toString()])), versao: 2, partes: [{ key: 'trompete', name: 'Trompete' }, { key: 'base', name: 'Base' }] } };
     mem.set('songs/mv', song);
     S.songs = [{ id: 'mv', ...song }]; S.songId = 'mv'; S.canWrite = false; S.uid = 'u1';
+    let papel = 'musico';
+    window.SALVE.ctx = () => ({ band: 'b', show: 's', user: { uid: 'u1', displayName: 'Lu' }, role: papel, order: ['mv'] });
     let pedido = null;
     const f0 = window.fetch; window.fetch = async (u, o) => { if (!String(u).includes('agente')) return f0(u, o); pedido = JSON.parse(o.body);
       return new Response(JSON.stringify({ texto: 'Pus na sua versão.', podeAplicar: true, destino: 'pessoal', proposta: { resumo: 'x', mudancas: [
@@ -371,6 +374,27 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     out.chip = [...document.querySelectorAll('.chip')].map(c => c.textContent + (c.getAttribute('aria-pressed') === 'true' ? '*' : ''));
     out.svg = !!document.querySelector('.page.minha svg');
     out.aviso = document.querySelector('.minha-aviso')?.textContent || '';
+    // mandar para a banda; o dono aprova
+    const envio = () => document.querySelector('.minha-aviso .envio');
+    out.envioAntes = envio()?.textContent || '';
+    [...envio().querySelectorAll('button')].find(b => /Enviar para a banda/.test(b.textContent))?.click();
+    for (let i = 0; i < 60 && ![...mem.keys()].some(k => k.startsWith('propostas/')); i++) await new Promise(r => setTimeout(r, 50));
+    const pk = [...mem.keys()].find(k => k.startsWith('propostas/'));
+    out.prop = pk && mem.get(pk);
+    out.envioDepois = envio()?.textContent || '';
+    papel = 'dono'; avisa();
+    const chipP = [...document.querySelectorAll('.chip')].find(c => /Propostas/.test(c.textContent));
+    out.chipPropostas = chipP?.textContent;
+    let aplicado = null; window.__t.Caio.aplicar = async (lista, resumo) => { aplicado = { lista, resumo }; return { ok: lista.length, erros: [] }; };
+    chipP?.click();
+    const dp = document.querySelector('.drawer[aria-label="Propostas"]');
+    out.drawer = dp?.textContent || '';
+    [...(dp?.querySelectorAll('button') || [])].find(b => /Aprovar/.test(b.textContent))?.click();
+    for (let i = 0; i < 60 && mem.get(pk)?.status === 'aberta'; i++) await new Promise(r => setTimeout(r, 50));
+    out.aplicado = aplicado; out.depois = mem.get(pk);
+    dp?.querySelector('#propX')?.click();
+    papel = 'musico'; avisa();
+    out.envioFim = envio()?.textContent || '';
     // voltar para a da banda
     [...document.querySelectorAll('.minha-aviso button')].find(b => /da banda/.test(b.textContent))?.click();
     await new Promise(r => setTimeout(r, 300));
@@ -385,6 +409,14 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('a partitura da banda não muda', mv.banda === 2, mv.banda);
   confere('a estante mostra "Minha versão" e desenha a versão dele', mv.chip?.includes('Minha versão*') && mv.svg && /1 mudança que só você vê/.test(mv.aviso), JSON.stringify([mv.chip, mv.aviso]));
   confere('"Ver a da banda" volta para o PDF da banda', mv.voltou);
+  console.log('Proposta para a banda');
+  confere('músico vê "Enviar para a banda" na versão dele', /Enviar para a banda/.test(mv.envioAntes), mv.envioAntes);
+  confere('envio vira proposta aberta, com autor, parte e mudanças', mv.prop?.status === 'aberta' && mv.prop.autor === 'u1' && mv.prop.parte === 'trompete' && mv.prop.mudancas?.length === 1 && mv.prop.nome === 'Lu', JSON.stringify(mv.prop));
+  confere('músico vê que está esperando o OK do dono', /esperando o OK do dono/.test(mv.envioDepois), mv.envioDepois);
+  confere('dono vê "Propostas (1)" e a lista com o nome de quem mandou', mv.chipPropostas === 'Propostas (1)' && /Lu · Trompete/.test(mv.drawer), mv.chipPropostas + ' / ' + mv.drawer);
+  confere('aprovar aplica na partitura da banda as mudanças com música e parte', mv.aplicado?.lista?.[0]?.musica === 'mv' && mv.aplicado.lista[0].parte === 'trompete' && mv.aplicado.lista[0].notas === 'G5:4', JSON.stringify(mv.aplicado));
+  confere('proposta fica aprovada, com quem decidiu', mv.depois?.status === 'aprovada' && mv.depois.decididoPor === 'u1', JSON.stringify(mv.depois));
+  confere('músico vê que o dono aprovou', /aprovou/.test(mv.envioFim), mv.envioFim);
   console.log('Página');
   confere('nenhum erro de JavaScript', !erros.length, erros.join(' | '));
 
