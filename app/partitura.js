@@ -67,40 +67,90 @@
     return { len: beats * 4 / type, beats, type, fifths };
   };
 
-  // bar -> events (voice 1): [{pitches: ['D5','F#5'], dur, rest, arts: '>', tie}]
+  // dynamics a bar can carry (written as a word before the note: "mf D5:1"); hairpins: cresc / dim start one, fim ends it
+  const DYNS = ['pppp', 'ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff', 'ffff', 'sf', 'sfz', 'sffz', 'sfp', 'fp', 'fz', 'rf', 'rfz'];
+  const WEDGE = { crescendo: 'cresc', diminuendo: 'dim', stop: 'fim' };
+  // a direction that is only a dynamic and/or a hairpin (these are what the token language rewrites)
+  const dynDir = d => {
+    const types = kids(d, 'direction-type'); if (!types.length) return null;
+    const out = [];
+    for (const t of types) for (const c of t.children) {
+      if (c.tagName === 'dynamics') { const k = c.children[0]; if (k && DYNS.includes(k.tagName)) out.push(k.tagName); else return null; }
+      else if (c.tagName === 'wedge' && WEDGE[c.getAttribute('type')]) out.push(WEDGE[c.getAttribute('type')]);
+      else return null;
+    }
+    return out;
+  };
+
+  // bar -> events (voice 1): [{pitches: ['D5','F#5'], dur, rest, arts: '>', tie, pre: ['mf', 'cresc'], slur: ')(', fermata}]
+  // the list also carries .tail: marks after the last note (ex.: a hairpin that ends at the barline)
   P.events = function (pi, num) {
     const m = this.measure(pi, num); if (!m) return null;
-    const out = [];
-    for (const n of kids(m, 'note')) {
+    const out = []; let pre = [];
+    for (const n of m.children) {
+      if (n.tagName === 'direction') {
+        const v = txt(n, 'voice', '1'); const ds = v === '1' ? dynDir(n) : null;
+        if (ds) pre.push(...ds);
+        continue;
+      }
+      if (n.tagName !== 'note') continue;
       if (txt(n, 'voice', '1') !== '1' || kid(n, 'grace')) continue;
       const dur = (parseInt(txt(n, 'duration', '0')) || 0) / DIV;
       const pitch = kid(n, 'pitch');
       const name = pitch ? txt(pitch, 'step') + ({ '-2': 'bb', '-1': 'b', '1': '#', '2': '##' }[String(Math.round(parseFloat(txt(pitch, 'alter', '0'))))] || '') + txt(pitch, 'octave') : null;
       const tie = kids(n, 'tie').some(t => t.getAttribute('type') === 'start');
-      let arts = '';
-      const not = kid(n, 'notations'), ar = kid(not, 'articulations');
-      if (ar) for (const [sym, tag] of Object.entries(ARTS)) if (kid(ar, tag)) arts += sym;
+      let arts = '', slur = '', fermata = false;
+      for (const not of kids(n, 'notations')) {
+        const ar = kid(not, 'articulations');
+        if (ar) for (const [sym, tag] of Object.entries(ARTS)) if (kid(ar, tag) && !arts.includes(sym)) arts += sym;
+        const sl = kids(not, 'slur');
+        if (sl.some(s => s.getAttribute('type') === 'stop')) slur += ')';
+        if (sl.some(s => s.getAttribute('type') === 'start')) slur += '(';
+        if (kid(not, 'fermata')) fermata = true;
+      }
       if (kid(n, 'chord') && out.length) { const last = out[out.length - 1]; if (name) last.pitches.push(name); continue; }
-      out.push({ pitches: name ? [name] : [], dur, rest: !pitch, arts, tie });
+      const ev = { pitches: name ? [name] : [], dur, rest: !pitch, arts, tie, pre, slur, fermata };
+      out.push(ev); pre = [];
     }
+    out.tail = pre;
     return out;
   };
   P.voices = function (pi, num) { const m = this.measure(pi, num); return m ? new Set(kids(m, 'note').map(n => txt(n, 'voice', '1'))).size : 0; };
 
-  const fmt = x => String(Math.round(x * 1000) / 1000);
+  // durations: quarters, as a decimal (0.5, 1.5) or, inside triplets/sextuplets, as a fraction (1/3, 2/3, 1/6)
+  const fmt = x => {
+    const u = Math.round(x * DIV);
+    if (Math.abs(u - x * DIV) < 1e-6 && u % 3 !== 0) { const g = (a, b) => b ? g(b, a % b) : a, k = g(u, DIV); return (u / k) + '/' + (DIV / k); }
+    return String(Math.round(x * 1000) / 1000);
+  };
+  Partitura.fmtDur = fmt;
+  // one event -> its token ("mf cresc D5:1>(")
+  const tokenOf = e => [...(e.pre || []), (e.rest ? 'R' : e.pitches.join('+')) + ':' + fmt(e.dur) + (e.arts || '') + (e.fermata ? '@' : '') + (e.slur || '') + (e.tie ? '~' : '')].join(' ');
+  const joinTokens = list => list.map(tokenOf).concat(list.tail || []).join(' ');
+  Partitura.tokenOf = tokenOf; Partitura.joinTokens = joinTokens;
   P.tokens = function (pi, num) {
     const ev = this.events(pi, num); if (!ev) return null;
-    return ev.map(e => (e.rest ? 'R' : e.pitches.join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : '')).join(' ');
+    return joinTokens(ev);
   };
 
   function parseTokens(s) {
-    const out = [];
-    for (const t of String(s || '').trim().split(/\s+/).filter(Boolean)) {
-      const m = /^(R|[A-G](?:##|bb|#|b)?-?\d(?:\+[A-G](?:##|bb|#|b)?-?\d)*):(\d+(?:\.\d+)?)([>.\-^~]*)$/.exec(t);
-      if (!m) throw new Error(`não entendi "${t}"`);
-      const dur = parseFloat(m[2]); if (!(dur > 0)) throw new Error(`duração inválida em "${t}"`);
-      out.push({ rest: m[1] === 'R', pitches: m[1] === 'R' ? [] : m[1].split('+'), dur, arts: m[3].replace(/~/g, ''), tie: m[3].includes('~') });
+    const out = []; let pre = [];
+    for (const t0 of String(s || '').trim().split(/\s+/).filter(Boolean)) {
+      const t = t0.replace(/:(\d+)\/(\d+)/, ':$1/$2');
+      const w = t.toLowerCase();
+      if (DYNS.includes(w) || ['cresc', 'dim', 'fim'].includes(w)) { pre.push(w); continue; }
+      const m = /^(R|[A-G](?:##|bb|#|b)?-?\d(?:\+[A-G](?:##|bb|#|b)?-?\d)*):(\d+(?:\.\d+)?(?:\/\d+)?)([>.\-^~()@]*)$/.exec(t);
+      if (!m) throw new Error(`não entendi "${t0}"`);
+      const [a, b] = m[2].split('/'); let dur = parseFloat(a) / (b ? parseFloat(b) : 1);
+      // 0.333 / 0.667 (a triplet written as a decimal) snap to the score's grid
+      const u = Math.round(dur * DIV); if (Math.abs(u - dur * DIV) < 0.05) dur = u / DIV;
+      if (!(dur > 0)) throw new Error(`duração inválida em "${t0}"`);
+      const mk = m[3];
+      out.push({ rest: m[1] === 'R', pitches: m[1] === 'R' ? [] : m[1].split('+'), dur, arts: mk.replace(/[~()@]/g, ''), tie: mk.includes('~'),
+        pre, slur: (mk.includes(')') ? ')' : '') + (mk.includes('(') ? '(' : ''), fermata: mk.includes('@') });
+      pre = [];
     }
+    out.tail = pre;
     return out;
   }
   Partitura.parseTokens = parseTokens;
@@ -116,24 +166,48 @@
     }
     return out;
   }
+  // a triplet value (1/3, 2/3, 1/6...) is written as the binary value 3/2 longer, with 3:2 time-modification
+  const isTriplet = d => Math.round(d * DIV) % 3 !== 0;
 
-  // rewrite voice 1 of one bar; everything else in the bar (attributes, directions, barlines, harmony) stays
+  // rewrite voice 1 of one bar; everything else in the bar (attributes, text, rehearsal marks, barlines, harmony) stays.
+  // The bar's dynamics and hairpins are part of the tokens, so they are rewritten too.
   P.setTokens = function (pi, num, tokenStr) {
     const m = this.measure(pi, num); if (!m) throw new Error(`não achei o compasso ${num}`);
     if (this.voices(pi, num) > 1) throw new Error(`o compasso ${num} tem mais de uma voz; edite pelo MuseScore`);
     const ev = parseTokens(tokenStr), { len } = this.context(pi, num);
-    const sum = ev.reduce((t, e) => t + e.dur, 0);
-    if (Math.abs(sum - len) > 1e-6) throw new Error(`o compasso ${num} tem ${fmt(len)} tempos e a correção soma ${fmt(sum)}`);
+    const units = ev.reduce((t, e) => t + Math.round(e.dur * DIV), 0);
+    if (units !== Math.round(len * DIV)) throw new Error(`o compasso ${num} tem ${fmt(len)} tempos e a correção soma ${fmt(units / DIV)}`);
     const d = this.doc, mk = (tag, text, attrs) => { const e = d.createElement(tag); if (text != null) e.textContent = text; for (const k in (attrs || {})) e.setAttribute(k, attrs[k]); return e; };
-    const old = kids(m, 'note').concat(kids(m, 'backup'), kids(m, 'forward'));
-    const anchor = old.length ? old[0] : null;
+    const dirOf = w => {
+      const dir = mk('direction', null, { placement: 'below' }), dt = mk('direction-type');
+      if (DYNS.includes(w)) { const dy = mk('dynamics'); dy.append(mk(w)); dt.append(dy); }
+      else dt.append(mk('wedge', null, { type: { cresc: 'crescendo', dim: 'diminuendo', fim: 'stop' }[w] }));
+      dir.append(dt);
+      if (DYNS.includes(w)) { const snd = mk('sound', null, { dynamics: String({ pppp: 10, ppp: 20, pp: 35, p: 50, mp: 65, mf: 80, f: 95, ff: 110, fff: 125, ffff: 140 }[w] || 100) }); dir.append(snd); }
+      return dir;
+    };
+    const old = kids(m, 'note').concat(kids(m, 'backup'), kids(m, 'forward'), kids(m, 'direction').filter(x => dynDir(x)));
+    const anchor = kids(m, 'note')[0] || null;
     // tie into this bar from the previous one
     let tiedIn = new Set();
     const prev = this.measures(pi)[this.measures(pi).indexOf(m) - 1];
     if (prev) { const pe = this.events(pi, prev.getAttribute('number')); const last = pe && pe[pe.length - 1]; if (last && last.tie) tiedIn = new Set(last.pitches); }
     const notes = [];
+    let tup = null;   // open triplet bracket: {units, heads}
+    // close the bracket on its last note; a group of eighths or shorter (no rests) is beamed together
+    const closeTup = () => {
+      const hs = tup.heads, last = hs[hs.length - 1].h;
+      last.getElementsByTagName('notations')[0].append(mk('tuplet', null, { type: 'stop' }));
+      if (hs.length > 1 && hs.every(x => !x.rest && ['eighth', '16th', '32nd'].includes(txt(x.h, 'type')))) {
+        hs.forEach((x, k) => x.h.insertBefore(mk('beam', k === 0 ? 'begin' : k === hs.length - 1 ? 'end' : 'continue', { number: '1' }), kid(x.h, 'notations')));
+      }
+      tup = null;
+    };
     ev.forEach((e, ei) => {
-      const ps = pieces(e.dur);
+      for (const w of e.pre || []) notes.push(dirOf(w));
+      const trip = isTriplet(e.dur);
+      const ps = trip ? pieces(e.dur * 3 / 2).map(p => ({ ...p, real: p.q * 2 / 3 })) : pieces(e.dur).map(p => ({ ...p, real: p.q }));
+      const heads = [];   // first note element (not chord) of each piece
       ps.forEach((pc, k) => {
         const lastPiece = k === ps.length - 1;
         (e.rest ? [null] : e.pitches).forEach((name, j) => {
@@ -146,27 +220,86 @@
             const alt = { '#': 1, '##': 2, b: -1, bb: -2 }[pm[2] || ''] || 0; if (alt) p.append(mk('alter', String(alt)));
             p.append(mk('octave', pm[3])); n.append(p);
           }
-          n.append(mk('duration', String(Math.round(pc.q * DIV))));
+          n.append(mk('duration', String(Math.round(pc.real * DIV))));
           const stop = name && ((k > 0) || (ei === 0 && k === 0 && tiedIn.has(name)) || (k === 0 && ei > 0 && ev[ei - 1].tie && ev[ei - 1].pitches.includes(name)));
           const start = name && (!lastPiece || e.tie);
           if (stop) n.append(mk('tie', null, { type: 'stop' }));
           if (start) n.append(mk('tie', null, { type: 'start' }));
           n.append(mk('voice', '1'));
           n.append(mk('type', pc.type)); for (let x = 0; x < pc.dots; x++) n.append(mk('dot'));
+          if (trip) { const tm = mk('time-modification'); tm.append(mk('actual-notes', '3'), mk('normal-notes', '2')); n.append(tm); }
           const nots = [];
           if (stop) nots.push(mk('tied', null, { type: 'stop' }));
           if (start) nots.push(mk('tied', null, { type: 'start' }));
+          if (j === 0) {
+            if (k === 0 && e.slur.includes(')')) nots.push(mk('slur', null, { type: 'stop', number: '1' }));
+            if (k === 0 && e.slur.includes('(')) nots.push(mk('slur', null, { type: 'start', number: '1', placement: 'above' }));
+            if (lastPiece && e.fermata) nots.push(mk('fermata', null, { type: 'upright' }));
+          }
           if (name && k === 0 && j === 0 && e.arts) {
             const ar = mk('articulations'); for (const ch of e.arts) if (ARTS[ch]) ar.append(mk(ARTS[ch])); nots.push(ar);
           }
-          if (nots.length) { const no = mk('notations'); nots.forEach(x => no.append(x)); n.append(no); }
+          if (nots.length || (trip && j === 0)) { const no = mk('notations'); nots.forEach(x => no.append(x)); n.append(no); }
+          if (j === 0) heads.push(n);
           notes.push(n);
         });
       });
+      // triplet brackets: open on the first triplet note, close when the group adds up to a plain value (1/3+1/3+1/3 = 1)
+      if (trip) {
+        if (!tup) { tup = { units: 0, heads: [] }; heads[0].getElementsByTagName('notations')[0].append(mk('tuplet', null, { type: 'start', bracket: 'yes' })); }
+        tup.units += Math.round(e.dur * DIV); tup.heads.push(...heads.map(h => ({ h, rest: e.rest })));
+        if (tup.units % 3 === 0) closeTup();
+      } else if (tup) closeTup();
     });
-    notes.forEach(n => anchor ? m.insertBefore(n, anchor) : m.append(n));
+    if (tup) closeTup();
+    for (const w of ev.tail || []) notes.push(dirOf(w));
+    // the new notes go where the old ones were (after the bar's attributes, before its closing barline)
+    const before = anchor || kids(m, 'barline').find(b => b.getAttribute('location') === 'right') || null;
+    notes.forEach(n => before ? m.insertBefore(n, before) : m.append(n));
     old.forEach(o => o.remove());
     return this;
+  };
+
+  // what else a bar shows besides the notes (read-only for now): text, rehearsal mark, tempo, repeats and endings
+  P.barInfo = function (pi, num) {
+    const m = this.measure(pi, num); if (!m) return null;
+    const out = {};
+    const words = [], marks = [];
+    for (const d of kids(m, 'direction')) {
+      for (const w of d.getElementsByTagName('words')) if (w.textContent.trim()) words.push(w.textContent.trim());
+      for (const r of d.getElementsByTagName('rehearsal')) if (r.textContent.trim()) marks.push(r.textContent.trim());
+      const mt = d.getElementsByTagName('metronome')[0], snd = kid(d, 'sound');
+      if (mt && txt(mt, 'per-minute')) out.andamento = txt(mt, 'beat-unit') + ' = ' + txt(mt, 'per-minute');
+      else if (snd && snd.getAttribute('tempo')) out.andamento = 'semínima = ' + Math.round(parseFloat(snd.getAttribute('tempo')));
+    }
+    if (words.length) out.textos = words;
+    if (marks.length) out.ensaio = marks.join(' ');
+    for (const b of kids(m, 'barline')) {
+      const r = kid(b, 'repeat'); if (r) out[r.getAttribute('direction') === 'forward' ? 'repete_daqui' : 'volta_ao_inicio'] = true;
+      const e = kid(b, 'ending'); if (e && e.getAttribute('type') === 'start') out.casa = e.getAttribute('number');
+      const st = txt(b, 'bar-style'); if (st === 'light-light') out.barra_dupla = true; if (st === 'light-heavy') out.barra_final = true;
+    }
+    return out;
+  };
+  // bars whose notes don't fill the time signature (voice 1), for every part. A bar that is short in every part
+  // (a pickup) is fine. Returns [{pi, num, tem, deveria}] in quarters, plus the bars with more than one voice.
+  P.checkBars = function () {
+    const parts = this.parts(), byNum = {}, voices = [];
+    for (const p of parts) for (const m of this.measures(p.i)) {
+      const num = m.getAttribute('number');
+      const u = kids(m, 'note').filter(n => txt(n, 'voice', '1') === '1' && !kid(n, 'chord') && !kid(n, 'grace')).reduce((t, n) => t + (parseInt(txt(n, 'duration', '0')) || 0), 0);
+      const len = Math.round(this.context(p.i, num).len * DIV);
+      (byNum[num] = byNum[num] || []).push({ pi: p.i, num, u, len, chart: false });
+      if (this.voices(p.i, num) > 1) voices.push({ pi: p.i, num });
+    }
+    const out = [];
+    for (const list of Object.values(byNum)) {
+      const off = list.filter(x => x.u !== x.len && x.u > 0);
+      const allShortSame = list.every(x => x.u === list[0].u) && list[0].u < list[0].len;  // a pickup bar
+      if (allShortSame) continue;
+      for (const x of off) out.push({ pi: x.pi, num: x.num, tem: fmt(x.u / DIV), deveria: fmt(x.len / DIV) });
+    }
+    return { compassos: out, duasVozes: voices };
   };
 
   // pitch helpers (written pitch); spelling follows the key: flats in flat keys, sharps otherwise
@@ -181,8 +314,8 @@
       const num = parseInt(m.getAttribute('number')); if (num < a || num > b || this.voices(p, num) > 1) continue;
       const { fifths } = this.context(p, num);
       const ev = this.events(p, num); if (!ev || ev.every(e => e.rest)) continue;
-      const toks = ev.map(e => (e.rest ? 'R' : e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)).join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : ''));
-      this.setTokens(p, num, toks.join(' '));
+      const moved = ev.map(e => ({ ...e, pitches: e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)) })); moved.tail = ev.tail;
+      this.setTokens(p, num, joinTokens(moved));
     }
     return this;
   };
@@ -420,8 +553,8 @@
         const num = sm.getAttribute('number'), ev = this.events(src, num);
         if (!ev || ev.every(e => e.rest)) continue;
         const { fifths } = this.context(pi, num);
-        const toks = ev.map(e => (e.rest ? 'R' : e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)).join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : ''));
-        try { this.setTokens(pi, num, toks.join(' ')); copiados++; }
+        const moved = ev.map(e => ({ ...e, pitches: e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)) })); moved.tail = ev.tail;
+        try { this.setTokens(pi, num, joinTokens(moved)); copiados++; }
         catch { if (this.copyBar(src, pi, num, semis)) copiados++; else pulados.push(num); }
       }
     }

@@ -17,6 +17,7 @@ passo() { echo; echo "=================== $* ==================="; }
 
 if [[ $QUAIS == tudo || $QUAIS == funcoes ]]; then
   passo "1/3 Caio e funções (agente, robo, treino)"
+  cp ../app/partitura.js functions/partitura.js   # o Caio lê e testa as mudanças com o mesmo código do app
   (cd functions && npm ci --silent)
   # no Cloud Shell a conta Google já está conectada: o Firebase usa essa conexão, sem link de login
   export GOOGLE_CLOUD_QUOTA_PROJECT="$P"
