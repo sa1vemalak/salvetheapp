@@ -1210,7 +1210,7 @@ const Band = (() => {
     m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editShow(shows.find(s => s.id === b.dataset.edit)));
     const ns = m.querySelector('#bNewShow'); if (ns) ns.onclick = async () => { const n = prompt('Nome do show:'); if (!n) return; const id = await SALVE.createShow(n.trim()); editShow({ id, name: n.trim(), order: [] }); };
     m.querySelectorAll('[data-inv]').forEach(b => b.onclick = async () => {
-      try { const link = await SALVE.makeInvite(b.dataset.inv); const i = m.querySelector('#bInvLink'); i.value = link; i.select(); try { await navigator.clipboard.writeText(link); toast('Link copiado. Mande para a pessoa.'); } catch { toast('Copie o link e mande para a pessoa.'); } }
+      try { const link = await SALVE.makeInvite(b.dataset.inv); const i = m.querySelector('#bInvLink'); i.value = link; i.select(); try { await navigator.clipboard.writeText(link); toast('Link copiado. Mande para a pessoa (vale 7 dias).'); } catch { toast('Copie o link e mande para a pessoa (vale 7 dias).'); } }
       catch { toast('Não consegui criar o convite.'); }
     });
     const ex = m.querySelector('#bExport'); if (ex) ex.onclick = async () => {

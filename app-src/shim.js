@@ -176,6 +176,7 @@ async function library() {
   const s = await getDocs(collection(fs, 'bands', CTX.band, 'songs'));
   return s.docs.map(d => ({ id: d.id, title: d.data().title, tag: d.data().tag || '' })).sort((a, b) => a.title.localeCompare(b.title));
 }
+const INVITE_DAYS = 7;
 async function makeInvite(role) {
   const c = code();
   await setDoc(doc(fs, 'bands', CTX.band, 'invites', c), { role, bandName: CTX.bandName, createdAt: Date.now(), by: CTX.user.uid });
@@ -190,9 +191,12 @@ async function removeMember(uid) { await deleteDoc(doc(fs, 'bands', CTX.band, 'm
 async function acceptInvite(band, c) {
   const inv = await getDoc(doc(fs, 'bands', band, 'invites', c));
   if (!inv.exists()) throw new Error('Convite inválido ou já apagado.');
-  const { role, bandName } = inv.data();
+  const { role, bandName, createdAt } = inv.data();
   const me = doc(fs, 'bands', band, 'members', CTX.user.uid);
   const already = await getDoc(me).catch(() => null);
+  // links are valid for 7 days (the rules check it too); someone already in the band just opens it
+  if ((!already || !already.exists()) && !(Date.now() - (createdAt || 0) < INVITE_DAYS * 864e5))
+    throw new Error(`Este convite venceu (vale ${INVITE_DAYS} dias). Peça um link novo para quem te convidou.`);
   if (!already || !already.exists()) await setDoc(me, { role, invite: c, name: CTX.user.displayName || '', email: CTX.user.email || '', joinedAt: Date.now() });
   const r = already && already.exists() ? already.data().role : role;
   await noteBand(band, bandName || band, r);
