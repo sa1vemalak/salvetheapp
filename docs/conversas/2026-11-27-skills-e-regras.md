@@ -42,7 +42,7 @@ O app só cria links de músico e de editor, então nada muda para quem usa.
 **Teste:** `testes/regras_firestore.mjs`, no emulador. Regras novas: 13 de 13 passam. Regras antigas: 4 falham,
 o que mostra que a falha existia.
 
-**Ainda não publicado.** Para valer no app, quem cuida do projeto precisa publicar as regras do jeito de sempre:
+**Publicado depois, na segunda rodada (ver abaixo).** Para valer no app, quem cuida do projeto precisa publicar as regras do jeito de sempre:
 `ferramentas/rel.py` rodado de dentro de `firebase/`, com o token `.t` ao lado (ele publica `firestore.rules` e
 `storage.rules`).
 
@@ -58,3 +58,12 @@ Pedido: "faça os 3" (validade dos links, juntar a branch na main, publicar as r
   link novo para quem te convidou." Quem já é da banda abre normalmente. O aviso de link copiado diz que vale 7 dias.
 - O link não é apagado depois do uso, porque um mesmo link pode ser mandado no grupo da banda para várias pessoas.
 - Testes: 18 de 18 passam no emulador (5 novos sobre a validade).
+
+**Publicação (27/11/2026, 03:54 UTC).** Feita pela API do Firebase Rules, com uma chave temporária do
+`gcloud auth print-access-token` (a chave do gcloud precisa do cabeçalho `x-goog-user-project: salvetheapp-3cceb`).
+- Antes de publicar, as regras que estavam no ar foram comparadas com as do repositório. Havia uma mudança feita só
+  no console (às 03:19 do mesmo dia): `fonte` também aceita `'partitura'`. Ela foi trazida para `firebase/firestore.rules`
+  para não se perder.
+- Testes de novo: 18 de 18 no emulador, e o teste do próprio Google aceitou as regras.
+- Depois de publicar, as regras no ar foram baixadas e conferidas: são idênticas ao arquivo.
+- Só `firestore.rules` foi publicado. `storage.rules` e o app (Hosting) não foram mexidos.
