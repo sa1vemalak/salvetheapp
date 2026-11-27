@@ -146,3 +146,5 @@ não foi republicado, porque já rodava essa versão. As três funções termina
 - `ferramentas/atualizar_robos.sh`: roda no Cloud Shell; publica as funções e recria as imagens do Malak (`robo`) e
   do Mestrinho (`mestrinho`) com uma etiqueta de data, troca a imagem dos Cloud Run Jobs e mostra o comando para
   voltar à imagem anterior.
+- Rodado pelo usuário no Cloud Shell em 27/11/2026: Malak (`robo`) e Mestrinho (`mestrinho`) com imagens novas;
+  `gcloud run jobs describe` mostrou os dois jobs prontos (`True`).
