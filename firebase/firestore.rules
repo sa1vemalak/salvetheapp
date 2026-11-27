@@ -112,7 +112,7 @@ service cloud.firestore {
           request.resource.data.status == 'pendente' &&
           request.resource.data.uid == request.auth.uid && request.resource.data.criadoEm is int &&
           ((request.resource.data.tipo == 'audio' &&
-            (!('fonte' in request.resource.data) || request.resource.data.fonte in ['pdf', 'lido']) &&
+            (!('fonte' in request.resource.data) || request.resource.data.fonte in ['pdf', 'lido', 'partitura']) &&
             (!('bpm' in request.resource.data) || (request.resource.data.bpm is number && request.resource.data.bpm >= 20 && request.resource.data.bpm <= 320))) ||
            (request.resource.data.tipo == 'arranjo' && request.resource.data.get('fonte', '') == 'audio' &&
             !('bpm' in request.resource.data)));
