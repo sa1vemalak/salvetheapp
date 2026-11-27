@@ -2064,21 +2064,29 @@ const Player = (() => {
   }
 
   /* ----- follow the score: highlight the bar that is playing and keep it in view ----- */
-  function loadLayout(songId) {
-    if (P.layoutFor === songId) return;
-    P.layoutFor = songId; P.layout = null;
+  /* the bar boxes are read again whenever the open song's PDFs or audio change (the Malak redraws the PDFs first and
+     writes the new boxes minutes later), and when a part's PDF doesn't match the boxes we have; reading them only once
+     per song left the score without the marker after a new version, until another song was opened */
+  const layoutSig = song => song ? song.id + '|' + (song.parts || []).map(p => p.src).join(',') + '|' + (song.player?.mixes?.tudo || '') : null;
+  function loadLayout(song, again) {
+    const songId = song?.id || null, sig = layoutSig(song);
+    if (P.layoutSig === sig && !again) return;
+    if (P.layoutFor !== songId) P.layout = null;  // same song: keep the old boxes until the new ones arrive
+    P.layoutFor = songId; P.layoutSig = sig;
     if (!S.db) { P.layout = (songId && S.snap?.layout?.[songId]) || null; return; }
     if (!songId) return;
+    P.layoutAsked = Date.now();
     S.db.collection('layout').doc(songId).get().then(snap => {
-      if (P.layoutFor !== songId) return;
+      if (P.layoutSig !== sig) return;
       P.layout = snap.exists ? snap.data() : null;
-      followBar(P.lastBar, true, !!S.logic?.active);
+      followBar(P.lastBar, true, !!(S.logic?.active || S.logic?.following));
     }).catch(() => {});
   }
   function boxFor(pane, n) {
     const song = currentSong();
     const part = song?.parts.find(p => p.key === pane.part);
     const lay = P.layout?.parts?.[pane.part];
+    if (part && S.db && (!lay || (lay.src && part.src !== lay.src)) && Date.now() - (P.layoutAsked || 0) > 15000) loadLayout(song, true);
     if (!lay || !part || (lay.src && part.src !== lay.src)) return null;
     let best = null;
     for (const b of lay.boxes) { if (b[0] <= n) best = b; else break; }
@@ -2378,7 +2386,7 @@ const Player = (() => {
     const changed = P.data !== data;
     P.data = data;
     if (changed) { buildBeats(); setDrumStyleFor(song?.id); }
-    loadLayout(song?.id || null);
+    loadLayout(song || null);
     if (data && 'mediaSession' in navigator) { try { navigator.mediaSession.metadata = new MediaMetadata({ title: song.title, artist: 'salvetheapp · ' + (window.SALVE ? SALVE.ctx().bandName : '') }); } catch {} }
     $('#pControls').hidden = !data; seek.disabled = !data; playBtn.disabled = !data;
     msg.hidden = !song || (!!data && data.conferido !== false);
@@ -2386,7 +2394,8 @@ const Player = (() => {
     if (data) applyMix(!newSong); else { renderMode(); setSrc(null); }
     setPlaying();
     paint();
-    if (P.follow || S.logic?.active) setTimeout(() => followBar(P.lastBar, true, !!S.logic?.active), 400);
+    const ext = !!(S.logic?.active || S.logic?.following);
+    if (P.follow || ext) setTimeout(() => followBar(P.lastBar, true, ext), 400);
   }
   /* ----- metronome: clicks on every beat, locked to the music's bar map ----- */
   const M = { on: ls.get('pmetro', false), count: ls.get('pcount', false), vol: ls.get('pmvol', 0.7), ctx: null, out: null,
@@ -2697,7 +2706,7 @@ const Player = (() => {
     const done = () => { unlocking = false; audio.muted = !!(P.data && mixKey() === null); soundOn(); };
     audio.play().then(() => { audio.pause(); done(); }, done);
   }
-  return { sync, renderMode, showBar, pause, drive, unlock, lockCount, open: () => { if (!P.open) setOpen(true); }, refollow: () => { if (S.logic?.active) followBar(P.lastBar, true, true); else if (pane0Ready()) followBar(P.lastBar, true); } };
+  return { sync, renderMode, showBar, pause, drive, unlock, lockCount, open: () => { if (!P.open) setOpen(true); }, refollow: () => { if (S.logic?.active || S.logic?.following) followBar(P.lastBar, true, true); else if (pane0Ready()) followBar(P.lastBar, true); } };
 })();
 
 
@@ -2874,7 +2883,8 @@ const Logic = (() => {
     cfg: { markers: MARKERS, beatsPerBar: 4 }, anchors: {}, wraw: null, since: 0, audio: null, clockTimes: [], rate: 1, live: null, pub: null, pubBusy: false, pubNext: null, unsub: null, cur: null };
   const btn = $('#logicBtn');
   const active = () => L.on && !!L.cur && L.cur.playing;
-  S.logic = { get active() { return active(); }, get canMark() { return L.on && S.canWrite && !!(L.source ? L.srcPos : L.cur); }, tapBar };
+  // following: this device follows the DAW and has a position from it (playing or stopped on a bar)
+  S.logic = { get active() { return active(); }, get following() { return L.on && !!L.cur && L.cur.bar != null; }, get canMark() { return L.on && S.canWrite && !!(L.source ? L.srcPos : L.cur); }, tapBar };
   window.__playing = () => !!S.logic?.active;
 
   /* ----- map: Logic quarter-note position -> song + played-bar index ----- */
