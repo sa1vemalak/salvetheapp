@@ -626,7 +626,7 @@ body.at-home .palette { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261127015756';
+window.APP_VERSION = '20261127024204';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -1445,6 +1445,11 @@ const Robo = (() => {
     if (running(j)) {
       row.append(el('b', '', j.tipo === 'arranjo' ? 'Mestrinho escrevendo o arranjo desta música' : 'Malak trabalhando nesta música'), el('span', '', `${j.msg || 'Na fila…'}${j.progresso ? ' · ' + j.progresso + '%' : ''}`));
       const bar = el('i', 'robo-bar'); bar.style.setProperty('--p', (j.progresso || 3) + '%'); row.append(bar);
+    } else if ((song.correcoesRecusadas || []).length && !running(j)) {
+      const n = song.correcoesRecusadas.length;
+      row.append(el('b', '', `${n} ${n > 1 ? 'correções não entraram' : 'correção não entrou'}`),
+        el('span', '', 'O Malak não aplicou: ' + song.correcoesRecusadas.slice(0, 3).join(' · ') + (n > 3 ? ' …' : '') + '. Peça ao Caio de novo, dizendo o compasso.'));
+      if (data && data.conferido === false && S.canWrite) row.append(controls(song, data, true));
     } else if (data && data.conferido === false) {
       row.append(el('b', '', 'Áudio gerado pelo Malak: aguardando conferência'),
         el('span', '', `Lido de ${data.source || 'partitura'} · andamento ${Math.round(data.bpm || 0)}${data.tempoLido ? ' (da partitura)' : ''}. Ouça junto com a partitura; se alguma nota ou o andamento estiver errado, peça ao Caio ou gere de novo com outro andamento.`));

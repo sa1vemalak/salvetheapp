@@ -1006,10 +1006,20 @@ def run(job):
         upd = {'player': player, 'status': 'aguardando conferência'}
         if corr:  # corrections now live in the read score: keep a history, clear the queue
             hist = (song.get('historicoCorrecoes') or []) + [{**c, 'aplicadaEm': int(time.time() * 1000)} for c in applied]
-            upd.update({'correcoes': [], 'historicoCorrecoes': hist[-200:]})
+            upd.update({'correcoes': [], 'historicoCorrecoes': hist[-200:], 'correcoesRecusadas': problems[:20]})
+        elif song.get('correcoesRecusadas'):
+            upd['correcoesRecusadas'] = []
         song_ref.update(enc(upd))
         warns = problems + warns if corr else warns
-        job.ref.update({'status': 'pronto', 'msg': ('Pronto: correções aplicadas, ouça e confira.' if corr else 'Pronto: ouça e confira.'), 'progresso': 100, 'avisos': warns[:20],
+        if corr and problems and not applied:
+            msg = f'Nenhuma das {len(corr)} correções entrou: {problems[0]}. Peça ao Caio de novo.'
+        elif corr and problems:
+            msg = f'Pronto: {len(applied)} correções aplicadas e {len(problems)} recusadas (ex.: {problems[0]}). Ouça e confira.'
+        elif corr:
+            msg = f'Pronto: {len(applied)} correções aplicadas, ouça e confira.'
+        else:
+            msg = 'Pronto: ouça e confira.'
+        job.ref.update({'status': 'pronto', 'msg': msg, 'progresso': 100, 'avisos': warns[:20],
                         'atualizado': int(time.time() * 1000), 'compassos': len(measures), 'instrumentos': keys})
 
 

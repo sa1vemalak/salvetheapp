@@ -51,7 +51,7 @@ const TOOLS = [
             obj({ tipo: { type: 'string', enum: ['ordem_show'] }, ordem: { type: 'array', items: { type: 'string' }, description: 'ids de TODAS as músicas do show, na nova ordem' }, descricao: str('o que é') }),
             obj({ tipo: { type: 'string', enum: ['marcador_daw'] }, musica: str('id'), compasso_daw: int('compasso da DAW onde a partitura desta música deve aparecer'), descricao: str('o que é') }),
             obj({ tipo: { type: 'string', enum: ['nota_musica'] }, musica: str('id'), texto: str('texto completo que fica nas notas da música (substitui o atual)'), descricao: str('o que é') }),
-            obj({ tipo: { type: 'string', enum: ['corrigir_notas'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas'), compasso: int('número do compasso'), notas: str('o compasso inteiro, corrigido, no formato de ver_notas (ex.: "D5:1 E5:1 F#5:2"); as durações devem somar o tamanho do compasso'), descricao: str('o que muda, em palavras de músico (ex.: "a 3ª nota é Fá#, não Fá")') }),
+            obj({ tipo: { type: 'string', enum: ['corrigir_notas'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas'), compasso: int('número do compasso'), notas: str('o compasso inteiro, corrigido, no formato de ver_notas (ex.: "D5:1 E5:1 F#5:2"); as durações devem somar exatamente "tempos" daquele compasso em ver_notas (2 num 2/4, 3 num 3/4, 4 num 4/4)'), descricao: str('o que muda, em palavras de músico (ex.: "a 3ª nota é Fá#, não Fá")') }),
             obj({ tipo: { type: 'string', enum: ['renomear_musica'] }, musica: str('id'), titulo: str('novo título'), rotulo: str('novo rótulo curto, ou vazio'), descricao: str('o que é') }),
           ],
         },
@@ -144,10 +144,11 @@ async function runTool(name, input, ctx) {
     const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure', 'note', 'score-part'].includes(n) }).parse(xml);
     const part = doc['score-partwise'].part[idx];
     const de = Math.max(1, input.de | 0), ate = Math.min(de + 23, input.ate | 0 || de);
-    let divisions = 1; const out = [];
+    let divisions = 1, beats = 4, beatType = 4; const out = [];
     const STEP_ALTER = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': '##' };
     for (const m of part.measure) {
-      const at = m.attributes; if (at) { const a = Array.isArray(at) ? at[0] : at; if (a.divisions) divisions = +a.divisions; }
+      const at = m.attributes; if (at) { const a = Array.isArray(at) ? at[0] : at; if (a.divisions) divisions = +a.divisions;
+        if (a.time && a.time.beats) { beats = parseInt(a.time.beats) || beats; beatType = parseInt(a.time['beat-type']) || beatType; } }
       const num = parseInt(m['@number']); if (!(num >= de && num <= ate)) continue;
       const toks = []; let voices = new Set();
       for (const n of m.note || []) {
@@ -158,15 +159,43 @@ async function runTool(name, input, ctx) {
         if (n.chord !== undefined && toks.length) { const [ps, d] = toks.pop().split(':'); toks.push(ps + '+' + p + ':' + d); }
         else toks.push(p + ':' + dur);
       }
-      out.push({ compasso: num, notas: toks.join(' '), ...(voices.size > 1 ? { aviso: 'tem mais de uma voz; mostrei só a voz 1' } : {}) });
+      out.push({ compasso: num, formula: `${beats}/${beatType}`, tempos: beats * 4 / beatType, notas: toks.join(' '), ...(voices.size > 1 ? { aviso: 'tem mais de uma voz; mostrei só a voz 1' } : {}) });
     }
     return { musica: input.musica, parte: input.parte, nome: pl.instrumentos[idx].name, compassos: out };
   }
   if (name === 'propor_mudancas') {
+    const ruins = await conferirDuracoes(band, input.mudancas || []);
+    if (ruins.length) return { erro: 'Algumas correções não somam o tamanho do compasso (veja "tempos" em ver_notas; a introdução pode estar em 2/4). Corrija e chame propor_mudancas de novo: ' + ruins.join('; ') };
     ctx.proposta = { resumo: input.resumo, mudancas: input.mudancas };
     return { ok: true, aviso: 'Proposta entregue ao usuário. Ela só é aplicada se um dono ou editor aprovar no app.' };
   }
   return { erro: 'ferramenta desconhecida' };
+}
+
+// length (in quarter notes) of every bar of a song's read score, to check corrections before proposing them
+async function tamanhosDosCompassos(band, musica) {
+  const s = await data(band.collection('songs').doc(musica));
+  const pl = s?.player || {}; if (!pl.lido) return null;
+  const xml = await (await fetch(pl.lido)).text();
+  const doc = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', isArray: n => ['part', 'measure'].includes(n) }).parse(xml);
+  const out = {}; let beats = 4, beatType = 4;
+  for (const m of doc['score-partwise'].part[0].measure) {
+    const at = m.attributes; const a = at ? (Array.isArray(at) ? at[0] : at) : null;
+    if (a && a.time && a.time.beats) { beats = parseInt(a.time.beats) || beats; beatType = parseInt(a.time['beat-type']) || beatType; }
+    out[parseInt(m['@number'])] = beats * 4 / beatType;
+  }
+  return out;
+}
+async function conferirDuracoes(band, mudancas) {
+  const ruins = []; const cache = {};
+  for (const m of mudancas) {
+    if (m.tipo !== 'corrigir_notas') continue;
+    if (!(m.musica in cache)) cache[m.musica] = await tamanhosDosCompassos(band, m.musica).catch(() => null);
+    const tam = cache[m.musica]?.[m.compasso]; if (!tam) continue;
+    const soma = String(m.notas || '').trim().split(/\s+/).reduce((t, tok) => t + (parseFloat(tok.split(':')[1]) || 0), 0);
+    if (Math.abs(soma - tam) > 1e-6) ruins.push(`${m.parte} c.${m.compasso}: soma ${soma}, o compasso tem ${tam}`);
+  }
+  return ruins.slice(0, 12);
 }
 
 /* ---------------- endpoint ---------------- */
@@ -276,3 +305,4 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
     await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
   }
 });
+exports.__conferirDuracoes = (bandId, mudancas) => conferirDuracoes(db.collection('bands').doc(bandId), mudancas);  // tests
