@@ -100,7 +100,9 @@ no pacote não foram trazidos.
 (API do Cloud Functions, `buildConfig.source`); gatilhos, segredos e configurações ficaram como estavam. O `agente`
 não foi republicado, porque já rodava essa versão. As três funções terminaram ativas.
 - Depois disso entrou na `main` (PR #6) uma linha a mais no Caio, que traduz o tipo do acorde (m7, sus4, maj7…).
-  Ela ainda não está no ar em nenhuma das três funções.
+  Publicada em seguida (13:15–13:17 UTC) nas três funções (`agente`, `robo`, `treino`), a partir da `main` (ee022cb).
+  Conferido baixando o código do ar: o `index.js` das três é igual ao da `main`; a chave do Claude continua ligada ao
+  `agente` e os gatilhos do `robo` e do `treino` não mudaram.
 
 ## Terceira rodada: script de publicação seguro
 
