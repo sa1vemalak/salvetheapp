@@ -331,11 +331,14 @@ const Editor = (() => {
         P.applyStructure(c, pi); feitas.push(c);
       } catch (e) { erros.push(`${c.descricao || c.acao} (c.${c.compasso}): ${e.message}`); }
     }
-    for (const c of lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo))) {
+    // notes before lyrics, so the syllables land on the new notes
+    for (const c of lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo)).sort((a, b) => (a.tipo === 'letra') - (b.tipo === 'letra'))) {
       const pi = achar(c.parte);
       try {
         if (pi < 0) throw new Error('instrumento não encontrado');
-        if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras); else P.setTokens(pi, c.compasso, c.notas);
+        if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras);
+        else if (c.tipo === 'letra') P.setLyrics(pi, c.compasso, c.silabas);
+        else P.setTokens(pi, c.compasso, c.notas);
         feitas.push(c);
       }
       catch (e) { erros.push(`${c.parte} c.${c.compasso}: ${e.message}`); }
