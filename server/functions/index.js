@@ -16,7 +16,7 @@ const db = admin.firestore();
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 
 const ORIGINS = ['https://salvetheapp.web.app', 'https://salvetheapp.firebaseapp.com', 'https://salvetheapp-3cceb.web.app',
-  'https://salvetheapp-3cceb.firebaseapp.com', 'https://pnpl10y.web.app', 'http://localhost:8795'];
+  'https://salvetheapp-3cceb.firebaseapp.com', 'http://localhost:8795'];
 const MAX_STEPS = 10;           // model turns per question
 const DAILY_LIMIT = 300;        // questions per band per day
 const DAILY_PER_PERSON = 80;    // questions per person per day

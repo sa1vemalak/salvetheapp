@@ -25,5 +25,5 @@ App para bandas: partituras de cada músico, player, anotações do ensaio, sinc
 | `modo-local/` | programa para usar o app sem internet (rede local) |
 | `ferramentas/` | scripts de deploy e manutenção |
 
-Projeto Firebase: `salvetheapp-3cceb`. A chave da Anthropic fica no Secret Manager (`ANTHROPIC_API_KEY`), nunca no código.
+Projeto Firebase: `salvetheapp-3cceb`. De onde o app veio (a Turnê 10 Anos) e onde ficou cada coisa dela: [docs/turne-10-anos.md](docs/turne-10-anos.md). A chave da Anthropic fica no Secret Manager (`ANTHROPIC_API_KEY`), nunca no código.
 As partituras e áudios das bandas não ficam neste repositório.

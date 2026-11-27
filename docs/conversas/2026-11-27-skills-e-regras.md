@@ -115,3 +115,36 @@ não foi republicado, porque já rodava essa versão. As três funções termina
   Caio publicados sem salvar); grava o commit em `version.json`; não altera arquivos do repositório; confere
   depois de publicar. `DRY=1` só confere (passou nos dois sites).
 - Não publicado nesta rodada: a credencial do Google desta sessão foi recusada (401) pelo Hosting, Rules e Functions.
+
+## Quarta rodada: publicação do pnpl10y
+
+- Senhas temporárias do Google (valem 1 hora) estavam vencidas; o usuário gerou uma nova no Cloud Shell.
+- Primeira tentativa: o filtro `include` do `versions:clone` devolveu uma cópia **vazia**, e o pnpl10y ficou uns
+  2 minutos sem as partituras e áudios das bandas. Voltei para a versão anterior (`c7aa13ebe3900206`) e conferi os
+  235 arquivos.
+- Conserto no `deploy.py`: copia a versão inteira (testado: 256 arquivos; `populateFiles` só acrescenta/troca),
+  confere os dados das bandas **antes** de pôr no ar, e se depois de publicar faltar algum, volta sozinho para a
+  versão anterior.
+- Segunda tentativa: pnpl10y publicado (20261127131533, commit 8479158), com o aviso de convite vencido e os 235
+  arquivos das bandas. O salvetheapp-3cceb já estava com o mesmo código e não foi republicado.
+
+## Quinta rodada: pnpl10y desligado, foco no salvetheapp
+
+- Pedido: excluir o pnpl10y; foco total no salvetheapp; manter o que veio da turnê para aprendizado.
+- `pnpl10y` é um projeto separado (o da turnê), com banco próprio e dois sites (`pnpl10y.web.app` e
+  `salvetheapp.web.app`). Apagar o projeto apagaria os dados da turnê, então só o site `pnpl10y.web.app` foi
+  **desligado** (SITE_DISABLE; dá para religar). Antes, os 235 arquivos das bandas foram conferidos: idênticos no
+  `salvetheapp-3cceb`.
+- Código: `deploy.py` publica só no `salvetheapp-3cceb` por padrão; `pnpl10y.web.app` saiu da lista de endereços
+  aceitos pelo Caio e do texto do modo local. Registro da turnê: `docs/turne-10-anos.md`.
+- `salvetheapp.web.app` (site do projeto `pnpl10y` que roda o app) mantido e atualizado (20261127132358): aviso de
+  convite vencido, metrônomo/bateria novos, 235 arquivos das bandas, página abre sem erros. O `deploy.py` agora
+  publica nos dois endereços oficiais juntos: `salvetheapp-3cceb` e `salvetheapp`.
+
+## Sexta rodada: robôs pelo Cloud Shell
+
+- `ferramentas/atualizar_robos.sh`: roda no Cloud Shell; publica as funções e recria as imagens do Malak (`robo`) e
+  do Mestrinho (`mestrinho`) com uma etiqueta de data, troca a imagem dos Cloud Run Jobs e mostra o comando para
+  voltar à imagem anterior.
+- Rodado pelo usuário no Cloud Shell em 27/11/2026: Malak (`robo`) e Mestrinho (`mestrinho`) com imagens novas;
+  `gcloud run jobs describe` mostrou os dois jobs prontos (`True`).

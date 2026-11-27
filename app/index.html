@@ -665,7 +665,7 @@ body.editing-score .palette, body.editing-score .moremenu { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261127041448';
+window.APP_VERSION = '20261127125611';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -2210,10 +2210,11 @@ const Player = (() => {
     D.out.gain.value = D.vol;
     const src = M.ctx.createBufferSource(), gn = M.ctx.createGain();
     src.buffer = b; gn.gain.value = g; src.connect(gn); gn.connect(D.out); src.start(when);
+    track(gn, when);
   }
-  function drumTick() {
-    if (!D.on || audio.paused || !M.ctx || !D.ev.length) return;
-    const t = audio.currentTime, rate = audio.playbackRate || 1;
+  function drumTick(t) {
+    if (!D.on || !D.ev.length) return;
+    const rate = audio.playbackRate || 1;
     if (D.lastT < 0 || t < D.lastT - 0.03 || t > D.lastT + 0.6) {
       let lo = 0, hi = D.ev.length;
       while (lo < hi) { const mid = (lo + hi) >> 1; if (D.ev[mid][0] < t - 0.01) lo = mid + 1; else hi = mid; }
@@ -2250,18 +2251,51 @@ const Player = (() => {
     if (M.ctx.state !== 'running') M.ctx.resume().catch(() => {});
     return M.ctx;
   }
-  function click(when, accent) {
+  function click(when, accent, countIn) {
     const c = M.ctx, o = c.createOscillator(), g = c.createGain();
     o.type = 'triangle'; o.frequency.value = accent ? 1760 : 1245;
     g.gain.setValueAtTime(0.0001, when);
     g.gain.exponentialRampToValueAtTime(accent ? 0.9 : 0.55, when + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, when + 0.07);
     o.connect(g); g.connect(M.out); o.start(when); o.stop(when + 0.08);
+    if (!countIn) track(g, when);
+  }
+  /* Clicks and drum hits are scheduled a little ahead. After a jump (tapping a bar, the seek bar, a loop) or a pause,
+     the ones already scheduled from the old spot are silenced so they don't land off the beat. */
+  const sched = [];
+  function track(node, when) {
+    sched.push([node, when]);
+    if (sched.length > 96) { const now = M.ctx.currentTime; for (let i = sched.length - 1; i >= 0; i--) if (sched[i][1] < now - 0.5) sched.splice(i, 1); }
+  }
+  function cancelScheduled() {
+    const now = M.ctx ? M.ctx.currentTime : 0;
+    sched.forEach(([n, w]) => { if (w > now - 0.01) { try { n.disconnect(); } catch {} } });
+    sched.length = 0;
+  }
+  /* Where the music really is right now. The phone moves the audio's own clock in uneven steps and holds it still for a
+     moment after every jump while the sound restarts, so the clicks and drums follow a steady clock that waits for the
+     audio to really move, then runs on its own and is gently pulled toward the audio. */
+  const C = { a: null, hold: true, holdT: null };
+  function resetClock() { C.a = null; C.hold = true; C.holdT = null; M.lastT = -1; D.lastT = -1; cancelScheduled(); }
+  function musicNow() {
+    const t = audio.currentTime, now = M.ctx.currentTime, rate = audio.playbackRate || 1;
+    if (C.hold) {
+      if (C.holdT == null || t < C.holdT) { C.holdT = t; return null; }
+      if (t - C.holdT < 0.01) return null;  // the sound has not started moving yet
+      C.hold = false; C.a = { ct: now, at: t, rate }; return t;
+    }
+    if (!C.a || C.a.rate !== rate) { C.a = { ct: now, at: t, rate }; return t; }
+    const err = t - (C.a.at + (now - C.a.ct) * rate);
+    if (Math.abs(err) > 0.4) { resetClock(); C.holdT = t; return null; }  // a jump nobody announced: start again from it
+    C.a.at += err * 0.08;
+    return C.a.at + (now - C.a.ct) * rate;
   }
   function metroTick() {
-    drumTick();
-    if (!M.on || audio.paused || !M.ctx || !M.beats.length) return;
-    const t = audio.currentTime, rate = audio.playbackRate || 1;
+    if (audio.paused || !M.ctx || M.ctx.state !== 'running') return;
+    const t = musicNow(); if (t == null) return;
+    drumTick(t);
+    if (!M.on || !M.beats.length) return;
+    const rate = audio.playbackRate || 1;
     // after a seek, a loop jump or a mix change, start again from the beat at the playhead
     if (M.lastT < 0 || t < M.lastT - 0.03 || t > M.lastT + 0.6) {
       let lo = 0, hi = M.beats.length;
@@ -2277,15 +2311,16 @@ const Player = (() => {
     }
   }
   function metroRun() {
-    clearInterval(M.timer); M.lastT = -1; D.lastT = -1;
+    clearInterval(M.timer); resetClock();
     if ((M.on || D.on) && !audio.paused && !M.unlocking) {
       ensureCtx(); if (D.on) loadKit();
       M.timer = setInterval(metroTick, 25); metroTick();
     }
   }
   audio.addEventListener('play', metroRun);
-  audio.addEventListener('pause', () => clearInterval(M.timer));
-  audio.addEventListener('seeked', () => { M.lastT = -1; D.lastT = -1; });
+  audio.addEventListener('pause', () => { clearInterval(M.timer); resetClock(); });
+  ['seeking', 'seeked', 'waiting', 'emptied'].forEach(ev => audio.addEventListener(ev, resetClock));
+  audio.addEventListener('ratechange', () => { C.a = null; });
   function paintMetro() {
     metroBtn.setAttribute('aria-pressed', String(M.on)); countBtn.setAttribute('aria-pressed', String(M.count));
     volIn.hidden = !M.on; volIn.value = String(M.vol);
@@ -2312,7 +2347,7 @@ const Player = (() => {
     const beat = (t1 - t0) / n / (P.rate || 1);
     try { audio.currentTime = t0; } catch {}
     const at = c.currentTime + 0.08;
-    for (let k = 0; k < n; k++) click(at + k * beat, k === 0);
+    for (let k = 0; k < n; k++) click(at + k * beat, k === 0, true);
     playBtn.classList.add('counting');
     M.counting = setTimeout(() => { M.counting = null; playBtn.classList.remove('counting'); start(); }, Math.max(0, (at - c.currentTime + n * beat) * 1000 - 15));
   }
@@ -2559,7 +2594,7 @@ const Logic = (() => {
         <li>No computador, abra <b>"Abrir salvetheapp"</b>. Se o sistema perguntar se pode aceitar conexões, clique em <b>Permitir</b>.</li>
         <li>Nos iPads, abra o endereço que aparece na janela do computador, algo como <b>http://192.168.0.10:8080</b>.</li>
       </ol>
-      <div class="hint"><b>Cuidados:</b> não use a rede de convidados do roteador e deixe desligado o "isolamento de clientes" (AP isolation), senão os aparelhos não se enxergam. iPad com chip de celular: desligue os dados móveis. O aviso "sem internet" no Wi-Fi é normal. Prefira a rede de 5 GHz. Nessa rede o endereço da internet (pnpl10y.web.app) não abre: use o do modo local. Também dá para ligar os iPads por cabo de rede (adaptador Ethernet) num switch, com o Wi-Fi deles desligado.</div>`;
+      <div class="hint"><b>Cuidados:</b> não use a rede de convidados do roteador e deixe desligado o "isolamento de clientes" (AP isolation), senão os aparelhos não se enxergam. iPad com chip de celular: desligue os dados móveis. O aviso "sem internet" no Wi-Fi é normal. Prefira a rede de 5 GHz. Nessa rede o endereço da internet (salvetheapp-3cceb.web.app) não abre: use o do modo local. Também dá para ligar os iPads por cabo de rede (adaptador Ethernet) num switch, com o Wi-Fi deles desligado.</div>`;
   }
   function paintDawLabels() {
     const b = document.querySelector('#logicBtn'); if (b) b.title = 'A partitura segue ' + dawO();
