@@ -384,6 +384,52 @@ def load_score(files, boxes=None, pdf=None):
 CHORD = re.compile(r'^[A-G](?:[#b♯♭])?(?:maj|ma|min|mi|m|M|dim|aug|sus|add|°|ø|\+|-|\d|\(|\)|/[A-G][#b♯♭]?|[#b♯♭]|alt|Δ)*$')
 
 
+# chord symbols written by notation programs draw ♭ ♯ ø Δ with a music text font (SMuFL "csym" glyphs);
+# read as text they are private-use characters: B♭m7 would become "B" + "m7"
+CSYM = {0xED60: 'b', 0xED61: '', 0xED62: '#', 0xED63: '##', 0xED64: 'bb', 0xE260: 'b', 0xE261: '', 0xE262: '#',
+        0xE870: 'dim', 0xE871: 'm7b5', 0xE872: '+', 0xE873: 'maj', 0xE874: 'm', 0xE875: '', 0xE876: '', 0x266D: 'b', 0x266F: '#',
+        0xF023: '#', 0xF062: 'b', 0xF06E: ''}  # last three: legacy music fonts (# b n at U+F000 + ASCII)
+
+
+def chord_words(page):
+    """words of the small text on a page (chord symbols), with music-font accidentals turned into b / #"""
+    # music-font glyphs have very different boxes from letters: compare baselines, not tops
+    bl = lambda c: float(page.height) - float(c['matrix'][5]) if c.get('matrix') else float(c['bottom'])
+    chars = sorted((c for c in page.chars if float(c.get('size') or 0) <= 16), key=bl)
+    lines = []  # glyphs of other fonts sit a hair higher or lower: group by closeness, not by rounding
+    for c in chars:
+        if lines and abs(bl(c) - lines[-1][0]) < 0.45 * float(c.get('size') or 10):
+            lines[-1][1].append(c)
+        else:
+            lines.append([bl(c), [c]])
+    chars = [c for _, cs in lines for c in sorted(cs, key=lambda c: float(c['x0']))]
+    words, cur = [], None
+    for c in chars:
+        ch = c['text']; o = ord(ch[0]) if ch else 0
+        if o in CSYM:
+            ch = CSYM[o]
+        elif 0xE000 <= o <= 0xF8FF or not ch.strip():
+            if cur: words.append(cur); cur = None
+            continue
+        size = float(c.get('size') or 10)
+        if cur and abs(bl(c) - cur['bl']) < 0.5 * size and -0.25 * size < float(c['x0']) - cur['x1'] < 0.3 * size:
+            cur['text'] += ch; cur['x1'] = float(c['x1']); cur['bottom'] = max(cur['bottom'], float(c['bottom']))
+        else:
+            if cur: words.append(cur)
+            cur = {'text': ch, 'x0': float(c['x0']), 'x1': float(c['x1']), 'top': float(c['top']), 'bottom': float(c['bottom']), 'size': size, 'bl': bl(c)}
+    if cur: words.append(cur)
+    # rehearsal letters (A, B, "E"…) are drawn inside a small box: they are not chords
+    boxes = [(float(r['x0']), float(r['top']), float(r['x1']), float(r['bottom'])) for r in list(page.rects) + list(page.curves)
+             if 6 < float(r['x1']) - float(r['x0']) < 60 and 6 < float(r['bottom']) - float(r['top']) < 40]
+    boxed = lambda w: any(x0 - 2 <= w['x0'] and w['x1'] <= x1 + 2 and y0 - 2 <= w['top'] and w['bottom'] <= y1 + 2 for x0, y0, x1, y1 in boxes)
+    # a capital letter that starts a lyric cue ("E nessa noite...") is a word of the sentence, not a chord
+    def in_text(i):
+        w = words[i]; nx = words[i + 1] if i + 1 < len(words) else None
+        return bool(nx and abs(nx['bl'] - w['bl']) < 0.5 * w['size'] and 0 <= nx['x0'] - w['x1'] < 0.6 * w['size']
+                    and nx['text'][:1].islower())
+    return [w for i, w in enumerate(words) if w['text'] and not boxed(w) and not in_text(i)]
+
+
 def pdf_text(pdf):
     """tempo (♩ = N), part names in the left margin of the first page, and chord symbols with their place"""
     import pdfplumber
@@ -414,8 +460,8 @@ def pdf_text(pdf):
                             break  # the names start repeating (abbreviated systems): first system done
                         names.append(nm)
                     info['names'] = names
-                for w in words:
-                    t = w['text'].replace('♭', 'b').replace('♯', '#')
+                for w in chord_words(page):
+                    t = w['text']
                     if CHORD.match(t) and len(t) <= 12 and w['x0'] > 0.12 * W:
                         info['chords'].append({'page': pi + 1, 'x': w['x0'] / W, 'y': w['bottom'] / H, 't': t, 'size': float(w.get('size') or 0)})
         # rehearsal letters (A, B...) look like chords: keep the font size most chord symbols use
@@ -463,20 +509,114 @@ QUAL_V = {'m7': [0, 3, 7, 10], '7': [0, 4, 7, 10], 'maj7': [0, 4, 7, 11], 'm7b5'
           '6': [0, 4, 7, 9], 'm6': [0, 3, 7, 9], 'sus4': [0, 5, 7], '7sus4': [0, 5, 7, 10], 'aug': [0, 4, 8], 'add9': [0, 4, 7, 14], '9': [0, 4, 7, 10, 14], 'm9': [0, 3, 7, 10, 14]}
 
 
+def m21_chord_name(sym):
+    """chord name as printed (Bbm7, Ebmaj7/Bb, Gm7b5) -> music21's spelling (flat = '-' on the root and the bass)"""
+    m = re.fullmatch(r'([A-G])([b#]?)(.*?)(?:/([A-G])([b#]?))?', sym.strip())
+    if not m:
+        return sym
+    rest = re.sub(r'(m?(?:maj)?)7\((9|11|13)\)$', r'\1\2', m.group(3))  # 7(13) is a 13 chord, m7(9) is m9
+    root = m.group(1) + m.group(2).replace('b', '-'); rest = re.sub(r'[()]', '', rest).replace('º', 'dim').replace('°', 'dim')
+    bass = ('/' + m.group(4) + m.group(5).replace('b', '-')) if m.group(4) else ''
+    return root + rest + bass
+
+
 def voicing(sym):
     """the tour charts' voicing: chord in the middle register (around G3-D5), bass note in the low octave"""
-    try:
-        cs = m21.harmony.ChordSymbol(sym)
+    def parse(name):
+        cs = m21.harmony.ChordSymbol(name)
         root = cs.root().pitchClass
         bass = cs.bass().pitchClass if cs.bass() is not None else root
-        iv = sorted({(p.pitchClass - root) % 12 for p in cs.pitches})
-    except Exception:
-        return None, None
+        return root, bass, sorted({(p.pitchClass - root) % 12 for p in cs.pitches})
+    name = m21_chord_name(sym)
+    try:
+        root, bass, iv = parse(name)
+    except Exception:  # tensions music21 doesn't know (Am7(11)…): play the chord without them
+        try:
+            root, bass, iv = parse(m21_chord_name(re.sub(r'\(.*?\)', '', sym)))
+        except Exception:
+            return None, None
+    if len(iv) > 4:  # extended chord, four notes: 3rd and 7th first, then the colour notes, then the 5th, root last
+        colour = {9: 2.0, 1: 2.1, 3: 2.1, 8: 2.1, 2: 2.2, 6: 2.3, 5: 2.4 if 3 in iv else 3.5}  # 13 first; the 11 clashes with a major 3rd
+        rank = lambda x: (0 if x in (3, 4) else 1 if x in (10, 11) else 3 if x == 7 else 4 if x == 0 else colour.get(x, 2.5))
+        if 4 in iv and 3 in iv:  # #9 next to the major 3rd: the 3 is the 3rd
+            rank = (lambda r: lambda x: 2 if x == 3 else r(x))(rank)
+        iv = sorted(sorted(iv, key=rank)[:4])
     base = 53 + ((root - 53) % 12)
     tones = sorted(base + x for x in iv)
     while tones[-1] > 76:
         tones = sorted(tones[:-1] + [tones[-1] - 12])
     return tones[:4], 36 + ((bass - 36) % 12)
+
+
+def chords_from_part(part):
+    """chord symbols written in a part -> {bar: [(fraction of the bar, symbol)]} (same shape as chords_to_bars)"""
+    out = {}
+    for m in part.getElementsByClass('Measure'):
+        bl = float(m.barDuration.quarterLength) if m.barDuration else 4.0
+        for cs in m.getElementsByClass(m21.harmony.ChordSymbol):
+            fig = (cs.figure or '').replace('-', 'b')
+            kt = getattr(cs, 'chordKindStr', '') or ''  # the text as written ("7(#9)", "m7b5") beats music21's rebuilt name
+            if fig and kt and cs.root() is not None and voicing(cs.root().name.replace('-', 'b') + kt)[0]:
+                fig = cs.root().name.replace('-', 'b') + kt + ('/' + cs.bass().name.replace('-', 'b') if cs.bass() is not None and cs.bass().name != cs.root().name else '')
+            if fig:
+                out.setdefault(int(m.number or 0), []).append((round(float(cs.offset) / bl, 3), fig))
+    return {k: sorted(v) for k, v in out.items()}
+
+
+def chart_part(score, bar_chords, name='Base'):
+    """the chart part as a musician reads it: chord symbols over slashes, one slash per beat"""
+    ref = score.parts[0].getElementsByClass('Measure')
+    part = m21.stream.Part(); part.partName = name
+    inst = m21.instrument.Instrument(); inst.partName = name; inst.instrumentName = name; part.insert(0, inst)
+    part.insert(0, m21.clef.TrebleClef())
+    last = None
+    for m in ref:
+        nm = m21.stream.Measure(number=m.number)
+        bar_len = float(m.barDuration.quarterLength) if m.barDuration else 4.0
+        changes = [(round(f * bar_len * 2) / 2, t) for f, t in bar_chords.get(int(m.number or 0), [])]
+        for o, sym in changes:
+            try:
+                cs = m21.harmony.ChordSymbol(m21_chord_name(sym))
+                mk = re.fullmatch(r'[A-G][b#]?(.*?)(?:/[A-G][b#]?)?', sym.strip())
+                if mk:  # keep the chord as the arranger wrote it ("7(#9)", "m7b5") on the page and for the app
+                    cs.chordKindStr = mk.group(1)
+                cs.writeAsChord = False; cs.quarterLength = 0; nm.insert(o, cs)
+            except Exception:
+                pass
+        if changes or last:
+            beat, step = 0.0, (1.5 if bar_len in (3.0, 6.0) and m.timeSignature and m.timeSignature.denominator == 8 else 1.0)
+            while beat < bar_len - 1e-6:
+                n = m21.note.Note('B4', quarterLength=min(step, bar_len - beat)); n.notehead = 'slash'; n.stemDirection = 'noStem'
+                nm.insert(beat, n); beat += step
+            last = changes[-1][1] if changes else last
+        else:
+            nm.insert(0, m21.note.Rest(quarterLength=bar_len))
+        part.append(nm)
+    return part
+
+
+def partitura_master(score, names, chart_parts, title, bpm=None):
+    """the editable score: the parts as read (written pitch, transpositions kept), the chart part as chord symbols over
+    slashes, proper names and short names, title and tempo"""
+    import copy
+    out = m21.stream.Score()
+    out.metadata = m21.metadata.Metadata(title=title); out.metadata.composer = ''
+    SHORT = [(r'trompete|trumpet', 'Tpt.'), (r'sax\w*\s*tenor|tenor', 'Sax T.'), (r'sax\w*\s*alto|alto', 'Sax A.'),
+             (r'bar[ií]tono', 'Sax Bar.'), (r'trombone', 'Tbn.'), (r'trompa|horn', 'Tpa.'), (r'flauta|flute', 'Fl.'),
+             (r'clarinete', 'Cl.'), (r'base|cifra', 'Base'), (r'baixo|bass', 'Bx.'), (r'piano|teclado', 'Pno.'), (r'guitarra|viol[aã]o', 'Gt.')]
+    for i, (pt, nm) in enumerate(zip(score.parts, names)):
+        p = copy.deepcopy(chart_parts[i]) if i in chart_parts else copy.deepcopy(pt)
+        p.partName = nm
+        p.partAbbreviation = next((ab for rx, ab in SHORT if re.search(rx, nm, re.I)), nm[:6])
+        ins = p.getInstrument(returnDefault=False)
+        if ins is not None:
+            ins.partName = nm; ins.partAbbreviation = p.partAbbreviation; ins.instrumentName = nm
+        if i == 0 and bpm:
+            ms = p.getElementsByClass('Measure')
+            if len(ms) and not list(ms[0].getElementsByClass(m21.tempo.MetronomeMark)):
+                ms[0].insert(0, m21.tempo.MetronomeMark(number=round(float(bpm))))
+        out.insert(0, p)
+    return out
 
 
 def comping_part(score, bar_chords, name='Base'):
@@ -808,6 +948,62 @@ def apply_corrections(score, keys, corrections):
 
 
 # ---------------- main ----------------
+def multi_rests(path):
+    """one part's MusicXML: 2+ silent bars in a row -> <multiple-rest>N, broken where the reader needs to see something"""
+    tree = ET.parse(path); root = tree.getroot()
+    part = root.find('part')
+    if part is None:
+        return
+    ms = part.findall('measure')
+    silent = lambda m: all(n.find('pitch') is None and n.find('unpitched') is None for n in m.findall('note'))
+    breaks = lambda m: (m.find('attributes/time') is not None or m.find('attributes/key') is not None or m.find('attributes/clef') is not None
+                        or m.find('direction/direction-type/rehearsal') is not None or m.find('direction/direction-type/words') is not None
+                        or m.find('barline/repeat') is not None or m.find('harmony') is not None)
+    ends = lambda m: any((b.findtext('bar-style') or '') in ('light-light', 'light-heavy') or b.find('repeat') is not None for b in m.findall('barline'))
+    i = 0
+    while i < len(ms):
+        if not silent(ms[i]):
+            i += 1; continue
+        j = i
+        while j + 1 < len(ms) and silent(ms[j + 1]) and not breaks(ms[j + 1]) and not ends(ms[j]):
+            j += 1
+        if j > i:
+            at = ms[i].find('attributes')
+            if at is None:
+                at = ET.Element('attributes'); ms[i].insert(0, at)
+            st = ET.SubElement(at, 'measure-style'); ET.SubElement(st, 'multiple-rest').text = str(j - i + 1)
+        i = j + 1
+    tree.write(path, encoding='UTF-8', xml_declaration=True)
+
+
+def engrave_parts(xml_path, title, partes, tmp, dest):
+    """a score written in the app has no PDFs: MuseScore draws the full score and one PDF per instrument
+    (same as the Mestrinho does), so the band reads it on the stand, writes on it and follows the DAW"""
+    import copy
+    env = dict(os.environ, QT_QPA_PLATFORM='offscreen')
+    mss = os.path.join(tmp, 'parte.mss')  # musicians' parts: long rests as one bar with the count on top
+    with open(mss, 'w') as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?><museScore version="3.02"><Style>'
+                '<createMultiMeasureRests>1</createMultiMeasureRests><minEmptyMeasures>2</minEmptyMeasures></Style></museScore>')
+    def eng(x, pdf, part=False):
+        subprocess.run(['mscore3'] + (['-S', mss] if part else []) + ['-o', pdf, x], check=True, capture_output=True, timeout=600, env=env)
+        return pdf
+    full = m21.converter.parse(xml_path)
+    out = []
+    if len(full.parts) > 1:
+        out.append({'key': 'grade', 'name': 'Grade', 'src': upload(eng(xml_path, os.path.join(tmp, 'grade.pdf')), f'{dest}/grade.pdf', 'application/pdf')})
+    for i, pt in enumerate(full.parts):
+        meta = partes[i] if i < len(partes) else {}
+        name = meta.get('name') or pt.partName or f'Parte {i + 1}'
+        key = meta.get('key') or slug(name)
+        one = m21.stream.Score(); one.metadata = m21.metadata.Metadata(title=f'{title} · {name}')
+        one.insert(0, copy.deepcopy(pt))
+        one.metadata.composer = ''
+        px = os.path.join(tmp, f'parte-app-{i}.musicxml'); one.write('musicxml', fp=px); multi_rests(px)
+        out.append({'key': key, 'name': name, 'src': upload(eng(px, os.path.join(tmp, f'{slug(key)}.pdf'), True), f'{dest}/{slug(key)}.pdf', 'application/pdf')})
+    return out
+
+
 def run(job):
     band = job.ref.parent.parent.id
     song_id = job.data['song']
@@ -826,7 +1022,17 @@ def run(job):
             job.step('Abrindo a partitura já lida', 5)
             path = download(prev['lido'], os.path.join(tmp, 'anterior.musicxml'))
             src_files, how = [path], 'partitura lida'
-        fontes = [] if reuse else [f for f in song.get('fontes', []) if re.search(r'\.(musicxml|mxl|xml|mscz|mscx)$', f.get('name', ''), re.I)]
+        master = (song.get('partitura') or {}).get('xml')
+        if not reuse and master and job.data.get('fonte') == 'partitura':  # the band's edited score is the source
+            job.step('Abrindo a partitura editada', 5)
+            src_files, how = [download(master, os.path.join(tmp, 'partitura.musicxml'))], 'partitura editada'
+            pmeta = song.get('partitura') or {}
+            if pmeta.get('origem') == 'criada no app':  # its PDFs are drawn from it, every version
+                job.step('Desenhando a grade e as partes em PDF', 8)
+                dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
+                parts = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest)
+                song_ref.update({'parts': parts})
+        fontes = [] if (reuse or src_files) else [f for f in song.get('fontes', []) if re.search(r'\.(musicxml|mxl|xml|mscz|mscx)$', f.get('name', ''), re.I)]
         if fontes:
             f = fontes[-1]
             job.step('Lendo o arquivo original ' + f['name'], 5)
@@ -860,9 +1066,17 @@ def run(job):
             how = prev.get('source', 'partitura lida')
             if 'com correções' not in how:
                 how += ', com correções'
-        elif how == 'arquivo original':
+        elif how in ('arquivo original', 'partitura editada'):
             score = load_score(src_files)
             names = [(pt.partName or f'Parte {i + 1}') for i, pt in enumerate(score.parts)]
+            if how == 'partitura editada':  # chart parts (chord symbols over slashes) play as piano + bass
+                for i, pt in enumerate(list(score.parts)):
+                    ns = [n for n in pt.recurse().notes if not isinstance(n, m21.harmony.ChordSymbol)]
+                    if ns and all(getattr(n, 'notehead', '') == 'slash' for n in ns):
+                        bars = chords_from_part(pt)
+                        if bars:
+                            score.replace(pt, comping_part(score, bars, names[i]))
+                            print('base tocada das cifras da partitura:', names[i], len(bars), 'compassos com cifra', flush=True)
         else:
             score, names = m21.stream.Score(), []
             for p, files, tinfo, _pdf in src_files:
@@ -886,7 +1100,8 @@ def run(job):
         # chord-chart parts (slashes + chord symbols) come out of the reader as rests: in the study audio they become a
         # metronome (a computer-made band sounded worse than none); the chords stay in the score
         click_names = set()
-        if how not in ('arquivo original',) and not reuse:
+        chart_parts = {}  # part index -> the chart as written (chord symbols over slashes), for the editable score
+        if how not in ('arquivo original', 'partitura editada') and not reuse:
             for p, files, tinfo, pdf in src_files:
                 if not tinfo['chords']:
                     continue
@@ -900,17 +1115,18 @@ def run(job):
                     notes = len(list(pt.recurse().notes))
                     if notes <= len(pt.getElementsByClass('Measure')) * 0.3:  # nearly empty: the chart part
                         newp = comping_part(score, bars, names[i])
+                        chart_parts[i] = chart_part(score, bars, names[i])
                         score.replace(pt, newp); click_names.add(names[i])
                         print('base gerada das cifras:', names[i], len(bars), 'compassos com cifra', flush=True)
         # PDFs are read at written pitch: trumpet in Bb, saxes, horn... need their transposition to sound in tune
-        if not how.startswith('arquivo original'):
+        if not how.startswith('arquivo original') and how != 'partitura editada':
             for pt, nm in zip(score.parts, names):
                 iv = set_transposition(pt, nm)
                 if iv:
                     print('transposição', nm, iv, flush=True)
         # corrections asked for (bar by bar), then keep the score as read (before repeats are written out)
         keys_all = part_keys(names)
-        corr = song.get('correcoes') or []
+        corr = [] if how == 'partitura editada' else (song.get('correcoes') or [])  # the edited score already has them
         applied, problems = apply_corrections(score, keys_all, corr) if corr else ([], [])
         if corr:
             print('correções aplicadas:', len(applied), 'problemas:', problems, flush=True)
@@ -921,6 +1137,13 @@ def run(job):
             score.write('musicxml', fp=xml_lido)
         except Exception as e:
             print('não guardei o MusicXML lido:', e); xml_lido = None
+        xml_master = None
+        if not (song.get('partitura') or {}).get('xml') and not reuse:  # the editable score, made once
+            try:
+                xml_master = os.path.join(tmp, 'partitura.musicxml')
+                partitura_master(score, names, chart_parts, song.get('title') or song_id, (bpm or locals().get('bpm_text'))).write('musicxml', fp=xml_master)
+            except Exception as e:
+                print('não montei a partitura editável:', e); traceback.print_exc(); xml_master = None
         score = unfold(score, LAST_PLAN)
 
         tmap, had_tempo = tempo_map(score, bpm or (locals().get('bpm_text')))
@@ -968,6 +1191,11 @@ def run(job):
         lido = None
         if xml_lido:  # the score as read: lets the band (and Caio) check and fix notes later
             lido = upload(xml_lido, f'{base}/lido.musicxml', 'application/vnd.recordare.musicxml+xml')
+        partitura = None
+        if xml_master:  # the editable score the app draws and edits (version 1)
+            pv = time.strftime('%Y%m%d%H%M%S')
+            partitura = {'xml': upload(xml_master, f'bands/{band}/partituras/{song_id}/{pv}.musicxml', 'application/vnd.recordare.musicxml+xml'),
+                         'versao': 1, 'criadaEm': int(time.time() * 1000), 'origem': how, 'editadaPor': 'Malak'}
         mixes = {}
         todo = [('tudo', total)] + [('so-' + k, a) for k, a in tracks.items()]
         if len(tracks) > 2:
@@ -1004,6 +1232,8 @@ def run(job):
             'sound': 'Som gerado pelo Malak (FluidR3 GM). Confira as notas e o andamento.',
         }
         upd = {'player': player, 'status': 'aguardando conferência'}
+        if partitura:
+            upd['partitura'] = partitura
         if corr:  # corrections now live in the read score: keep a history, clear the queue
             hist = (song.get('historicoCorrecoes') or []) + [{**c, 'aplicadaEm': int(time.time() * 1000)} for c in applied]
             upd.update({'correcoes': [], 'historicoCorrecoes': hist[-200:], 'correcoesRecusadas': problems[:20]})

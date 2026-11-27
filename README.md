@@ -2,10 +2,18 @@
 
 App para bandas: partituras de cada músico, player, anotações do ensaio, sincronia com a DAW e o assistente Caio.
 
+## Ordem de prioridades
+
+1. **Editar e criar partituras com ajuda da IA.** A partitura é desenhada pelo próprio app (Verovio) a partir do MusicXML da música (`songs/{id}.partitura`), e é editada dos dois jeitos juntos: tocando na nota (subir/descer, duração, ponto, articulações, ligadura, dinâmica, pausa, reescrever o compasso) ou pedindo ao **Caio**, que lê os compassos e propõe as mudanças. Cada gravação vira uma nova versão (as antigas ficam guardadas), e o áudio de estudo é refeito sozinho a partir dela. Também dá para **criar uma partitura do zero** (Adicionar música › Criar a partitura aqui no app, ou Editar numa música sem partitura): escolhe instrumentos (trompete, saxes, trombone, flauta, violino, acordeon, voz, guitarra, baixo, base com cifras), fórmula, tom e compassos; as cifras entram pelo botão Cifras… ou pelo Caio, e o Malak desenha a grade e as partes em PDF (pausas longas juntas, com o número em cima) para a estante.
+2. **Seguir a DAW** (Logic e outras, por MIDI Clock): a partitura acompanha o compasso que está tocando. Em pausa longa o app **conta os compassos** ("pausa 5 de 12 · faltam 8"), avisa dois compassos antes, conta os tempos do último compasso e mostra onde o músico entra. Nas partes desenhadas pelo app as pausas longas viram um compasso só com o número em cima.
+3. **Player (um extra de luxo):** áudio de estudo com piano, baixo e sopros, para o músico treinar em casa ou o arranjador conferir a escrita sem precisar produzir nada.
+
 | Pasta | O que é |
 |---|---|
 | `app/` | o app publicado no Firebase Hosting (`index.html`; o `fb.js` é gerado de `app-src/`) |
 | `app/equipe.html` | **Equipe do app** (fora das bandas): sugestões de melhoria, as regras que a IA arranjadora segue (com histórico), as lições dos arranjadores e o **Treinar a IA** (gravação + partitura oficial → a IA arranja sem ver, compara, dá nota e sugere lições). Fonte: `app-src/equipe.js` → `npx esbuild equipe.js --bundle --minify --format=iife --target=es2019 --outfile=../app/equipe.js`. Quem é da equipe: `admins/{uid}` ou `equipe/{uid}` (só o servidor inclui) |
+| `app/partitura.js` | a partitura editável em MusicXML: compassos, notas em texto (`D5:1 E5:0.5. R:0.5`), reescrever um compasso conferindo os tempos, transpor, dinâmicas, pausas longas e a parte de um músico só |
+| `app/editor.js` | o editor de partitura (Mais › Editar partitura) desenhado com Verovio (`app/lib/`, LGPL); também aplica as mudanças aprovadas do Caio |
 | `app-src/shim.js` | login, bandas, shows, convites, códigos de acesso e envio de arquivos (Firebase). Gera `app/fb.js`: `npx esbuild shim.js --bundle --minify --format=iife --target=es2019 --outfile=../app/fb.js` |
 | `server/functions/` | Cloud Functions: `agente` (Caio, só música e o app), `robo` (dispara o Malak) e o barramento de LLMs (`llm/`). Deploy: `firebase deploy --only functions` |
 | `server/malak/` | **Malak**, o robô: lê a partitura (PDF exportado de programa de partitura pelos símbolos exatos com `vetor.py`; PDF escaneado com Audiveris; ou MusicXML/MuseScore), gera o áudio de estudo (sopros com gravações reais de instrumentos via `hornsampler.py`, a parte de cifras vira piano e baixo como na primeira versão da turnê, outros instrumentos em General MIDI), o mapa de compassos e aplica correções de notas. Roda como Cloud Run Job `robo`. Imagem (os samples vêm de `gs://salvetheapp-3cceb-acervo/libs`): `gcloud builds submit --region=us-central1 --config=cloudbuild.yaml --substitutions=_IMAGE=southamerica-east1-docker.pkg.dev/salvetheapp-3cceb/robo/robo:vN .` |

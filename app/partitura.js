@@ -265,6 +265,7 @@
     return { step: m[1], alter: m[2] === 'b' ? -1 : m[2] === '#' ? 1 : 0, suffix, kind, bass: m[4] ? { step: m[4], alter: m[5] === 'b' ? -1 : m[5] === '#' ? 1 : 0 } : null };
   }
   Partitura.chordParts = chordParts;
+  const KIND_SUFFIX = { major: '', minor: 'm', augmented: '+', diminished: 'dim', dominant: '7', 'major-seventh': 'maj7', 'minor-seventh': 'm7', 'diminished-seventh': 'dim7', 'augmented-seventh': '+7', 'half-diminished': 'm7b5', 'major-minor': 'm(maj7)', 'major-sixth': '6', 'minor-sixth': 'm6', 'dominant-ninth': '9', 'major-ninth': 'maj9', 'minor-ninth': 'm9', 'dominant-11th': '11', 'major-11th': 'maj11', 'minor-11th': 'm11', 'dominant-13th': '13', 'major-13th': 'maj13', 'minor-13th': 'm13', 'suspended-second': 'sus2', 'suspended-fourth': 'sus4', power: '5' };
   // chord symbols written in a bar: [{beat (quarters from the start), text}]
   P.chords = function (pi, num) {
     const m = this.measure(pi, num); if (!m) return [];
@@ -274,7 +275,7 @@
         const r = kid(c, 'root'), b = kid(c, 'bass'), k = kid(c, 'kind');
         const nm = (st, al) => st + (al === '-1' ? 'b' : al === '1' ? '#' : '');
         const off = parseInt(txt(c, 'offset', '0')) || 0;
-        out.push({ beat: (pos + off) / DIV, text: nm(txt(r, 'root-step'), txt(r, 'root-alter')) + (k ? (k.getAttribute('text') ?? '') : '') + (b ? '/' + nm(txt(b, 'bass-step'), txt(b, 'bass-alter')) : '') });
+        out.push({ beat: (pos + off) / DIV, text: nm(txt(r, 'root-step'), txt(r, 'root-alter')) + (k ? (k.getAttribute('text') ?? KIND_SUFFIX[k.textContent.trim()] ?? '') : '') + (b ? '/' + nm(txt(b, 'bass-step'), txt(b, 'bass-alter')) : '') });
       } else if (c.tagName === 'note' && !kid(c, 'chord')) pos += parseInt(txt(c, 'duration', '0')) || 0;
       else if (c.tagName === 'backup') pos -= parseInt(txt(c, 'duration', '0')) || 0;
       else if (c.tagName === 'forward') pos += parseInt(txt(c, 'duration', '0')) || 0;
@@ -330,7 +331,8 @@
     if (!list.length) throw new Error('escolha pelo menos um instrumento');
     const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
     const rest = `<note><rest measure="yes"/><duration>${len * DIV}</duration><voice>1</voice></note>`;
-    const slashes = Array.from({ length: beats }, () => `<note><pitch><step>B</step><octave>4</octave></pitch><duration>${len * DIV / beats}</duration><voice>1</voice><type>${type === 8 ? 'eighth' : type === 2 ? 'half' : 'quarter'}</type><stem>none</stem><notehead>slash</notehead></note>`).join('');
+    // slashes sit on the middle line (B4), spelled as the key spells B so no accidental is drawn
+    const slashes = f => Array.from({ length: beats }, () => `<note><pitch><step>B</step>${f <= -1 ? '<alter>-1</alter>' : f >= 7 ? '<alter>1</alter>' : ''}<octave>4</octave></pitch><duration>${len * DIV / beats}</duration><voice>1</voice><type>${type === 8 ? 'eighth' : type === 2 ? 'half' : 'quarter'}</type><stem>none</stem><notehead>slash</notehead></note>`).join('');
     const parts = list.map((ins, i) => {
       // a transposing instrument shows its own key signature
       const f = ins.tr ? ((fifths - ins.tr[1] * 7) % 12 + 12 + 6) % 12 - 6 : fifths;
@@ -340,7 +342,7 @@
       for (let n = 1; n <= bars; n++) {
         const attrs = n === 1 ? `<attributes><divisions>${DIV}</divisions><key><fifths>${f}</fifths></key><time><beats>${beats}</beats><beat-type>${type}</beat-type></time>${clef}${tr}</attributes>` : '';
         const tempo = n === 1 && i === 0 && opts.bpm ? `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${opts.bpm | 0}</per-minute></metronome></direction-type><sound tempo="${opts.bpm | 0}"/></direction>` : '';
-        ms += `<measure number="${n}">${attrs}${tempo}${ins.cifra ? slashes : rest}</measure>`;
+        ms += `<measure number="${n}">${attrs}${tempo}${ins.cifra ? slashes(f) : rest}</measure>`;
       }
       return { head: `<score-part id="P${i + 1}"><part-name>${esc(ins.nome)}</part-name><part-abbreviation>${esc(ins.abrev)}</part-abbreviation></score-part>`, body: `<part id="P${i + 1}">${ms}</part>` };
     });

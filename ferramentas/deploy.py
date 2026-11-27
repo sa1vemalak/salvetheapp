@@ -1,7 +1,7 @@
 import json,os,gzip,hashlib,urllib.request,sys
 from concurrent.futures import ThreadPoolExecutor
 T=open(os.path.dirname(__file__)+'/.t').read().strip()
-H={'Authorization':'Bearer '+T,'Content-Type':'application/json'}
+H={'Authorization':'Bearer '+T,'Content-Type':'application/json','X-Goog-User-Project':'salvetheapp-3cceb'}
 API='https://firebasehosting.googleapis.com/v1beta1'
 SITE='sites/'+os.environ.get('SITE','pnpl10y')
 def call(url,body=None,method='POST'):
@@ -57,7 +57,7 @@ print('upload',len(need))
 def send(h):
     for i in range(4):
         try:
-            r=urllib.request.Request(f'{up}/{h}',byh[h],method='POST',headers={'Authorization':'Bearer '+T,'Content-Type':'application/octet-stream'})
+            r=urllib.request.Request(f'{up}/{h}',byh[h],method='POST',headers={'Authorization':'Bearer '+T,'Content-Type':'application/octet-stream','X-Goog-User-Project':'salvetheapp-3cceb'})
             urllib.request.urlopen(r,timeout=300).read(); return True
         except Exception as e: err=e
     print('fail',h,err); return False

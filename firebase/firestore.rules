@@ -31,25 +31,6 @@ service cloud.firestore {
         d.name is string && d.name.size() > 0 && d.name.size() <= 80 && d.owner is string && d.createdAt is int &&
         (!('codigo' in d) || (d.codigo is string && d.codigo.size() <= 64));
     }
-    // a member entry, as the app writes it (shim.js: createBand / acceptInvite)
-    function isValidMember(d) {
-      return d.keys().hasAll(['role']) && d.keys().hasOnly(['role', 'invite', 'name', 'email', 'joinedAt']) &&
-        (!('name' in d) || (d.name is string && d.name.size() <= 120)) &&
-        (!('email' in d) || (d.email is string && d.email.size() <= 254)) &&
-        (!('joinedAt' in d) || d.joinedAt is int);
-    }
-    // an invite link: only for musician or editor; nobody becomes owner ('dono') by link; it is valid for 7 days
-    function inviteValid(inv) {
-      return inv.role in ['editor', 'musico'] && inv.createdAt is int && request.time.toMillis() - inv.createdAt < 7 * 24 * 3600 * 1000;
-    }
-    // fields of a new invite
-    function isValidInvite(d) {
-      return d.keys().hasAll(['role', 'createdAt', 'by']) && d.keys().hasOnly(['role', 'bandName', 'createdAt', 'by']) &&
-        d.role in ['editor', 'musico'] && d.by == request.auth.uid && d.createdAt is int &&
-        // the date is the real one (up to 10 min of clock difference), so nobody makes a link that never expires
-        d.createdAt > request.time.toMillis() - 600000 && d.createdAt < request.time.toMillis() + 600000 &&
-        (!('bandName' in d) || (d.bandName is string && d.bandName.size() <= 80));
-    }
     function isValidCode(d) {
       return d.keys().hasAll(['ativo', 'limite', 'usados']) && d.keys().hasOnly(['ativo', 'limite', 'usados', 'nota', 'criadoEm', 'ultimaBanda']) &&
         d.ativo is bool && d.limite is int && d.limite >= 1 && d.limite <= 10000 && d.usados is int && d.usados >= 0 &&
@@ -72,23 +53,17 @@ service cloud.firestore {
       match /members/{uid} {
         allow read: if member(b);
         // joining: your own entry, either as the band's creator or with a valid invite (with the invite's role)
-        // (an invite never makes an owner: before, an editor could make a 'dono' link, leave and come back as owner)
-        allow create: if signed() && uid == request.auth.uid && isValidMember(request.resource.data) && (
+        allow create: if signed() && uid == request.auth.uid && (
           (request.resource.data.role == 'dono' && get(/databases/$(database)/documents/bands/$(b)).data.owner == request.auth.uid) ||
           (request.resource.data.invite is string &&
-           request.resource.data.role in ['editor', 'musico'] &&
            exists(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)) &&
-           request.resource.data.role == get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data.role &&
-           inviteValid(get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data)));
-        // the owner changes only the role, never the name/e-mail the person wrote
-        allow update: if owner(b) && request.resource.data.role in ['editor', 'musico'] &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']);
+           request.resource.data.role == get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data.role));
+        allow update: if owner(b) && request.resource.data.role in ['editor', 'musico'];
         allow delete: if owner(b) || (signed() && uid == request.auth.uid);
       }
       match /invites/{code} {
         allow get: if signed();
-        allow list, delete: if editor(b);
-        allow create: if editor(b) && isValidInvite(request.resource.data);
+        allow list, write: if editor(b);
       }
       match /shows/{s} {
         allow read: if member(b);
