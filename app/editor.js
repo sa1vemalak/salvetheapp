@@ -162,7 +162,9 @@ const Editor = (() => {
     const res = await SALVE.upload(file, { type: blob.type });
     const me = SALVE.ctx().user;
     const partitura = { ...(song.partitura || {}), xml: res.url, versao: v, editadaEm: Date.now(), editadaPor: (me.displayName || me.email || '').slice(0, 80) };
-    if (opts.partes) { partitura.partes = opts.partes; partitura.criadaEm = Date.now(); partitura.origem = 'criada no app'; }
+    if (opts.partes) partitura.partes = opts.partes;
+    if (opts.semPdf) partitura.partesSemPdf = [...new Set([...(partitura.partesSemPdf || []), ...opts.semPdf])];  // the robot draws their PDFs
+    if (opts.nova) { partitura.criadaEm = Date.now(); partitura.origem = 'criada no app'; }
     await app().S.db.collection('songs').doc(song.id).update({ partitura });
     song.partitura = partitura;
     if (!opts.semAudio && app().Robo) app().Robo.start(song.id, null, 'partitura', true);  // the study audio follows the score
@@ -218,7 +220,7 @@ const Editor = (() => {
       try {
         const xml = Partitura.blank({ titulo: song.title, instrumentos: keys, formula: f.f.value, fifths: +f.k.value, compassos: +f.n.value || 32, bpm: +f.b.value || 100 });
         const partes = keys.map(k => { const x = ins.find(y => y.key === k); return { key: k, name: x.nome }; });
-        await salvarPartitura(song, xml, 'Partitura criada no app', { partes, semAudio: true });
+        await salvarPartitura(song, xml, 'Partitura criada no app', { partes, nova: true, semAudio: true });
         close(); open(song);
       } catch (err) { console.error(err); toast('Não consegui criar: ' + err.message); btn.disabled = false; btn.textContent = 'Criar e editar'; }
     };
@@ -296,15 +298,34 @@ const Editor = (() => {
       render(false); paintBar(); scrim.querySelector('.ed-pages').focus();
     } catch (e) { console.error(e); scrim.querySelector('.ed-pages').textContent = 'Não consegui abrir a partitura: ' + e.message; }
   }
-  // Caio's approved bar rewrites, applied to the score: {parte (instrument key), compasso, notas}
+  // Caio's approved changes to the score: new instruments ({tipo: 'nova_parte', instrumento, copiar_de, oitava}) first,
+  // then bar rewrites ({parte (instrument key), compasso, notas} or cifras)
   async function aplicarCorrecoes(song, lista) {
     const P = new Partitura(await (await fetch(song.partitura.xml)).text());
-    const keys = ((song.partitura || {}).partes || (song.player || {}).instrumentos || []).map(x => x.key);
     const slugify = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const feitas = [], erros = [];
-    for (const c of lista) {
-      let pi = keys.indexOf(c.parte);
-      if (pi < 0) pi = P.parts().findIndex(p => slugify(p.name) === c.parte || slugify(p.name).startsWith(c.parte));
+    const saved = ((song.partitura || {}).partes || (song.player || {}).instrumentos || []);
+    // the score's instruments in order (key + name); parts the list doesn't cover get a key from their name
+    let partes = P.parts().map((p, i) => saved[i] ? { key: saved[i].key, name: saved[i].name } : { key: slugify(p.name) || 'parte-' + (i + 1), name: p.name });
+    const feitas = [], erros = [], novas = [];
+    const achar = k => { let pi = partes.findIndex(x => x.key === k); if (pi < 0) pi = P.parts().findIndex(p => slugify(p.name) === k || slugify(p.name).startsWith(k)); return pi; };
+    for (const c of lista.filter(x => x.tipo === 'nova_parte')) {
+      try {
+        const ins = Partitura.INSTRUMENTOS.find(x => x.key === c.instrumento); if (!ins) throw new Error('instrumento desconhecido');
+        if (partes.some(x => x.key === ins.key)) throw new Error(`a música já tem ${ins.nome}`);
+        const src = c.copiar_de ? achar(c.copiar_de) : null;
+        if (c.copiar_de && src < 0) throw new Error(`não achei a parte "${c.copiar_de}" para copiar`);
+        // in the score's order: next to its family (sax alto before sax tenor), else before the Base, else at the end
+        const fam = ins.nome.split(' ')[0].toLowerCase();
+        let antes = P.parts().findIndex(p => p.name.toLowerCase().startsWith(fam));
+        if (antes < 0) antes = P.parts().findIndex((p, i) => P.isChart(i) || /^base/i.test(p.name));
+        const r = P.addPart(ins.key, { copiarDe: src, oitava: c.oitava | 0, antes: antes < 0 ? null : antes });
+        partes.splice(r.pi, 0, { key: ins.key, name: ins.nome });
+        if (r.pulados.length) erros.push(`${ins.nome}: não copiei os compassos ${r.pulados.slice(0, 8).join(', ')}${r.pulados.length > 8 ? '…' : ''} (escreva à mão)`);
+        feitas.push(c); novas.push(ins.key);
+      } catch (e) { erros.push(`${c.instrumento}: ${e.message}`); }
+    }
+    for (const c of lista.filter(x => x.tipo !== 'nova_parte')) {
+      const pi = achar(c.parte);
       try {
         if (pi < 0) throw new Error('instrumento não encontrado');
         if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras); else P.setTokens(pi, c.compasso, c.notas);
@@ -312,7 +333,7 @@ const Editor = (() => {
       }
       catch (e) { erros.push(`${c.parte} c.${c.compasso}: ${e.message}`); }
     }
-    if (feitas.length) await salvarPartitura(song, P.toString(), 'Antes das mudanças do Caio');
+    if (feitas.length) await salvarPartitura(song, P.toString(), 'Antes das mudanças do Caio', novas.length ? { partes, semPdf: (song.partitura || {}).origem === 'criada no app' ? null : novas } : {});
     return { feitas: feitas.length, erros };
   }
   return { open, criar, partitura: () => st.P, aplicarCorrecoes, salvarPartitura };
