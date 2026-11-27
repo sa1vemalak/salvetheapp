@@ -532,6 +532,10 @@ body.editing-score .palette, body.editing-score .moremenu { display: none; }
   .home-in { gap: 18px; }
 }
 @media (max-width: 420px) { #playerBtn .lbl { display: none; } }  /* small phones: room for the song name */
+@media (max-width: 480px) {  /* phones: the connection status goes small under the buttons, so the song name fits */
+  .top { position: relative; } .top .actions { gap: 2px; }
+  .top .status { position: absolute; right: 10px; bottom: 1px; font-size: 9px; line-height: 1; pointer-events: none; }
+}
 </style>
 
 <div class="app">
@@ -545,6 +549,8 @@ body.editing-score .palette, body.editing-score .moremenu { display: none; }
     <div class="actions">
       <button class="iconbtn" id="editScoreBtn" title="Editar a partitura (notas, articulações, dinâmicas)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M3 4h7M3 8h5"/></svg><span class="lbl">Editar</span></button>
+      <button class="iconbtn" id="editCaioBtn" title="Editar com o Caio: diga com suas palavras o que quer mudar" aria-label="Editar com o Caio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M14.5 7.5l2 2-4.5 4.5-2.5.5.5-2.5z"/></svg><span class="lbl">Editar com o Caio</span></button>
       <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a música (player)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Ouvir</span></button>
       <button class="iconbtn" id="moreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu" title="Mais opções">
@@ -1307,19 +1313,26 @@ const Band = (() => {
 /* ---------- Caio: the band's assistant (answers about the show and proposes changes; a dono/editor approves) ---------- */
 const Caio = (() => {
   const URL_AGENTE = 'https://southamerica-east1-salvetheapp-3cceb.cloudfunctions.net/agente';
-  const KEY = () => 'caio:' + (window.SALVE ? SALVE.ctx().band + '/' + SALVE.ctx().show : 'x');
-  let conversa = [], panel = null;
+  let conversa = [], panel = null, modo = 'conversa', songId = null;  // modo 'editar': chat to edit the open song in plain words
+  const KEY = () => (modo === 'editar' ? 'caio-editar:' : 'caio:') + (window.SALVE ? SALVE.ctx().band + '/' + SALVE.ctx().show : 'x') + (modo === 'editar' ? '/' + songId : '');
   const load = () => { try { conversa = JSON.parse(sessionStorage.getItem(KEY()) || '[]'); } catch { conversa = []; } };
   const keep = () => { try { sessionStorage.setItem(KEY(), JSON.stringify(conversa.slice(-30))); } catch {} };
 
-  function open() {
+  function open(m) {
     if (!window.SALVE || !S.db) { toast('O Caio precisa do app conectado à internet.'); return; }
     if (panel) return;
+    modo = m === 'editar' ? 'editar' : 'conversa';
+    if (modo === 'editar') {
+      const song = currentSong();
+      if (!song) { toast('Abra uma música primeiro.'); return; }
+      if (!S.canWrite) { toast('Só o dono ou um editor da banda pode editar a partitura.'); return; }
+      songId = song.id;
+    }
     load();
     const scrim = el('div', 'scrim'), d = el('div', 'drawer caio'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Caio');
-    d.innerHTML = `<div class="caio-head"><span class="gate-s" aria-hidden="true">C</span><h3>Caio</h3><button class="btn" type="button" id="caioNew" title="Começar outra conversa">Nova</button><button class="btn" type="button" id="caioX">Fechar</button></div>
+    d.innerHTML = `<div class="caio-head"><span class="gate-s" aria-hidden="true">C</span><h3>${modo === 'editar' ? 'Editar com o Caio' : 'Caio'}</h3><button class="btn" type="button" id="caioNew" title="Começar outra conversa">Nova</button><button class="btn" type="button" id="caioX">Fechar</button></div>
       <div class="caio-log" aria-live="polite"></div>
-      <div class="caio-in"><textarea id="caioTxt" rows="1" placeholder="Pergunte ou peça uma mudança…"></textarea><button class="btn primary" id="caioGo" type="button">Enviar</button></div>`;
+      <div class="caio-in"><textarea id="caioTxt" rows="1" placeholder="${modo === 'editar' ? 'Diga com suas palavras o que quer mudar…' : 'Pergunte ou peça uma mudança…'}"></textarea><button class="btn primary" id="caioGo" type="button">Enviar</button></div>`;
     document.body.append(scrim, d); panel = d;
     const shut = () => { scrim.remove(); d.remove(); panel = null; };
     scrim.onclick = shut; d.querySelector('#caioX').onclick = shut;
@@ -1335,7 +1348,15 @@ const Caio = (() => {
   function paint(waiting) {
     if (!panel) return;
     const log = panel.querySelector('.caio-log'); log.replaceChildren();
-    if (!conversa.length) {
+    if (!conversa.length && modo === 'editar') {
+      const song = S.songs.find(x => x.id === songId);
+      log.append(el('div', 'caio-msg ele', `Vamos mexer em “${song?.title || 'esta música'}”. Diga do seu jeito, sem precisar de termo técnico, o que quer mudar. Eu mostro o que entendi e você aprova antes de valer.`));
+      const hints = el('div', 'caio-hints');
+      ['O trompete está muito alto no começo, deixa mais suave', 'No compasso 12 o sax tem que entrar um tempo depois',
+       'Deixa as notas do trombone mais curtinhas no refrão', 'Coloca as cifras da base no compasso 1 ao 4']
+        .forEach(t => { const b = el('button', '', t); b.type = 'button'; b.onclick = () => { panel.querySelector('#caioTxt').value = t; send(); }; hints.append(b); });
+      log.append(hints);
+    } else if (!conversa.length) {
       log.append(el('div', 'caio-msg ele', 'Oi! Eu leio o show aberto: músicas, partes, compassos, anotações e marcadores da DAW. Posso responder dúvidas e preparar mudanças para você aprovar.'));
       const song = currentSong(), hints = el('div', 'caio-hints');
       [song ? `Quantos compassos tem cada parte de ${song.title}?` : 'Quais músicas estão no show?',
@@ -1347,7 +1368,7 @@ const Caio = (() => {
       log.append(el('div', 'caio-msg ' + (m.role === 'user' ? 'eu' : 'ele') + (m.erro ? ' erro' : ''), m.texto));
       if (m.proposta) log.append(proposal(m, i));
     });
-    if (waiting) log.append(el('div', 'caio-wait', 'Caio está lendo o show…'));
+    if (waiting) log.append(el('div', 'caio-wait', modo === 'editar' ? 'Caio está lendo a partitura…' : 'Caio está lendo o show…'));
     log.scrollTop = log.scrollHeight;
   }
 
@@ -1360,7 +1381,7 @@ const Caio = (() => {
     try {
       const { band, show } = SALVE.ctx();
       const r = await fetch(URL_AGENTE, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await SALVE.token() },
-        body: JSON.stringify({ band, show, conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })) }) });
+        body: JSON.stringify({ band, show, ...(modo === 'editar' ? { modo, musica: songId } : {}), conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })) }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
       conversa.push({ role: 'assistant', texto: j.texto, proposta: j.proposta || null, podeAplicar: !!j.podeAplicar });
@@ -1382,7 +1403,7 @@ const Caio = (() => {
       const sg = S.songs.find(x => x.id === m.musica);
       const inst = (sg?.partitura?.partes || sg?.player?.instrumentos || []).find(x => x.key === m.parte)?.name || m.parte;
       return m.tipo === 'cifras' ? `${t(m.musica)} · ${inst} · compasso ${m.compasso}: cifras ${m.cifras || '(apagar)'}`
-        : `${t(m.musica)} · ${inst} · compasso ${m.compasso}: ${m.descricao || 'corrigir notas'} (${m.notas})`;
+        : `${t(m.musica)} · ${inst} · compasso ${m.compasso}: ${m.descricao || 'corrigir notas'}${modo === 'editar' && m.descricao ? '' : ` (${m.notas})`}`;
     }
     if (m.tipo === 'renomear_musica') return `${t(m.musica)} passa a se chamar “${m.titulo}”${m.rotulo ? ' (' + m.rotulo + ')' : ''}`;
     return m.descricao || m.tipo;
@@ -1472,7 +1493,8 @@ const Caio = (() => {
     return { ok, erros };
   }
 
-  $('#caioBtn').onclick = open;
+  $('#caioBtn').onclick = () => open();
+  $('#editCaioBtn').onclick = () => open('editar');
   return { open };
 })();
 /* ---------- robot: turns the score (PDF or original file) into player audio and a bar map ---------- */
@@ -3235,7 +3257,7 @@ async function boot() {
   document.body.classList.toggle('musician', S.personal);
   document.body.classList.toggle('readonly-common', !S.canWrite);
   if (S.personal) { $('#addBtn').hidden = true; }
-  $('#regenBtn').hidden = !S.canWrite;
+  $('#regenBtn').hidden = !S.canWrite; $('#editCaioBtn').hidden = !S.canWrite;
   setLayer(ls.get('layer', S.canWrite ? 'common' : 'mine'));
   Home.setRole(S.canWrite, !S.uid);
   if (db) Logic.init();

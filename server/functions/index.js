@@ -85,6 +85,23 @@ Como trabalhar:
 - Anotações devem ser curtas, como se escreve a lápis na partitura.
 - Ids de música e chaves de parte são os que as ferramentas devolvem.`;
 
+// "Editar com o Caio": a chat to edit the open song, for people who don't know the technical words
+const EDITAR = musica => `
+
+MODO "EDITAR COM O CAIO". A música aberta é a de id "${musica}": trabalhe nela, a menos que o usuário fale de outra.
+Quem escreve pode não saber teoria musical nem os nomes técnicos. Entenda o que a pessoa quer dizer e traduza você mesmo:
+- "mais baixo/suave/fraquinho" = dinâmica menor (p, pp, ou diminuendo); "mais forte/alto" = dinâmica maior (f, ff, crescendo);
+- "mais curtinho/seco/picado" = staccato; "mais ligado/emendado/cantado" = ligadura ou legato; "com força/batido" = acento;
+- "segura mais/estica" = nota mais longa; "entra depois/antes" = desloca a entrada (pausa antes, mantendo a soma do compasso);
+- "mais agudo/fino" e "mais grave/grosso" = subir ou descer as notas (pergunte quanto, se não estiver claro: um pouco ou uma oitava);
+- "não toca aí/fica quieto" = pausa; "o refrão", "a parte do solo", "o começo" = ache pelas letras de ensaio, anotações ou pergunte em que compasso.
+Como responder neste modo:
+- Leia as notas (ver_notas) antes de propor. Proponha sempre com propor_mudancas; nada vale antes de a pessoa aprovar.
+- Em cada mudança, a "descricao" é em palavras do dia a dia, sem sigla nem código de notas: ex.: "trompete mais suave do compasso 1 ao 8", "sax entra um tempo depois no compasso 12".
+- Depois de propor, diga em uma ou duas frases simples o que vai mudar e como ouvir para conferir (o áudio de estudo é refeito sozinho).
+- Se o pedido puder significar coisas diferentes, faça UMA pergunta curta com opções simples (ex.: "Mais suave só no começo ou na música toda?").
+- Não use termos técnicos na resposta; se precisar de um, explique em poucas palavras.`;
+
 async function runTool(name, input, ctx) {
   const band = db.collection('bands').doc(ctx.band);
   const songsInShow = async () => {
@@ -220,7 +237,8 @@ async function handle(req, res) {
   let user;
   try { user = await admin.auth().verifyIdToken(String(req.headers.authorization || '').replace(/^Bearer /, '')); }
   catch { return fail(401, 'Entre no app de novo.'); }
-  const { band, show, conversa } = req.body || {};
+  const { band, show, conversa, modo, musica } = req.body || {};
+  const editar = modo === 'editar' && typeof musica === 'string' && /^[\w.-]{1,120}$/.test(musica);
   if (typeof band !== 'string' || typeof show !== 'string' || !Array.isArray(conversa) || !conversa.length) return fail(400, 'pedido incompleto');
   const member = await data(db.collection('bands').doc(band).collection('members').doc(user.uid));
   if (!member) return fail(403, 'Você não é desta banda.');
@@ -243,7 +261,7 @@ async function handle(req, res) {
   try {
     let texto = '';
     for (let step = 0; step < MAX_STEPS; step++) {
-      const out = await bus.turn(db, { modulo: 'agente', system: SYSTEM, messages, tools: TOOLS, maxTokens: 8000, quem });
+      const out = await bus.turn(db, { modulo: 'agente', system: editar ? SYSTEM + EDITAR(musica) : SYSTEM, messages, tools: TOOLS, maxTokens: 8000, quem });
       if (out.stop_reason === 'refusal') { texto = 'Não posso ajudar com esse pedido.'; break; }
       messages.push({ role: 'assistant', content: out.content });
       texto = out.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || texto;

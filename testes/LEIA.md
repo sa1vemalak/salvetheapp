@@ -1,0 +1,15 @@
+# Testes
+
+**Rápido (o de todo dia, segundos):** roda sempre, antes de cada pedido no GitHub e de cada publicação.
+- `node testes/rapido.js`: abre o app daqui num navegador e confere botões, "Editar com o Caio" (com o servidor
+  simulado), "Refazer o áudio" e erros de JavaScript. Não precisa de conta nem internet do Firebase.
+- `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
+- Publicação: `python3 ferramentas/deploy.py` confere as partituras e áudios só confirmando que existem (~3 s).
+
+**Completo (FULL, só quando pedirem "teste full"):** pesado e com calma.
+- Conta de teste temporária (`visual_conta.py create` / `remove`) e os testes de ponta a ponta: `visual.js`,
+  `visual2.js`, `caio.js` (Caio de verdade), `robo.js` (Malak de verdade), `correcao.js`, `equipe.js`, `treino.js`,
+  `senha.js`, `codigo.js`.
+- Regras do banco no emulador: `regras_firestore.mjs`.
+- Comparações de qualidade: `compara.py`, `vet_cmp.py`, `base_cmp.py`, `avaliar_arr.py`, `arranjo_e2e.py`.
+- Publicação com `FULL=1 python3 ferramentas/deploy.py` (baixa cada áudio inteiro depois de publicar).
