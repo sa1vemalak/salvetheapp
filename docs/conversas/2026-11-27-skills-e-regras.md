@@ -106,3 +106,15 @@ no pacote não foram trazidos.
   Caio publicados sem salvar); grava o commit em `version.json`; não altera arquivos do repositório; confere
   depois de publicar. `DRY=1` só confere (passou nos dois sites).
 - Não publicado nesta rodada: a credencial do Google desta sessão foi recusada (401) pelo Hosting, Rules e Functions.
+
+## Quarta rodada: publicação do pnpl10y
+
+- Senhas temporárias do Google (valem 1 hora) estavam vencidas; o usuário gerou uma nova no Cloud Shell.
+- Primeira tentativa: o filtro `include` do `versions:clone` devolveu uma cópia **vazia**, e o pnpl10y ficou uns
+  2 minutos sem as partituras e áudios das bandas. Voltei para a versão anterior (`c7aa13ebe3900206`) e conferi os
+  235 arquivos.
+- Conserto no `deploy.py`: copia a versão inteira (testado: 256 arquivos; `populateFiles` só acrescenta/troca),
+  confere os dados das bandas **antes** de pôr no ar, e se depois de publicar faltar algum, volta sozinho para a
+  versão anterior.
+- Segunda tentativa: pnpl10y publicado (20261127131533, commit 8479158), com o aviso de convite vencido e os 235
+  arquivos das bandas. O salvetheapp-3cceb já estava com o mesmo código e não foi republicado.

@@ -16,7 +16,7 @@ Cuidados que o script toma sozinho:
   que está no ar, nunca apagados.
 - Não mexe nos arquivos do repositório: monta a publicação numa pasta temporária.
 """
-import gzip, hashlib, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.request
+import gzip, hashlib, json, os, re, shutil, subprocess, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
@@ -166,14 +166,27 @@ for site in SITES:
 
     S = f'sites/{site}'
     atual = call(f'{API}/{S}/releases?pageSize=1', method='GET')['releases'][0]['version']['name']
-    # nova versão = cópia só dos dados das bandas da versão no ar, sem finalizar
-    op = call(f'{API}/{S}/versions:clone', {'sourceVersion': atual, 'finalize': False,
-                                           'include': {'regexes': ['^/(scores|_blob)/']}})
+    # nova versão = cópia inteira da versão no ar, sem finalizar; os arquivos do app são trocados por cima.
+    # (o filtro include/exclude do clone devolveu uma cópia vazia em 27/11/2026: não usar)
+    op = call(f'{API}/{S}/versions:clone', {'sourceVersion': atual, 'finalize': False})
     while not op.get('done'):
         time.sleep(3); op = call(f'{API}/{op["name"]}', method='GET')
     if 'error' in op: pare(f'{site}: cópia falhou {op["error"]}')
     name = op['response']['name']
-    patch = call(f'{API}/{name}?update_mask=config', {'config': cfg}, 'PATCH')
+
+    def arquivos(v):
+        out, tok = [], ''
+        while True:
+            r = call(f'{API}/{v}/files?pageSize=1000' + (f'&pageToken={tok}' if tok else ''), method='GET')
+            out += [f['path'] for f in r.get('files', [])]
+            tok = r.get('nextPageToken')
+            if not tok: return out
+
+    copiados = [p for p in arquivos(name) if DADOS.match(p)]
+    if len(copiados) < len(dados): pare(f'{site}: a cópia tem {len(copiados)} arquivos das bandas, o ar tem {len(dados)}; nada foi publicado')
+    sobras = [p for p in arquivos(name) if not DADOS.match(p) and p not in meus and not p.startswith('/__/')]
+    if sobras: print(f'{site}: AVISO, arquivos antigos do app que continuam no ar (não estão mais no repositório): {sobras}')
+    call(f'{API}/{name}?update_mask=config', {'config': cfg}, 'PATCH')
     pf = call(f'{API}/{name}:populateFiles', {'files': {k: h for k, (h, _) in meus.items()}})
     need = set(pf.get('uploadRequiredHashes', [])); up = pf.get('uploadUrl')
     byh = {h: z for h, z in meus.values()}
@@ -191,14 +204,22 @@ for site in SITES:
 
     with ThreadPoolExecutor(8) as ex: ok = sum(ex.map(send, need))
     if ok != len(need): pare(f'{site}: {len(need) - ok} arquivos não subiram; nada foi publicado')
+    final = arquivos(name)
+    if sum(1 for p in final if DADOS.match(p)) < len(dados) or not all(k in final for k in meus):
+        pare(f'{site}: a versão nova está incompleta; nada foi publicado')
     call(f'{API}/{name}?update_mask=status', {'status': 'FINALIZED'}, 'PATCH')
     rel = call(f'{API}/{S}/releases?versionName={name}', {'message': f'commit {commit}'})
     print(f'{site}: publicado {ver} ({rel.get("name")})')
-    # confere
-    v = json.loads(baixa(site, 'version.json'))
-    if v.get('v') != ver: pare(f'{site}: version.json no ar é {v}, esperado {ver}')
-    for e in dados[:3]:
-        if baixa(site, e['path']) is None: pare(f'{site}: {e["path"]} sumiu depois de publicar')
+    # confere (o ar leva alguns segundos para mudar); se faltar dado das bandas, volta para a versão anterior
+    for i in range(12):
+        v = json.loads(baixa(site, 'version.json'))
+        if v.get('v') == ver: break
+        time.sleep(5)
+    else: pare(f'{site}: version.json no ar é {v}, esperado {ver}')
+    faltam = [e['path'] for e in dados if baixa(site, urllib.parse.quote(e['path'])) is None]
+    if faltam:
+        call(f'{API}/{S}/releases?versionName={atual}', {'message': 'volta automática: faltaram dados das bandas'})
+        pare(f'{site}: {len(faltam)} arquivos das bandas sumiram; voltei para a versão anterior ({atual})')
     print(f'{site}: conferido (versão nova no ar, dados das bandas presentes)')
 
 shutil.rmtree(tmp, ignore_errors=True)
