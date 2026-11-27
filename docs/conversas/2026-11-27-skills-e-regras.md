@@ -95,6 +95,13 @@ no pacote não foram trazidos.
 - `robo` e `treino` no ar ainda rodam um `index.js` mais antigo (publicados às 23:33 e 01:03). Na próxima
   publicação das funções eles passam a usar este arquivo.
 
+**Funções publicadas (27/11/2026, 13:11 UTC).** `robo` (Malak) e `treino` receberam o mesmo pacote de código que o
+`agente` (Caio) já rodava desde 03:40, igual ao `server/functions/index.js` do repositório. Foi trocado só o código
+(API do Cloud Functions, `buildConfig.source`); gatilhos, segredos e configurações ficaram como estavam. O `agente`
+não foi republicado, porque já rodava essa versão. As três funções terminaram ativas.
+- Depois disso entrou na `main` (PR #6) uma linha a mais no Caio, que traduz o tipo do acorde (m7, sus4, maj7…).
+  Ela ainda não está no ar em nenhuma das três funções.
+
 ## Terceira rodada: script de publicação seguro
 
 - `ferramentas/deploy.py` procurava `localmode/local.js`, mas a pasta é `modo-local/`: falhava num clone limpo.
