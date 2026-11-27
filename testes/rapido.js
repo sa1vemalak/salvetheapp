@@ -260,6 +260,22 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('o app junta os instrumentos', mx.pronto);
   confere('passa a tocar a mistura', mx.tocandoAMistura);
   confere('a mistura é a soma dos instrumentos escolhidos', mx.erroMaximo < 0.001 && Math.abs(mx.duracao - 1) < 0.01, JSON.stringify(mx));
+  // edição manual: a barra de ferramentas fica sempre à vista; tocar numa nota marca a nota e liga os botões
+  const ed = await p.evaluate(async () => {
+    window.__t.S.canWrite = true;
+    const P = new Partitura(Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'base'], compassos: 4 })); P.setTokens(0, 1, 'C5:1 D5:1 E5:2');
+    await Editor.open({ id: 't', title: 'Teste', partitura: { xml: URL.createObjectURL(new Blob([P.toString()])), versao: 1 } });
+    for (let i = 0; i < 200 && !document.querySelector('.ed-page svg'); i++) await new Promise(r => setTimeout(r, 50));
+    const bar = document.querySelector('.ed-tools'), out = {};
+    out.antes = { visivel: !bar.hidden && bar.offsetHeight > 0, apagada: [...bar.querySelectorAll('button')].every(b => b.disabled) };
+    document.querySelectorAll('.ed-page g.note')[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    out.depois = { ligada: !bar.querySelector('[data-k=up]').disabled, marcada: document.querySelectorAll('.ed-sel').length, info: document.querySelector('.ed-info').textContent };
+    document.querySelector('.ed-close').click();
+    return out;
+  });
+  console.log('Edição manual');
+  confere('barra de ferramentas à vista antes de tocar numa nota', ed.antes.visivel && ed.antes.apagada, JSON.stringify(ed.antes));
+  confere('tocar numa nota liga a barra e marca a nota', ed.depois.ligada && ed.depois.marcada === 1 && /D5/.test(ed.depois.info), JSON.stringify(ed.depois));
   console.log('Página');
   confere('nenhum erro de JavaScript', !erros.length, erros.join(' | '));
 

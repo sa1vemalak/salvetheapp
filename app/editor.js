@@ -69,7 +69,7 @@ const Editor = (() => {
   function paintMarks() {
     st.wrap.querySelectorAll('.ed-sel').forEach(x => x.classList.remove('ed-sel'));
     if (!st.sel) return;
-    for (const [id, a] of st.map) if (a.pi === st.sel.pi && a.num === st.sel.num && a.idx === st.sel.idx) {
+    for (const [id, a] of st.map) if (a.pi === st.sel.pi && String(a.num) === String(st.sel.num) && a.idx === st.sel.idx) {  // map keeps the bar number as text, the selection as a number
       const g = st.wrap.querySelector(`[id="${CSS.escape(id)}"]`); if (g) g.classList.add('ed-sel');
     }
   }
@@ -128,21 +128,28 @@ const Editor = (() => {
   function undo() { if (!st.undo.length) return; st.redo.push(st.P.toString()); restore(st.undo.pop()); st.dirty = Math.max(0, st.dirty - 1); paintBar(); render(true); }
   function redo() { if (!st.redo.length) return; st.undo.push(st.P.toString()); restore(st.redo.pop()); st.dirty++; paintBar(); render(true); }
 
-  /* ---------- the bottom bar for the selected note ---------- */
+  /* ---------- the bottom toolbar (always visible; it edits the selected note) ---------- */
   const DURS = [[4, '𝅝', 'Semibreve'], [2, '𝅗𝅥', 'Mínima'], [1, '♩', 'Semínima'], [0.5, '♪', 'Colcheia'], [0.25, '𝅘𝅥𝅯', 'Semicolcheia']];
   function paintBar() {
     const bar = st.wrap.querySelector('.ed-tools'), info = st.wrap.querySelector('.ed-info');
     const save = st.wrap.querySelector('.ed-save'); save.disabled = !st.dirty; save.textContent = st.dirty ? `Salvar versão (${st.dirty})` : 'Salvo';
     st.wrap.querySelector('.ed-undo').disabled = !st.undo.length; st.wrap.querySelector('.ed-redo').disabled = !st.redo.length;
-    if (!st.sel) { bar.hidden = true; info.textContent = 'Toque numa nota ou pausa para editar.'; return; }
+    // the bar is always on screen (as in the first version); with nothing selected its buttons wait, greyed out
+    const idle = msg => {
+      info.textContent = msg; bar.classList.add('ed-idle');
+      bar.querySelectorAll('.ed-grp').forEach(g => { g.hidden = false; });
+      bar.querySelectorAll('button, select').forEach(b => { b.disabled = true; if (b.hasAttribute('aria-pressed')) b.setAttribute('aria-pressed', 'false'); });
+      bar.querySelector('[data-k=rest]').textContent = 'Virar pausa';
+    };
+    if (!st.sel) return idle('Toque numa nota ou pausa para editar.');
     const list = ev() || [], e = list[st.sel.idx]; const part = st.P.parts()[st.sel.pi];
-    if (!e) { bar.hidden = true; return; }
+    if (!e) return idle('Toque numa nota ou pausa para editar.');
+    bar.classList.remove('ed-idle'); bar.querySelectorAll('button, select').forEach(b => { b.disabled = false; });
     const m = st.P.measure(st.sel.pi, st.sel.num), heads = m ? [...m.getElementsByTagName('notehead')] : [];
     const chart = heads.length && heads.every(h => h.textContent.trim() === 'slash');  // the base: chords over slashes
     const cif = st.P.chords(st.sel.pi, st.sel.num).map(c => c.text).join(' ');
     info.textContent = chart ? `${part ? part.name : ''} · c.${st.sel.num} · levada · cifras: ${cif || 'nenhuma (toque em Cifras…)'}`
       : `${part ? part.name : ''} · c.${st.sel.num} · ${e.rest ? 'pausa' : e.pitches.join(' + ')} · ${Math.round(e.dur * 100) / 100} tempo${e.dur === 1 ? '' : 's'}${cif ? ' · cifras: ' + cif : ''}`;
-    bar.hidden = false;
     bar.querySelectorAll('.ed-grp').forEach((g, k) => { g.hidden = chart && k < 3; });  // on the base only chords make sense
     bar.querySelectorAll('[data-dur]').forEach(b => { const d = parseFloat(b.dataset.dur); b.setAttribute('aria-pressed', String(Math.abs(d - e.dur) < 1e-6 || Math.abs(d * 1.5 - e.dur) < 1e-6)); });
     bar.querySelectorAll('[data-art]').forEach(b => b.setAttribute('aria-pressed', String(!e.rest && e.arts.includes(b.dataset.art))));
@@ -245,7 +252,7 @@ const Editor = (() => {
       </header>
       <div class="ed-pages" tabindex="0"><p class="loading">carregando a partitura…</p></div>
       <footer class="ed-foot"><p class="ed-info" role="status">Toque numa nota ou pausa para editar.</p>
-        <div class="ed-tools" hidden>
+        <div class="ed-tools">
           <div class="ed-grp"><button class="btn ed-note-only" data-k="up" title="Meio tom acima">▲</button><button class="btn ed-note-only" data-k="down" title="Meio tom abaixo">▼</button>
             <button class="btn ed-note-only" data-k="o8up" title="Oitava acima">8▲</button><button class="btn ed-note-only" data-k="o8dn" title="Oitava abaixo">8▼</button></div>
           <div class="ed-grp">${DURS.map(([d, s, t]) => `<button class="btn ed-dur" data-dur="${d}" title="${t}" aria-label="${t}">${s}</button>`).join('')}<button class="btn" data-k="dot" title="Ponto de aumento">•</button></div>
