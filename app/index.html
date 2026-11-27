@@ -877,6 +877,7 @@ const S = {
   ann: new Map(),        // key -> {strokes:[], notes:[]}
   pessoal: new Map(),    // "Minha versão": song__part -> { mudancas, ... } (this person's own changes, private)
   minha: [false, false], // each pane: showing "Minha versão" instead of the band's PDF
+  propostas: [],         // versions musicians sent to the band for the open song (only the owner approves)
   pageViews: new Map(),  // key -> Set of page views
   undo: [],
   unsubAnn: null,
@@ -975,6 +976,12 @@ function subscribeAnn(songId) {
       const k = songId + '__' + p.part, mudou = JSON.stringify(antes.get(k) || null) !== JSON.stringify(S.pessoal.get(k) || null);
       if (mudou && (S.minha[p.i] || !S.pessoal.has(k))) loadPart(p); else renderChips(p);
     });
+  }, () => {}));
+  S.propostas = [];
+  if (window.SALVE && S.uid) S.unsubAnn.push(S.db.collection('propostas').where('musica', '==', songId).onSnapshot(snap => {
+    S.propostas = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.criadoEm - a.criadoEm);
+    panes.forEach(p => { renderChips(p); if (S.minha[p.i]) statusProposta(p); });
+    Propostas.refresh();
   }, () => {}));
   if (mineInDb()) S.unsubAnn.push(listen(S.db.collection('data/users/' + S.uid).where('song', '==', songId), 'mine'));
 }
@@ -1211,6 +1218,45 @@ function renderChips(pane) {
     b.onclick = () => { S.minha[pane.i] = !S.minha[pane.i]; loadPart(pane); };
     pane.chips.append(b);
   }
+  const abertas = S.propostas.filter(x => x.status === 'aberta');
+  if (pane.i === 0 && abertas.length && window.SALVE && SALVE.ctx().role === 'dono') {
+    const b = el('button', 'chip minha-chip', `Propostas (${abertas.length})`); b.type = 'button';
+    b.title = 'Versões que músicos mandaram para a banda: você aprova ou recusa';
+    b.onclick = () => Propostas.open(song.id);
+    pane.chips.append(b);
+  }
+}
+/* the line in "Minha versão" that says whether this part was sent to the band, and the button to send it */
+function statusProposta(pane) {
+  const box = pane.pagesWrap.querySelector('.minha-aviso .envio'); if (!box) return;
+  const song = currentSong(), v = song && S.pessoal.get(song.id + '__' + pane.part); if (!v) return;
+  const minha = S.propostas.find(x => x.autor === S.uid && x.parte === pane.part);
+  box.replaceChildren();
+  if (minha?.status === 'aberta') {
+    box.append(el('span', '', 'Enviada para a banda: esperando o OK do dono. '));
+    const c = el('button', 'btn', 'Cancelar o envio'); c.type = 'button';
+    c.onclick = async () => { try { await S.db.collection('propostas').doc(minha.id).delete(); } catch { toast('Não consegui cancelar agora.'); } };
+    box.append(c); return;
+  }
+  if (minha) box.append(el('span', '', minha.status === 'aprovada' ? 'O dono aprovou a sua última versão enviada: ela já está na partitura da banda. ' : `O dono não aprovou a última versão enviada${minha.motivo ? ': “' + minha.motivo + '”' : ''}. `));
+  const b = el('button', 'btn primary', minha ? 'Enviar de novo para a banda' : 'Enviar para a banda'); b.type = 'button';
+  b.title = 'O dono da banda recebe a sua versão e decide se ela entra na partitura de todos';
+  b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await Editor.versaoPessoal({ ...song }, pane.part, v.mudancas);
+      const vale = v.mudancas.filter(m => !r.falharam.includes(m));
+      if (!vale.length) throw new Error('nenhuma mudança sua cabe na partitura atual da banda');
+      const me = SALVE.ctx().user || {}, parte = (song.parts || []).find(x => x.key === pane.part);
+      await S.db.collection('propostas').doc(`${song.id}__${pane.part}__${S.uid}__${Date.now()}`).set({
+        autor: S.uid, nome: String(me.displayName || me.email || 'Músico').slice(0, 80), musica: song.id, parte: pane.part,
+        mudancas: vale.slice(0, 200), resumo: `${vale.length} ${vale.length > 1 ? 'mudanças' : 'mudança'} em ${parte?.name || pane.part}`.slice(0, 300),
+        status: 'aberta', criadoEm: Date.now() });
+      if (minha) S.db.collection('propostas').doc(minha.id).delete().catch(() => {});   // keep only the newest one per part
+      toast('Enviado. O dono da banda decide se entra para todos.');
+    } catch (e) { b.disabled = false; toast('Não consegui enviar: ' + (e.message || e)); }
+  };
+  box.append(b);
 }
 /* "Minha versão": the band's score with this person's own changes to the part, drawn from the notes (no PDF) */
 async function loadMinha(pane, song, part, id) {
@@ -1232,7 +1278,9 @@ async function loadMinha(pane, song, part, id) {
       catch { toast('Não consegui apagar agora. Confira a internet.'); }
     };
     aviso.append(oficial, apagar);
+    if (window.SALVE) { const envio = el('p', 'envio'); aviso.append(envio); }
     pane.pagesWrap.replaceChildren(aviso, box);
+    statusProposta(pane);
     await Editor.desenhar(r.xml, box);
   } catch (e) {
     if (id !== pane.loadId) return;
@@ -1900,7 +1948,62 @@ const Caio = (() => {
 
   $('#caioBtn').onclick = () => open();
   $('#editCaioBtn').onclick = () => open('editar');
-  return { open };
+  return { open, aplicar: apply };
+})();
+/* ---------- propostas: a musician's "Minha versão" sent to the band; only the owner approves it ----------
+   Approving applies the changes to the band's score exactly as Caio's approved changes are applied (the song's
+   current version is saved in Versões first, and the Malak redoes the audio). */
+const Propostas = (() => {
+  let panel = null, songId = null;
+  function open(id) {
+    if (panel) return;
+    songId = id;
+    const scrim = el('div', 'scrim'), d = el('div', 'drawer caio'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Propostas');
+    d.innerHTML = `<div class="caio-head"><h3>Propostas para a banda</h3><button class="btn" type="button" id="propX">Fechar</button></div><div class="caio-log prop-log"></div>`;
+    document.body.append(scrim, d); panel = d;
+    const shut = () => { scrim.remove(); d.remove(); panel = null; };
+    scrim.onclick = shut; d.querySelector('#propX').onclick = shut;
+    refresh();
+  }
+  const dono = () => window.SALVE && SALVE.ctx().role === 'dono';
+  function refresh() {
+    if (!panel) return;
+    const log = panel.querySelector('.prop-log'), song = S.songs.find(x => x.id === songId);
+    const lista = S.propostas.filter(x => x.musica === songId);
+    log.replaceChildren();
+    if (!lista.length) { log.append(el('div', 'caio-msg ele', 'Nenhuma proposta para esta música.')); return; }
+    lista.forEach(p => {
+      const box = el('div', 'caio-prop'), parte = (song?.parts || []).find(x => x.key === p.parte)?.name || p.parte;
+      box.append(el('b', '', `${p.nome || 'Músico'} · ${parte}`));
+      box.append(el('span', 'hint', `${p.resumo || ''} · ${new Date(p.criadoEm).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}`));
+      (p.mudancas || []).forEach(m => box.append(el('label', '', m.descricao || `compasso ${m.compasso}: ${m.tipo === 'cifras' ? 'cifras' : m.tipo === 'letra' ? 'letra' : 'notas'}`)));
+      const row = el('div', 'row');
+      if (p.status !== 'aberta') row.append(el('span', 'hint', p.status === 'aprovada' ? 'Aprovada: já está na partitura da banda.' : 'Recusada.' + (p.motivo ? ' ' + p.motivo : '')));
+      else if (!dono()) row.append(el('span', 'hint', 'Esperando o OK do dono da banda.'));
+      else {
+        const ok = el('button', 'btn primary', 'Aprovar para a banda toda'); ok.type = 'button';
+        const nao = el('button', 'btn', 'Recusar'); nao.type = 'button';
+        ok.onclick = async () => {
+          ok.disabled = nao.disabled = true; ok.textContent = 'Aplicando…';
+          const lista2 = (p.mudancas || []).map(m => ({ ...m, musica: p.musica, parte: p.parte }));
+          const r = await Caio.aplicar(lista2, `Proposta de ${p.nome || 'músico'} (${parte})`);
+          if (!r.ok) { ok.disabled = nao.disabled = false; ok.textContent = 'Aprovar para a banda toda'; toast('Não entrou: ' + r.erros.join('; ')); return; }
+          await S.db.collection('propostas').doc(p.id).update({ status: 'aprovada', decididoEm: Date.now(), decididoPor: S.uid,
+            ...(r.erros.length ? { motivo: ('Entraram ' + r.ok + '. Não deu: ' + r.erros.join('; ')).slice(0, 300) } : {}) }).catch(() => {});
+          toast(r.erros.length ? 'Entrou em parte. Veja o que não deu.' : 'Aprovada: entrou na partitura da banda. A versão anterior está em Versões.');
+        };
+        nao.onclick = async () => {
+          if (nao.dataset.ok !== '1') { nao.dataset.ok = '1'; nao.textContent = 'Toque de novo para recusar'; return; }
+          ok.disabled = nao.disabled = true;
+          try { await S.db.collection('propostas').doc(p.id).update({ status: 'recusada', decididoEm: Date.now(), decididoPor: S.uid }); }
+          catch { ok.disabled = nao.disabled = false; toast('Não consegui recusar agora.'); }
+        };
+        row.append(ok, nao);
+      }
+      box.append(row); log.append(box);
+    });
+  }
+  return { open, refresh };
 })();
 /* ---------- robot: turns the score (PDF or original file) into player audio and a bar map ---------- */
 const Robo = (() => {
