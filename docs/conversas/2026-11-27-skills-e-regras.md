@@ -128,3 +128,6 @@ no pacote não foram trazidos.
   `salvetheapp-3cceb`.
 - Código: `deploy.py` publica só no `salvetheapp-3cceb` por padrão; `pnpl10y.web.app` saiu da lista de endereços
   aceitos pelo Caio e do texto do modo local. Registro da turnê: `docs/turne-10-anos.md`.
+- `salvetheapp.web.app` (site do projeto `pnpl10y` que roda o app) mantido e atualizado (20261127132358): aviso de
+  convite vencido, metrônomo/bateria novos, 235 arquivos das bandas, página abre sem erros. O `deploy.py` agora
+  publica nos dois endereços oficiais juntos: `salvetheapp-3cceb` e `salvetheapp`.

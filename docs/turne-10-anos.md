@@ -17,4 +17,5 @@ guardado para aprendizado.
 | Regras dos arranjadores da turnê | coleção de regras da IA arranjadora (página Equipe do app) |
 
 O endereço `salvetheapp.web.app` também mora no projeto `pnpl10y`, mas é o app (fala com o banco do
-`salvetheapp-3cceb`), não a turnê. Publicar nele: `SITE=salvetheapp python3 ferramentas/deploy.py`.
+`salvetheapp-3cceb`), não a turnê. É um dos dois endereços oficiais do app; o `deploy.py` publica nos dois juntos.
+Atualizado em 27/11/2026 (estava na versão das 04:14).
