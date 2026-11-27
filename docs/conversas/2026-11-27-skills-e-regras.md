@@ -67,3 +67,14 @@ Pedido: "faça os 3" (validade dos links, juntar a branch na main, publicar as r
 - Testes de novo: 18 de 18 no emulador, e o teste do próprio Google aceitou as regras.
 - Depois de publicar, as regras no ar foram baixadas e conferidas: são idênticas ao arquivo.
 - Só `firestore.rules` foi publicado. `storage.rules` e o app (Hosting) não foram mexidos.
+
+**App publicado (27/11/2026, 04:02 UTC), nos dois sites: `salvetheapp-3cceb` e `pnpl10y`.**
+- O app no ar estava mais novo que o repositório: às 03:40 alguém publicou o editor de partitura (`editor.js`,
+  `partitura.js` e mudanças no `index.html`) sem salvar no repositório. Publicar a pasta `app/` apagaria o editor.
+- Por isso a publicação partiu do que estava no ar e trocou só 5 arquivos: `fb.js` (convite vence em 7 dias),
+  `index.html` e `local/index.html` (aviso "vale 7 dias"), `version.json` e `local/manifest.json`. Os outros 249
+  (editor, partituras, modo local) ficaram como estavam.
+- Conferido depois: a página abre sem erros, o aviso de convite vencido está no ar, e editor, partituras e modo
+  local continuam respondendo.
+- **Atenção:** o editor de partitura ainda não está no repositório. Quem o fez precisa salvar o código-fonte, senão
+  a próxima publicação feita a partir do repositório o apaga.
