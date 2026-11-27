@@ -350,6 +350,83 @@
       `<part-list>${parts.map(p => p.head).join('')}</part-list>${parts.map(p => p.body).join('')}</score-partwise>`;
   };
 
+  /* ---------- a new instrument in an existing score ---------- */
+  const normKey = f => ((f % 12) + 12 + 6) % 12 - 6;   // fifths in -6..5
+  // the transposition in force at each bar of a part (chromatic semitones, written -> sounding)
+  P.transposeOf = function (pi) {
+    for (const m of this.measures(pi)) for (const at of kids(m, 'attributes')) { const t = kid(at, 'transpose'); if (t) return parseInt(txt(t, 'chromatic', '0')) || 0; }
+    return 0;
+  };
+  // a part that is only chord symbols over slashes (the band's Base)
+  P.isChart = function (pi) {
+    const heads = this.measures(pi).flatMap(m => kids(m, 'note')).map(n => kid(n, 'notehead')).filter(Boolean);
+    return heads.length > 0 && heads.every(h => h.textContent.trim() === 'slash');
+  };
+  /* add one of Partitura.INSTRUMENTOS as a new part, with the same bars, time and key changes (in its own written key),
+     rehearsal marks and barlines as the score. opts: {copiarDe: index of a part whose notes it doubles at the same sound
+     (transposed for the new instrument), oitava: -1|0|1, antes: index to insert before (default: end)}.
+     Returns {pi, copiados, pulados}. */
+  P.addPart = function (insKey, opts = {}) {
+    const ins = Partitura.INSTRUMENTOS.find(x => x.key === insKey);
+    if (!ins) throw new Error(`não conheço o instrumento "${insKey}"`);
+    const parts = this.parts(); if (!parts.length) throw new Error('a partitura não tem nenhuma parte');
+    const ref = parts.findIndex(p => !this.isChart(p.i)) >= 0 ? parts.findIndex(p => !this.isChart(p.i)) : 0;
+    const refC = this.transposeOf(ref), newC = ins.tr ? ins.tr[1] : 0;
+    const d = this.doc, mk = (tag, text) => { const e = d.createElement(tag); if (text != null) e.textContent = String(text); return e; };
+    const used = new Set(parts.map(p => p.id)); let n = parts.length + 1; while (used.has('P' + n)) n++;
+    const id = 'P' + n;
+    const sp = d.createElement('score-part'); sp.setAttribute('id', id); sp.append(mk('part-name', ins.nome), mk('part-abbreviation', ins.abrev));
+    const part = d.createElement('part'); part.setAttribute('id', id);
+    let first = true, beats = 4, type = 4;
+    for (const rm of this.measures(ref)) {
+      const m = d.createElement('measure'); m.setAttribute('number', rm.getAttribute('number'));
+      if (rm.getAttribute('implicit')) m.setAttribute('implicit', rm.getAttribute('implicit'));
+      let key = null, time = null;
+      for (const at of kids(rm, 'attributes')) {
+        const k = kid(at, 'key'); if (k && txt(k, 'fifths') !== '') key = normKey((parseInt(txt(k, 'fifths')) || 0) + 7 * refC - 7 * newC);
+        const t = kid(at, 'time'); if (t && txt(t, 'beats')) { beats = parseInt(txt(t, 'beats')) || beats; type = parseInt(txt(t, 'beat-type')) || type; time = t; }
+      }
+      if (first && key == null) key = normKey(7 * refC - 7 * newC);
+      if (first || key != null || time) {
+        const at = mk('attributes');
+        if (first) at.append(mk('divisions', DIV));
+        if (key != null) { const k = mk('key'); k.append(mk('fifths', key)); at.append(k); }
+        if (time || first) { const t = mk('time'); t.append(mk('beats', beats), mk('beat-type', type)); at.append(t); }
+        if (first) {
+          const c = mk('clef'); c.append(mk('sign', ins.clef === 'F' ? 'F' : 'G'), mk('line', ins.clef === 'F' ? 4 : 2)); at.append(c);
+          if (ins.tr) { const tr = mk('transpose'); tr.append(mk('diatonic', ins.tr[0]), mk('chromatic', ins.tr[1])); at.append(tr); }
+        }
+        m.append(at);
+      }
+      for (const dir of kids(rm, 'direction')) if (dir.getElementsByTagName('rehearsal').length) m.append(dir.cloneNode(true));
+      // the bar's real length (a pickup bar is shorter than its time signature)
+      const real = kids(rm, 'note').filter(x => txt(x, 'voice', '1') === '1' && !kid(x, 'chord') && !kid(x, 'grace')).reduce((s, x) => s + (parseInt(txt(x, 'duration', '0')) || 0), 0);
+      const r = mk('note'), rest = mk('rest'); rest.setAttribute('measure', 'yes'); r.append(rest, mk('duration', real || Math.round(beats * 4 / type * DIV)), mk('voice', 1)); m.append(r);
+      for (const bl of kids(rm, 'barline')) m.append(bl.cloneNode(true));
+      part.append(m); first = false;
+    }
+    const at = opts.antes != null && parts[opts.antes] ? parts[opts.antes] : null;
+    const sps = [...d.getElementsByTagName('score-part')], atSp = at && sps.find(x => x.getAttribute('id') === at.id);
+    if (atSp) atSp.parentNode.insertBefore(sp, atSp); else d.getElementsByTagName('part-list')[0].append(sp);
+    if (at) at.el.parentNode.insertBefore(part, at.el); else d.documentElement.append(part);
+    const pi = this.parts().findIndex(p => p.id === id);
+    let copiados = 0; const pulados = [];
+    if (opts.copiarDe != null) {
+      const src = opts.copiarDe >= pi ? opts.copiarDe + 1 : opts.copiarDe;   // the source moved down if we went in before it
+      if (!this.parts()[src]) throw new Error('não achei a parte para copiar');
+      if (this.isChart(src)) throw new Error('a parte de origem só tem cifras; escolha um instrumento com notas');
+      const semis = this.transposeOf(src) - newC + 12 * (opts.oitava | 0);
+      for (const sm of this.measures(src)) {
+        const num = sm.getAttribute('number'), ev = this.events(src, num);
+        if (!ev || ev.every(e => e.rest)) continue;
+        const { fifths } = this.context(pi, num);
+        const toks = ev.map(e => (e.rest ? 'R' : e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)).join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : ''));
+        try { this.setTokens(pi, num, toks.join(' ')); copiados++; } catch { pulados.push(num); }
+      }
+    }
+    return { pi, id, copiados, pulados };
+  };
+
   root.Partitura = Partitura;
   if (typeof module !== 'undefined') module.exports = Partitura;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1014,7 +1014,7 @@ def multi_rests(path):
     tree.write(path, encoding='UTF-8', xml_declaration=True)
 
 
-def engrave_parts(xml_path, title, partes, tmp, dest):
+def engrave_parts(xml_path, title, partes, tmp, dest, so=None):
     """a score written in the app has no PDFs: MuseScore draws the full score and one PDF per instrument
     (same as the Mestrinho does), so the band reads it on the stand, writes on it and follows the DAW"""
     import copy
@@ -1028,12 +1028,14 @@ def engrave_parts(xml_path, title, partes, tmp, dest):
         return pdf
     full = m21.converter.parse(xml_path)
     out = []
-    if len(full.parts) > 1:
+    if len(full.parts) > 1 and not so:
         out.append({'key': 'grade', 'name': 'Grade', 'src': upload(eng(xml_path, os.path.join(tmp, 'grade.pdf')), f'{dest}/grade.pdf', 'application/pdf')})
     for i, pt in enumerate(full.parts):
         meta = partes[i] if i < len(partes) else {}
         name = meta.get('name') or pt.partName or f'Parte {i + 1}'
         key = meta.get('key') or slug(name)
+        if so and key not in so:  # only the instruments asked for (a part added to a score that has its own PDFs)
+            continue
         one = m21.stream.Score(); one.metadata = m21.metadata.Metadata(title=f'{title} · {name}')
         one.insert(0, copy.deepcopy(pt))
         one.metadata.composer = ''
@@ -1070,6 +1072,14 @@ def run(job):
                 dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
                 parts = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest)
                 song_ref.update({'parts': parts})
+            elif pmeta.get('partesSemPdf'):  # an instrument Caio added to a score read from PDFs: draw just its part
+                novas = set(pmeta['partesSemPdf'])
+                job.step('Desenhando o PDF da parte nova', 8)
+                dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
+                feitas = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest, so=novas)
+                antigas = [p for p in song.get('parts', []) if p.get('key') not in novas]
+                song_ref.update({'parts': antigas + feitas, 'partitura.partesSemPdf': firestore.DELETE_FIELD})
+                parts = [p for p in antigas + feitas if p.get('src')]
         fontes = [] if (reuse or src_files) else [f for f in song.get('fontes', []) if re.search(r'\.(musicxml|mxl|xml|mscz|mscx)$', f.get('name', ''), re.I)]
         if fontes:
             f = fontes[-1]
