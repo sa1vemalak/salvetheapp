@@ -99,3 +99,15 @@ no pacote não foram trazidos.
 `agente` (Caio) já rodava desde 03:40, igual ao `server/functions/index.js` do repositório. Foi trocado só o código
 (API do Cloud Functions, `buildConfig.source`); gatilhos, segredos e configurações ficaram como estavam. O `agente`
 não foi republicado, porque já rodava essa versão. As três funções terminaram ativas.
+
+## Terceira rodada: script de publicação seguro
+
+- `ferramentas/deploy.py` procurava `localmode/local.js`, mas a pasta é `modo-local/`: falhava num clone limpo.
+- Pior: publicava só a pasta `app/`, e os sites guardam também as partituras e áudios das bandas (`scores/` e
+  `_blob/`, 235 arquivos fora do repositório). Uma publicação feita do repositório apagaria esses arquivos.
+- Agora o script: publica nos dois sites de uma vez (antes, `pnpl10y` ficou na versão das 04:14, sem o aviso de
+  convite vencido); copia `scores/` e `_blob/` da versão no ar; recusa se houver mudança não salva em `app/`; baixa o
+  código no ar e recusa se algum arquivo não existir em nenhuma versão salva do repositório (o caso do editor e do
+  Caio publicados sem salvar); grava o commit em `version.json`; não altera arquivos do repositório; confere
+  depois de publicar. `DRY=1` só confere (passou nos dois sites).
+- Não publicado nesta rodada: a credencial do Google desta sessão foi recusada (401) pelo Hosting, Rules e Functions.

@@ -1,0 +1,3 @@
+Verovio 6.4.1 (https://www.verovio.org, https://github.com/rism-digital/verovio)
+Licensed under the GNU Lesser General Public License v3.0 (LGPL-3.0-only).
+This file is the unmodified npm build (verovio/dist/verovio-toolkit-wasm.js); the source code is available at the address above.

@@ -1,11 +1,14 @@
 /* salvetheapp · Editor: the song's editable score (song.partitura.xml), drawn by Verovio, edited by touch.
    Tap a note -> change pitch, length, articulation, dynamic; or type the whole bar. Every change is undoable;
    "Salvar versão" stores a new MusicXML and keeps the old one in the song's history.
-   Uses the app's globals: S, el, toast, SALVE, Versions, currentSong (index.html) and Partitura (partitura.js). */
+   Uses the app's helpers (window.salveApp: S, el, toast, Versions, currentSong, Robo), SALVE (fb.js) and Partitura (partitura.js). */
 const Editor = (() => {
   let vrvReady = null, tk = null;
   const BASE = (document.currentScript && document.currentScript.src) ? new URL('.', document.currentScript.src).href : '';
   const st = { song: null, P: null, view: -1, zoom: 1, sel: null, undo: [], redo: [], dirty: 0, map: new Map(), changed: new Set(), wrap: null };
+  // the app's helpers live inside its main script; it hands them over as window.salveApp
+  const app = () => window.salveApp || {};
+  const el = (...a) => app().el(...a), toast = m => app().toast(m), currentSong = () => app().currentSong();
   const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   function loadVerovio() {
@@ -135,8 +138,13 @@ const Editor = (() => {
     if (!st.sel) { bar.hidden = true; info.textContent = 'Toque numa nota ou pausa para editar.'; return; }
     const list = ev() || [], e = list[st.sel.idx]; const part = st.P.parts()[st.sel.pi];
     if (!e) { bar.hidden = true; return; }
-    info.textContent = `${part ? part.name : ''} · c.${st.sel.num} · ${e.rest ? 'pausa' : e.pitches.join(' + ')} · ${Math.round(e.dur * 100) / 100} tempo${e.dur === 1 ? '' : 's'}`;
+    const m = st.P.measure(st.sel.pi, st.sel.num), heads = m ? [...m.getElementsByTagName('notehead')] : [];
+    const chart = heads.length && heads.every(h => h.textContent.trim() === 'slash');  // the base: chords over slashes
+    const cif = st.P.chords(st.sel.pi, st.sel.num).map(c => c.text).join(' ');
+    info.textContent = chart ? `${part ? part.name : ''} · c.${st.sel.num} · levada · cifras: ${cif || 'nenhuma (toque em Cifras…)'}`
+      : `${part ? part.name : ''} · c.${st.sel.num} · ${e.rest ? 'pausa' : e.pitches.join(' + ')} · ${Math.round(e.dur * 100) / 100} tempo${e.dur === 1 ? '' : 's'}${cif ? ' · cifras: ' + cif : ''}`;
     bar.hidden = false;
+    bar.querySelectorAll('.ed-grp').forEach((g, k) => { g.hidden = chart && k < 3; });  // on the base only chords make sense
     bar.querySelectorAll('[data-dur]').forEach(b => { const d = parseFloat(b.dataset.dur); b.setAttribute('aria-pressed', String(Math.abs(d - e.dur) < 1e-6 || Math.abs(d * 1.5 - e.dur) < 1e-6)); });
     bar.querySelectorAll('[data-art]').forEach(b => b.setAttribute('aria-pressed', String(!e.rest && e.arts.includes(b.dataset.art))));
     bar.querySelector('[data-k=tie]').setAttribute('aria-pressed', String(!!e.tie));
@@ -148,16 +156,16 @@ const Editor = (() => {
   // store a new version of a song's score (the old file stays, the song's history keeps a snapshot) and redo its audio
   async function salvarPartitura(song, xmlText, nota, opts = {}) {
     const v = ((song.partitura || {}).versao || 1) + 1;
-    try { await Versions.snapshot(song.id, nota || 'Antes da edição da partitura'); } catch {}
+    try { await app().Versions.snapshot(song.id, nota || 'Antes da edição da partitura'); } catch {}
     const blob = new Blob([xmlText], { type: 'application/vnd.recordare.musicxml+xml' });
     const file = new File([blob], `${song.id}-partitura-v${v}.musicxml`, { type: blob.type });
     const res = await SALVE.upload(file, { type: blob.type });
     const me = SALVE.ctx().user;
     const partitura = { ...(song.partitura || {}), xml: res.url, versao: v, editadaEm: Date.now(), editadaPor: (me.displayName || me.email || '').slice(0, 80) };
     if (opts.partes) { partitura.partes = opts.partes; partitura.criadaEm = Date.now(); partitura.origem = 'criada no app'; }
-    await S.db.collection('songs').doc(song.id).update({ partitura });
+    await app().S.db.collection('songs').doc(song.id).update({ partitura });
     song.partitura = partitura;
-    if (!opts.semAudio && typeof Robo !== 'undefined') Robo.start(song.id, null, 'partitura', true);  // the study audio follows the score
+    if (!opts.semAudio && app().Robo) app().Robo.start(song.id, null, 'partitura', true);  // the study audio follows the score
     return partitura;
   }
   async function save() {
@@ -221,7 +229,7 @@ const Editor = (() => {
     song = song || currentSong();
     if (!song) return;
     if (!(song.partitura || {}).xml) {
-      if (S.canWrite) criar(song);
+      if (app().S.canWrite) criar(song);
       else toast('Esta música ainda não tem partitura editável. Peça para o dono ou um editor criar.');
       return;
     }

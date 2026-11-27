@@ -193,9 +193,14 @@ def run(job):
         job.step('Guardando o arranjo na música', 92)
         u = arr.get('_uso') or {}
         custo = round((u.get('entrada') or 0) / 1e6 * 4 + (u.get('saida') or 0) / 1e6 * 20, 2)
+        old = song.get('partitura') or {}
         song_ref.update({
             'parts': parts,
             'fontes': (song.get('fontes') or []) + [fonte],
+            # the arrangement itself is the band's editable score (exact notes, no reading of the PDF)
+            'partitura': {'xml': fonte['src'], 'versao': int(old.get('versao') or 0) + 1, 'criadaEm': int(time.time() * 1000),
+                          'origem': 'Mestrinho', 'editadaPor': 'Mestrinho (IA arranjadora)',
+                          'partes': [{'key': p['key'], 'name': p['name']} for p in parts if p['key'] != 'grade']},
             'arranjo': {'resumo': arr.get('resumo', ''), 'tom': arr.get('tom', ''), 'secoes': arr.get('secoes', []),
                         'bpm': sk['bpm'], 'feitoEm': int(time.time() * 1000), 'modelo': u.get('modelo'), 'custoUSD': custo,
                         'notas': sum(1 for c in arr.get('compassos', []) for t in c.get('linha', '').split() if not t.startswith(('R', '(R'))),
@@ -204,7 +209,7 @@ def run(job):
         # the Malak makes the study audio and the bar map from the new score
         mj = db.collection(f'bands/{band}/jobs').document(f'{song_id}__{int(time.time() * 1000)}')
         mj.set({'song': song_id, 'tipo': 'audio', 'status': 'pendente', 'criadoEm': int(time.time() * 1000),
-                'uid': job.data.get('uid', ''), 'fonte': 'pdf'})
+                'uid': job.data.get('uid', ''), 'fonte': 'partitura'})
         job.ref.update({'status': 'pronto', 'progresso': 100, 'atualizado': int(time.time() * 1000), 'malak': mj.path,
                         'msg': 'Arranjo escrito. O Malak está gerando o áudio de estudo.'})
 
