@@ -38,10 +38,16 @@ service cloud.firestore {
         (!('email' in d) || (d.email is string && d.email.size() <= 254)) &&
         (!('joinedAt' in d) || d.joinedAt is int);
     }
-    // an invite link: only for musician or editor; nobody becomes owner ('dono') by link
+    // an invite link: only for musician or editor; nobody becomes owner ('dono') by link; it is valid for 7 days
+    function inviteValid(inv) {
+      return inv.role in ['editor', 'musico'] && inv.createdAt is int && request.time.toMillis() - inv.createdAt < 7 * 24 * 3600 * 1000;
+    }
+    // fields of a new invite
     function isValidInvite(d) {
       return d.keys().hasAll(['role', 'createdAt', 'by']) && d.keys().hasOnly(['role', 'bandName', 'createdAt', 'by']) &&
         d.role in ['editor', 'musico'] && d.by == request.auth.uid && d.createdAt is int &&
+        // the date is the real one (up to 10 min of clock difference), so nobody makes a link that never expires
+        d.createdAt > request.time.toMillis() - 600000 && d.createdAt < request.time.toMillis() + 600000 &&
         (!('bandName' in d) || (d.bandName is string && d.bandName.size() <= 80));
     }
     function isValidCode(d) {
@@ -72,7 +78,8 @@ service cloud.firestore {
           (request.resource.data.invite is string &&
            request.resource.data.role in ['editor', 'musico'] &&
            exists(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)) &&
-           request.resource.data.role == get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data.role));
+           request.resource.data.role == get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data.role &&
+           inviteValid(get(/databases/$(database)/documents/bands/$(b)/invites/$(request.resource.data.invite)).data)));
         // the owner changes only the role, never the name/e-mail the person wrote
         allow update: if owner(b) && request.resource.data.role in ['editor', 'musico'] &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role']);

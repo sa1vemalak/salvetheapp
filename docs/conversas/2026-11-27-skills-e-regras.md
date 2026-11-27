@@ -46,8 +46,15 @@ o que mostra que a falha existia.
 `ferramentas/rel.py` rodado de dentro de `firebase/`, com o token `.t` ao lado (ele publica `firestore.rules` e
 `storage.rules`).
 
-## Sugestão para depois (não aplicada)
+## Segunda rodada: validade dos convites, junção na main e publicação
 
-Os links de convite não expiram. Uma pessoa removida da banda pode voltar com o link antigo, se ainda o tiver.
-A saída seria dar validade ao link (por exemplo, 7 dias) ou apagar o convite depois do uso. Isso muda o
-comportamento do app, então fica para decidir.
+Pedido: "faça os 3" (validade dos links, juntar a branch na main, publicar as regras).
+
+**Links de convite valem 7 dias.** Antes, quem fosse removido da banda podia voltar com um link antigo.
+- Regras: entrar por convite só se o link tiver menos de 7 dias. A data do link precisa ser a real (com até
+  10 minutos de diferença de relógio), para ninguém criar um link com data no futuro que nunca venceria. O link
+  também precisa estar no nome de quem o criou.
+- App (`app-src/shim.js` → `app/fb.js`): quem abre um link vencido vê "Este convite venceu (vale 7 dias). Peça um
+  link novo para quem te convidou." Quem já é da banda abre normalmente. O aviso de link copiado diz que vale 7 dias.
+- O link não é apagado depois do uso, porque um mesmo link pode ser mandado no grupo da banda para várias pessoas.
+- Testes: 18 de 18 passam no emulador (5 novos sobre a validade).
