@@ -30,10 +30,17 @@ const ref = p => ({
 });
 const col = p => {
   const q = { orderBy: () => q, startAt: () => q, endAt: () => q, limitToLast: () => q, where: () => q,
-    get: async () => ({ docs: p.endsWith('/jobs') ? jobs.map(j => ({ id: j.id, data: () => j })) : [] }), doc: id => ref(p + '/' + id) };
+    get: async () => ({ docs: p.endsWith('/jobs') ? jobs.map(j => ({ id: j.id, data: () => j }))
+      : p.endsWith('/ann') ? Object.keys(docs).filter(k => k.startsWith(p + '/')).map(k => ({ id: k.split('/').pop(), data: () => docs[k] })) : [] }), doc: id => ref(p + '/' + id) };
   return q;
 };
-const fakeAdmin = { initializeApp() {}, firestore: Object.assign(() => ({ collection: c => col(c) }), { FieldPath: { documentId: () => '__id' } }), auth: () => ({}) };
+docs['bands/b/members/u1'] = { role: 'dono' };
+const fakeAdmin = { initializeApp() {}, firestore: Object.assign(() => ({ collection: c => col(c), runTransaction: async f => f({ get: async () => ({ exists: false }), set() {} }) }), { FieldPath: { documentId: () => '__id' } }),
+  auth: () => ({ verifyIdToken: async t => { if (t !== 'ok') throw new Error('token'); return { uid: 'u1' }; } }) };
+// the AI: answers with plain text and keeps what it was sent, so the test sees the pictures arrive
+const vistos = [];
+const busPath = require.resolve(path.join(FN, 'llm', 'bus.js'));
+require.cache[busPath] = { id: busPath, filename: busPath, loaded: true, exports: { turn: async (db, o) => { vistos.push(JSON.parse(JSON.stringify(o.messages))); return { content: [{ type: 'text', text: 'Li.' }], stop_reason: 'end_turn' }; } } };
 const adminPath = require.resolve(path.join(FN, 'node_modules', 'firebase-admin'));
 require.cache[adminPath] = { id: adminPath, filename: adminPath, loaded: true, exports: fakeAdmin };
 global.fetch = async () => ({ text: async () => XML });
@@ -96,6 +103,28 @@ const srv = require(path.join(FN, 'index.js'));
   confere('sílabas demais e segunda voz curta voltam; PDF de música sem PDF de arranjador também', vl2.erro && /sílabas/.test(vl2.erro) && /segunda voz/.test(vl2.erro) && !/redesenhar/.test(vl2.erro), JSON.stringify(vl2));
   const vn2 = await run('ver_notas', { musica: 'm1', parte: 'trompete', de: 1, ate: 1 });
   confere('ver_notas segue sem letra quando não há', !('letra' in vn2.compassos[0]), JSON.stringify(vn2.compassos[0]));
+  console.log('Anotações à mão (imagens)');
+  const pedir = body => new Promise(done => {
+    const res = { code: 200, status(c) { this.code = c; return this; }, json(j) { done({ code: this.code, j }); } };
+    srv.__handle({ method: 'POST', headers: { authorization: 'Bearer ok' }, body }, res);
+  });
+  const JPG = Buffer.from('fake-jpeg').toString('base64');
+  const pedido = { band: 'b', show: 's', modo: 'editar', musica: 'm1', conversa: [{ role: 'user', texto: 'Leia o que está escrito à mão.' }] };
+  const r1 = await pedir({ ...pedido, imagens: [{ tipo: 'image/jpeg', dados: JPG, legenda: 'anotações do app · Trompete, página 1 de 2' }] });
+  const ult = vistos.at(-1)?.at(-1);
+  confere('as imagens chegam ao Caio junto com a pergunta', r1.code === 200 && Array.isArray(ult?.content) && ult.content.some(b => b.type === 'image' && b.source.data === JPG)
+    && ult.content.some(b => b.type === 'text' && /Trompete, página 1/.test(b.text)) && ult.content.at(-1).text === 'Leia o que está escrito à mão.', JSON.stringify(r1));
+  const r2 = await pedir({ ...pedido, imagens: Array(7).fill({ tipo: 'image/jpeg', dados: JPG }) });
+  const r3 = await pedir({ ...pedido, imagens: [{ tipo: 'image/gif', dados: JPG }] });
+  const r4 = await pedir({ ...pedido, imagens: [{ tipo: 'image/jpeg', dados: 'A'.repeat(2_000_001) }] });
+  confere('imagens demais, de tipo estranho ou grandes demais são recusadas', r2.code === 400 && r3.code === 400 && r4.code === 400 && /grande/.test(r4.j.erro), JSON.stringify([r2, r3, r4]));
+  const r5 = await pedir(pedido);
+  confere('sem imagens a conversa segue só com texto', r5.code === 200 && typeof vistos.at(-1)[0].content === 'string');
+  docs['bands/b/ann/m1__trompete__1'] = { song: 'm1', part: 'trompete', page: 1, H: 1294, strokes: [{ p: [1, 2, 3, 4], c: '#000', w: 3 }], notes: [{ id: 'n1', x: 520, y: 260, t: 'respira' }, { id: 'n2', x: 0.12, y: 0.1, t: 'antigo' }] };
+  docs['bands/b/layout/m1'] = { parts: { trompete: { boxes: [[1, 1, 1, 0.05, 0.08, 0.5, 0.18], [2, 2, 1, 0.5, 0.08, 0.95, 0.18], [3, 3, 1, 0.05, 0.2, 0.5, 0.3]] } } };
+  const anot = await srv.__runTool('ver_anotacoes', { musica: 'm1', parte: 'todas' }, { band: 'b', show: 's', cache: {} });
+  confere('ver_anotacoes acha o compasso de cada texto e manda pedir a imagem dos desenhos',
+    anot.anotacoes?.find(a => a.id === 'n1')?.compasso_aprox === 3 && anot.anotacoes?.find(a => a.id === 'n2')?.compasso_aprox === 1 && /Ler anotações à mão/.test(anot.anotacoes?.find(a => a.desenhos_a_mao)?.para_ler || ''), JSON.stringify(anot));
   console.log(`\n${ok} ok, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

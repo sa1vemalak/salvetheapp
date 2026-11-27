@@ -282,6 +282,10 @@ body.at-home .palette { display: none; }
 .caio-in { display: flex; gap: 8px; align-items: flex-end; }
 .caio-in textarea { flex: 1; min-height: 46px; max-height: 140px; resize: none; padding: 12px; font-size: 16px; line-height: 1.35; }
 .caio-in .btn { min-height: 46px; }
+.caio-anexo { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.caio-anexo button { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.caio-anexo .fotos { font-size: 13px; color: var(--muted, inherit); }
+.caio-anexo .fotos button { margin-left: 6px; padding: 2px 8px; }
 
 /* band panel and entry screens */
 .bandmodal { width: min(620px, calc(100% - 24px)); }
@@ -921,7 +925,8 @@ async function flush(key, layer) {
   const job = prev.then(async () => {
     try {
       const cur = getAnn(key, layer);
-      await ref.set({ song, part, page: +page, strokes: cur.strokes, notes: cur.notes, updated: Date.now() });
+      const H = [...(S.pageViews.get(key) || [])][0]?.H;   // page height in drawing units, so Caio can tell which bar a note is in
+      await ref.set({ song, part, page: +page, strokes: cur.strokes, notes: cur.notes, ...(H ? { H } : {}), updated: Date.now() });
       if (gens.get(id) === gen) dirty.delete(id);
       status('salvo');
     } catch (e) {
@@ -1470,6 +1475,7 @@ const Band = (() => {
 const Caio = (() => {
   const URL_AGENTE = 'https://southamerica-east1-salvetheapp-3cceb.cloudfunctions.net/agente';
   let conversa = [], panel = null, modo = 'conversa', songId = null;  // modo 'editar': chat to edit the open song in plain words
+  let fotos = [];  // pictures of handwritten notes waiting to go with the next question (never kept in the conversation)
   const KEY = () => (modo === 'editar' ? 'caio-editar:' : 'caio:') + (window.SALVE ? SALVE.ctx().band + '/' + SALVE.ctx().show : 'x') + (modo === 'editar' ? '/' + songId : '');
   const load = () => { try { conversa = JSON.parse(sessionStorage.getItem(KEY()) || '[]'); } catch { conversa = []; } };
   const keep = () => { try { sessionStorage.setItem(KEY(), JSON.stringify(conversa.slice(-30))); } catch {} };
@@ -1488,6 +1494,7 @@ const Caio = (() => {
     const scrim = el('div', 'scrim'), d = el('div', 'drawer caio'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Caio');
     d.innerHTML = `<div class="caio-head"><span class="gate-s" aria-hidden="true">C</span><h3>${modo === 'editar' ? 'Editar com o Caio' : 'Caio'}</h3><button class="btn" type="button" id="caioNew" title="Começar outra conversa">Nova</button><button class="btn" type="button" id="caioX">Fechar</button></div>
       <div class="caio-log" aria-live="polite"></div>
+      ${modo === 'editar' ? `<div class="caio-anexo"><button type="button" id="caioTinta" title="Manda ao Caio as páginas desta parte com o que foi escrito à mão no app">Ler anotações à mão</button><button type="button" id="caioFoto" title="Foto ou PDF de uma partitura anotada à mão">Foto ou PDF anotado</button><input type="file" id="caioArq" accept="image/*,application/pdf" multiple hidden><span class="fotos" hidden></span></div>` : ''}
       <div class="caio-in"><textarea id="caioTxt" rows="1" placeholder="${modo === 'editar' ? 'Diga com suas palavras o que quer mudar…' : 'Pergunte ou peça uma mudança…'}"></textarea><button class="btn primary" id="caioGo" type="button">Enviar</button></div>`;
     document.body.append(scrim, d); panel = d;
     const shut = () => { scrim.remove(); d.remove(); panel = null; };
@@ -1497,6 +1504,13 @@ const Caio = (() => {
     ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; };
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
     d.querySelector('#caioGo').onclick = send;
+    fotos = [];
+    if (modo === 'editar') {
+      d.querySelector('#caioTinta').onclick = () => anexar(paginasComTinta);
+      const arq = d.querySelector('#caioArq');
+      d.querySelector('#caioFoto').onclick = () => arq.click();
+      arq.onchange = () => { const f = [...arq.files]; arq.value = ''; if (f.length) anexar(() => fotosDeArquivos(f)); };
+    }
     paint();
     setTimeout(() => ta.focus(), 50);
   }
@@ -1508,6 +1522,7 @@ const Caio = (() => {
       const song = S.songs.find(x => x.id === songId);
       log.append(el('div', 'caio-msg ele', `Vamos mexer em “${song?.title || 'esta música'}”. Diga do seu jeito, sem precisar de termo técnico, o que quer mudar. Eu mostro o que entendi e você aprova antes de valer.`));
       const hints = el('div', 'caio-hints');
+      log.append(el('div', 'caio-msg ele', 'Anotou à mão? Toque em “Ler anotações à mão” (o que está escrito na parte aberta) ou mande uma foto ou PDF da partitura anotada.'));
       ['O trompete está muito alto no começo, deixa mais suave', 'No compasso 12 o sax tem que entrar um tempo depois',
        'Deixa as notas do trombone mais curtinhas no refrão', 'Coloca as cifras da base no compasso 1 ao 4']
         .forEach(t => { const b = el('button', '', t); b.type = 'button'; b.onclick = () => { panel.querySelector('#caioTxt').value = t; send(); }; hints.append(b); });
@@ -1521,7 +1536,7 @@ const Caio = (() => {
       log.append(hints);
     }
     conversa.forEach((m, i) => {
-      log.append(el('div', 'caio-msg ' + (m.role === 'user' ? 'eu' : 'ele') + (m.erro ? ' erro' : ''), m.texto));
+      log.append(el('div', 'caio-msg ' + (m.role === 'user' ? 'eu' : 'ele') + (m.erro ? ' erro' : ''), m.texto + (m.anexos ? `\n(com ${m.anexos} ${m.anexos > 1 ? 'imagens' : 'imagem'})` : '')));
       if (m.proposta) log.append(proposal(m, i));
     });
     if (waiting) log.append(el('div', 'caio-wait', modo === 'editar' ? 'Caio está lendo a partitura…' : 'Caio está lendo o show…'));
@@ -1532,19 +1547,113 @@ const Caio = (() => {
     const ta = panel.querySelector('#caioTxt'), go = panel.querySelector('#caioGo');
     const t = ta.value.trim(); if (!t || go.disabled) return;
     ta.value = ''; ta.style.height = 'auto';
-    conversa.push({ role: 'user', texto: t }); keep(); paint(true);
+    const indo = fotos;
+    conversa.push({ role: 'user', texto: t, ...(indo.length ? { anexos: indo.length } : {}) }); keep(); paint(true);
     go.disabled = true;
     try {
       const { band, show } = SALVE.ctx();
       const r = await fetch(URL_AGENTE, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await SALVE.token() },
-        body: JSON.stringify({ band, show, ...(modo === 'editar' ? { modo, musica: songId } : {}), conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })) }) });
+        body: JSON.stringify({ band, show, ...(modo === 'editar' ? { modo, musica: songId } : {}), conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })),
+          ...(indo.length ? { imagens: indo.map(f => ({ tipo: f.tipo, dados: f.dados, legenda: f.legenda })) } : {}) }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
+      if (fotos === indo) { fotos = []; mostrarFotos(); }
       conversa.push({ role: 'assistant', texto: j.texto, proposta: j.proposta || null, podeAplicar: !!j.podeAplicar });
     } catch (e) {
       conversa.push({ role: 'assistant', texto: 'Não consegui responder agora: ' + (e.message === 'Failed to fetch' ? 'sem conexão com o servidor.' : e.message), erro: true });
     }
     go.disabled = false; keep(); paint();
+  }
+
+  /* ----- handwritten notes: the open part's pages with the ink drawn on them, or a photo/PDF of a paper score ----- */
+  function mostrarFotos() {
+    const box = panel && panel.querySelector('.caio-anexo .fotos'); if (!box) return;
+    box.hidden = !fotos.length; box.replaceChildren();
+    if (!fotos.length) return;
+    box.append(`${fotos.length} ${fotos.length > 1 ? 'páginas vão' : 'página vai'} com a próxima mensagem`);
+    const x = el('button', '', 'tirar'); x.type = 'button'; x.onclick = () => { fotos = []; mostrarFotos(); }; box.append(x);
+  }
+  async function anexar(pegar) {
+    const bts = panel.querySelectorAll('.caio-anexo button'); bts.forEach(b => b.disabled = true);
+    toast('Preparando as páginas…');
+    try {
+      const novas = await pegar();
+      if (!novas.length) return;
+      fotos = [...fotos, ...novas].slice(0, 6);
+      if (fotos.length < novas.length) toast('Vão só as 6 primeiras páginas. Mande o resto depois.');
+      mostrarFotos();
+      const ta = panel.querySelector('#caioTxt');
+      if (!ta.value.trim()) ta.value = 'Leia o que está escrito à mão e passe para a partitura.';
+      ta.focus();
+    } catch (e) { toast('Não consegui preparar as páginas: ' + (e.message || e)); }
+    finally { bts.forEach(b => b.disabled = false); }
+  }
+  // a JPEG small enough for the server (it takes up to ~1.5 MB per picture)
+  function jpeg(canvas) {
+    for (const q of [.82, .7, .55, .4]) {
+      const d = canvas.toDataURL('image/jpeg', q).split(',')[1];
+      if (d.length < 1.9e6) { canvas.width = canvas.height = 0; return d; }
+    }
+    throw new Error('página grande demais');
+  }
+  async function pdfPagina(page, W) {
+    const vp1 = page.getViewport({ scale: 1 }), viewport = page.getViewport({ scale: W / vp1.width });
+    const c = document.createElement('canvas'); c.width = Math.round(viewport.width); c.height = Math.round(viewport.height);
+    await page.render({ canvasContext: c.getContext('2d'), viewport, background: 'white' }).promise;
+    return c;
+  }
+  async function paginasComTinta() {
+    const song = S.songs.find(x => x.id === songId);
+    const part = (song?.parts || []).find(p => p.key === panes[0]?.part) || (song?.parts || [])[0];
+    if (!part) throw new Error('esta música ainda não tem partitura para ler');
+    const pdf = await getPdf(part.src);
+    const lay = (await S.db.collection('layout').doc(song.id).get().catch(() => null))?.data()?.parts?.[part.key];
+    const boxes = lay && (!lay.src || lay.src === part.src) ? lay.boxes || [] : [];
+    const out = [], W = 1400, k = W / 1000;
+    for (let n = 1; n <= pdf.numPages && out.length < 6; n++) {
+      const key = keyOf(song.id, part.key, n), com = getAnn(key, 'common'), mine = getAnn(key, 'mine');
+      const strokes = [...com.strokes, ...mine.strokes], notes = [...com.notes, ...mine.notes];
+      if (!strokes.length && !notes.length) continue;
+      const c = await pdfPagina(await pdf.getPage(n), W), g = c.getContext('2d');
+      g.save(); g.scale(k, k); g.lineJoin = 'round';
+      for (const s of strokes) {
+        g.globalAlpha = s.t === 'hl' ? .32 : 1; g.lineCap = s.t === 'hl' ? 'butt' : 'round';
+        g.strokeStyle = s.c; g.lineWidth = s.w; g.stroke(new Path2D(pathD(s.p)));
+      }
+      g.globalAlpha = 1; g.textBaseline = 'middle'; g.font = '600 34px sans-serif';   // like .note: 3.4% of the page width
+      for (const t of notes) { g.fillStyle = t.c || '#d92b2b'; g.fillText(String(t.t || ''), t.x, t.y); }
+      g.restore();
+      // the bar numbers, small and blue, so Caio knows which bar each mark is in
+      g.font = 'bold 17px sans-serif'; g.textBaseline = 'bottom';
+      for (const b of boxes.filter(b => b[2] === n)) {
+        const x = b[3] * c.width + 2, y = Math.max(18, b[4] * c.height - 2), txt = String(b[0]);
+        g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(x - 2, y - 17, g.measureText(txt).width + 4, 18);
+        g.fillStyle = '#1257e6'; g.fillText(txt, x, y);
+      }
+      out.push({ tipo: 'image/jpeg', dados: jpeg(c), legenda: `anotações do app · ${part.name}, página ${n} de ${pdf.numPages}${boxes.length ? '' : ' (sem os números de compasso)'}` });
+    }
+    if (!out.length) throw new Error(`não achei nada escrito à mão em ${part.name}. Escreva com o Anotar ou mande uma foto`);
+    return out;
+  }
+  async function fotosDeArquivos(files) {
+    const out = [];
+    for (const f of files) {
+      if (out.length >= 6) break;
+      if (f.type === 'application/pdf' || /\.pdf$/i.test(f.name)) {
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await f.arrayBuffer()), isEvalSupported: false }).promise;
+        for (let n = 1; n <= pdf.numPages && out.length < 6; n++)
+          out.push({ tipo: 'image/jpeg', dados: jpeg(await pdfPagina(await pdf.getPage(n), 1400)), legenda: `PDF "${f.name}", página ${n} de ${pdf.numPages}` });
+        pdf.destroy();
+      } else if (/^image\//.test(f.type)) {
+        const img = await createImageBitmap(f);
+        const z = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * z); c.height = Math.round(img.height * z);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        img.close && img.close();
+        out.push({ tipo: 'image/jpeg', dados: jpeg(c), legenda: `foto "${f.name}"` });
+      } else throw new Error(`"${f.name}" não é foto nem PDF`);
+    }
+    return out;
   }
 
   const label = (m, titles) => {
@@ -1615,7 +1724,10 @@ const Caio = (() => {
           if (!box) throw new Error(`não achei o compasso ${m.compasso} na parte ${m.parte}`);
           const key = `${m.musica}__${m.parte}__${box[2]}`, ref = S.db.collection('ann').doc(key);
           const cur = (await ref.get()).data() || { song: m.musica, part: m.parte, page: box[2], strokes: [], notes: [] };
-          const note = { id: Math.random().toString(36).slice(2, 9), x: Math.min(.95, box[3] + .004), y: Math.max(.012, box[4] - .006), t: m.texto, c: '#d92b2b' };
+          // notes live in the page's drawing space (1000 wide, H tall); the boxes are fractions of the page
+          const src = (S.songs.find(x => x.id === m.musica)?.parts || []).find(x => x.key === m.parte)?.src;
+          let H = 1414; try { const vp = (await (await getPdf(src)).getPage(box[2])).getViewport({ scale: 1 }); H = Math.round(1000 * vp.height / vp.width); } catch {}
+          const note = { id: Math.random().toString(36).slice(2, 9), x: Math.round(Math.min(.95, box[3] + .004) * 1000), y: Math.round(Math.max(.012, box[4] - .012) * H), t: m.texto, c: '#d92b2b' };
           await ref.set({ ...cur, song: m.musica, part: m.parte, page: box[2], notes: [...(cur.notes || []), note], strokes: cur.strokes || [], updated: Date.now() });
         } else if (m.tipo === 'remover_anotacao') {
           const ref = S.db.collection('ann').doc(`${m.musica}__${m.parte}__${m.pagina}`);

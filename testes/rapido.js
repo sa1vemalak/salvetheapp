@@ -14,7 +14,16 @@ const tom = hz => { const sr = 44100, n = sr, b = Buffer.alloc(44 + n * 4);
   for (let i = 0; i < n; i++) { const v = Math.round(Math.sin(2 * Math.PI * hz * i / sr) * 0.2 * 32767); b.writeInt16LE(v, 44 + i * 4); b.writeInt16LE(v, 46 + i * 4); }
   return b; };
 const TONS = { a: tom(220), b: tom(330), c: tom(440), d: tom(550) };
+// um PDF de uma página em branco (A4), para as anotações à mão
+const PDF = (() => {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>', '<< /Length 0 >>\nstream\n\nendstream'];
+  let t = '%PDF-1.4\n'; const offs = [];
+  objs.forEach((o, i) => { offs.push(t.length); t += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const x = t.length; t += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` + offs.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+  return Buffer.from(t + `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${x}\n%%EOF\n`);
+})();
 const srv = http.createServer((req, res) => {
+  if (req.url.startsWith('/pagina.pdf')) { res.writeHead(200, { 'Content-Type': 'application/pdf' }); return res.end(PDF); }
   const t = req.url.match(/^\/tom-(\w)\.wav/); if (t) { res.writeHead(200, { 'Content-Type': 'audio/wav' }); return res.end(TONS[t[1]]); }
   const f = path.join(APP, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
   if (!f.startsWith(APP) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
@@ -276,6 +285,49 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   console.log('Edição manual');
   confere('barra de ferramentas à vista antes de tocar numa nota', ed.antes.visivel && ed.antes.apagada, JSON.stringify(ed.antes));
   confere('tocar numa nota liga a barra e marca a nota', ed.depois.ligada && ed.depois.marcada === 1 && /D5/.test(ed.depois.info), JSON.stringify(ed.depois));
+  // anotações à mão: as páginas da parte aberta vão como imagem (com os números de compasso), e também foto/PDF
+  const tinta = await p.evaluate(async () => {
+    const { S } = window.__t, out = {};
+    S.canWrite = true; S.songId = 'tinta';
+    S.songs = [{ id: 'tinta', title: 'Tinta', parts: [{ key: 'trumpet', name: 'Trompete', src: '/pagina.pdf' }] }];
+    S.db = { collection: c => ({ onSnapshot: () => () => {}, doc: () => ({ get: async () => ({ data: () => c === 'layout' ? { parts: { trumpet: { boxes: [[1, 1, 1, .1, .1, .5, .2], [2, 2, 1, .5, .1, .9, .2]] } } } : null }) }) }) };
+    S.ann.set('tinta__trumpet__1', { strokes: [{ p: [120, 150, 300, 160, 420, 150], c: '#d92b2b', w: 4 }], notes: [{ id: 'a', x: 520, y: 140, t: 'mf' }] });
+    let pedido = null;
+    const f0 = window.fetch; window.fetch = async (u, o) => { if (!String(u).includes('agente')) return f0(u, o); pedido = JSON.parse(o.body); return new Response(JSON.stringify({ texto: 'Li: compasso 1 ganhou crescendo.' }), { status: 200 }); };
+    document.querySelector('#editCaioBtn').click();
+    const d = document.querySelector('.drawer.caio');
+    out.botoes = [...d.querySelectorAll('.caio-anexo button')].map(b => b.textContent);
+    d.querySelector('#caioTinta').click();
+    for (let i = 0; i < 100 && d.querySelector('.caio-anexo .fotos').hidden; i++) await new Promise(r => setTimeout(r, 50));
+    out.aviso = d.querySelector('.caio-anexo .fotos').textContent;
+    out.texto = d.querySelector('#caioTxt').value;
+    if (d.querySelector('.caio-anexo .fotos').hidden) return { ...out, toast: document.querySelector('.toast')?.textContent || document.body.innerText.slice(-300) };
+    d.querySelector('#caioGo').click();
+    for (let i = 0; i < 100 && !pedido; i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 100));
+    out.imagens = (pedido?.imagens || []).map(x => ({ tipo: x.tipo, legenda: x.legenda, kb: Math.round(x.dados.length / 1024) }));
+    out.limpou = d.querySelector('.caio-anexo .fotos').hidden;
+    out.msg = [...d.querySelectorAll('.caio-msg.eu')].pop()?.textContent || '';
+    // a página que foi: a tinta vermelha e o número azul do compasso estão no desenho
+    const img = new Image(); img.src = 'data:image/jpeg;base64,' + pedido.imagens[0].dados; await img.decode();
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+    const px = (x, y) => [...g.getImageData(Math.round(x * c.width), Math.round(y * c.height), 1, 1).data];
+    out.tamanho = [c.width, c.height];
+    out.temAzul = (() => { const d2 = g.getImageData(Math.round(.1 * c.width), Math.round(.1 * c.height) - 20, 40, 20).data; for (let i = 0; i < d2.length; i += 4) if (d2[i + 2] > 150 && d2[i] < 90) return true; return false; })();
+    out.temVermelho = (() => { const y = Math.round(155 * c.width / 1000), d2 = g.getImageData(Math.round(.2 * c.width), y - 6, 60, 12).data; for (let i = 0; i < d2.length; i += 4) if (d2[i] > 150 && d2[i + 1] < 90) return true; return false; })();
+    return out;
+  });
+  console.log('Anotações à mão');
+  if (tinta.toast) console.log('  (aviso do app: ' + tinta.toast + ')');
+  confere('Editar com o Caio tem "Ler anotações à mão" e "Foto ou PDF"', tinta.botoes.join('|') === 'Ler anotações à mão|Foto ou PDF anotado', JSON.stringify(tinta.botoes));
+  confere('avisa que a página vai junto e sugere o pedido', /1 página vai/.test(tinta.aviso) && /escrito à mão/.test(tinta.texto), tinta.aviso + ' / ' + tinta.texto);
+  confere('manda a página da parte como JPEG, com legenda', tinta.imagens.length === 1 && tinta.imagens[0].tipo === 'image/jpeg' && /anotações do app · Trompete, página 1 de 1/.test(tinta.imagens[0].legenda) && tinta.imagens[0].kb < 1900, JSON.stringify(tinta.imagens));
+  confere('a imagem tem a tinta e o número azul do compasso', tinta.temVermelho && tinta.temAzul, JSON.stringify(tinta));
+  confere('a imagem vai só uma vez e a conversa mostra que foi', tinta.limpou && /com 1 imagem/.test(tinta.msg), tinta.msg);
+  await p.setInputFiles('#caioArq', [{ name: 'foto.png', mimeType: 'image/png', buffer: fs.readFileSync(path.join(APP, 'icon-192.png')) }, { name: 'anotada.pdf', mimeType: 'application/pdf', buffer: PDF }]);
+  await p.waitForFunction(() => !document.querySelector('.caio-anexo .fotos').hidden && /2 páginas/.test(document.querySelector('.caio-anexo .fotos').textContent), null, { timeout: 8000 }).catch(() => {});
+  confere('foto e PDF de papel anotado entram como páginas', /2 páginas vão/.test(await p.textContent('.caio-anexo .fotos')), await p.textContent('.caio-anexo .fotos'));
+  await p.evaluate(() => document.querySelector('#caioX').click());
   console.log('Página');
   confere('nenhum erro de JavaScript', !erros.length, erros.join(' | '));
 

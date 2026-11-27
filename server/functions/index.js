@@ -99,6 +99,11 @@ Atenção com o PDF: só nas músicas com partitura criada no app o Malak redese
 - segunda voz (divisi, duas notas com ritmos diferentes na mesma pauta): em corrigir_notas escreva "voz 1 || voz 2"; sem "||" a segunda voz que já existe fica como está; "voz 1 ||" com nada depois tira a segunda voz.
 - letra da música: mudança "letra", uma sílaba por nota cantada; reescrever as notas mantém a letra que já estava, então só mande "letra" quando a letra mudar ou o número de notas mudar.
 - redesenhar os PDFs: nas músicas que vieram do PDF do arranjador, o PDF da estante só muda quando o usuário pedir. Quando ele pedir ("põe na partitura da estante", "atualiza o PDF"), proponha "redesenhar_pdf": o Malak desenha de novo a grade e todas as partes a partir da partitura editada, e os PDFs do arranjador ficam guardados em Versões. Avise que as anotações escritas nos PDFs antigos podem ficar fora do lugar. Não proponha isso sem o usuário pedir.
+- ler anotações feitas à mão: o usuário pode mandar imagens junto com a pergunta. Elas são de dois tipos, e a legenda diz qual:
+  (a) "anotações do app": a página do PDF que o músico lê, com o que a banda desenhou ou escreveu por cima no app (tinta colorida, marca-texto, textos). Os números AZUIS pequenos em cima de cada compasso foram postos pelo app e dizem o número do compasso; não são anotação.
+  (b) "foto" ou "PDF": uma partitura de papel ou PDF anotado à mão. Não tem número azul: ache os compassos comparando com ver_notas (números impressos de compasso, letras de ensaio, desenho das notas).
+  Como ler: procure tudo que foi escrito à mão (notas riscadas e reescritas, setas, círculos, dinâmicas como p/f/cresc, acentos, ligaduras, "8va", "tacet"/"não toca", compassos riscados, repetições, cifras, palavras). Para cada marca, leia o compasso com ver_notas, entenda o que o músico quis mudar e proponha a mudança (corrigir_notas, estrutura, cifras, letra ou, se for só um lembrete como "respira" ou "olhar o maestro", anotar). Lembretes que já estão escritos no app não precisam virar anotação de novo.
+  Na resposta, liste em palavras simples o que você leu em cada compasso e o que vai mudar, e diga com clareza o que não deu para ler ou ficou ambíguo (pergunte, em vez de chutar). Rabisco de ensaio que não muda a música (desenho, risco solto, "ok") você ignora.
 O que você ainda não consegue: notas de enfeite (apojatura) e compassos com mais de duas vozes ou duas pautas (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar. Nunca diga que fez algo que não está na proposta.
 Ao corrigir notas: mude só o que foi pedido, mantenha o resto do compasso igual ao lido (inclusive dinâmicas, ligaduras e marcas), e confira que as durações somam o compasso (4/4 = 4). As alturas são as escritas na parte (trompete em Si bemol, sax etc. como o músico lê).
 
@@ -167,12 +172,16 @@ async function runTool(name, input, ctx) {
     const out = [];
     snap.docs.map(d => dec(d.data())).filter(a => input.parte === 'todas' || a.part === input.parte).forEach(a => {
       const boxes = (lay?.parts?.[a.part]?.boxes || []).filter(b => b[2] === a.page);
-      (a.notes || []).forEach(n => {
+      const H = a.H || 1414;   // notes are in the page's drawing space (1000 wide, H tall); boxes are fractions of the page
+      (a.notes || []).forEach(n0 => {
+        const frac = n0.x <= 1 && n0.y <= 1;   // older notes written by Caio were saved as fractions
+        const n = { ...n0, x: frac ? n0.x : n0.x / 1000, y: frac ? n0.y : n0.y / H };
         const near = boxes.filter(b => n.y <= b[6] + 0.02).sort((x, y) => (x[4] - y[4]) || (x[3] - y[3]));
         const hit = near.find(b => n.x >= b[3] - 0.01 && n.x <= b[5] + 0.01 && n.y >= b[4] - 0.06) || near[0];
         out.push({ parte: a.part, pagina: a.page, id: n.id, texto: n.t, compasso_aprox: hit ? hit[0] : null });
       });
-      if ((a.strokes || []).length) out.push({ parte: a.part, pagina: a.page, desenhos_a_mao: a.strokes.length });
+      if ((a.strokes || []).length) out.push({ parte: a.part, pagina: a.page, desenhos_a_mao: a.strokes.length,
+        para_ler: 'você só vê os desenhos em imagem: se não vieram imagens nesta conversa, peça ao usuário para tocar em "Ler anotações à mão" no Editar com o Caio' });
     });
     return { musica: input.musica, anotacoes: out };
   }
@@ -300,6 +309,23 @@ async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
   return ruins.slice(0, 12);
 }
 
+/* ---------------- handwritten notes: pictures sent with a question ---------------- */
+const MAX_FOTOS = 6, MAX_FOTO_B64 = 2_000_000;   // ~1.5 MB per picture; the app sends JPEGs of about 1400 px
+const TIPOS_FOTO = ['image/jpeg', 'image/png', 'image/webp'];
+function fotosDoPedido(imagens) {
+  if (imagens == null) return { blocos: [] };
+  if (!Array.isArray(imagens) || imagens.length > MAX_FOTOS) return { erro: `mande no máximo ${MAX_FOTOS} imagens por vez` };
+  const blocos = [];
+  for (const [i, im] of imagens.entries()) {
+    if (!im || !TIPOS_FOTO.includes(im.tipo) || typeof im.dados !== 'string' || !/^[A-Za-z0-9+/=]+$/.test(im.dados)) return { erro: 'imagem em formato que não conheço' };
+    if (im.dados.length > MAX_FOTO_B64) return { erro: 'imagem grande demais; tire a foto de novo mais de longe ou mande menos páginas' };
+    const legenda = String(im.legenda || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 300);
+    blocos.push({ type: 'text', text: `Imagem ${i + 1} de ${imagens.length}${legenda ? ': ' + legenda : ''}` });
+    blocos.push({ type: 'image', source: { type: 'base64', media_type: im.tipo, data: im.dados } });
+  }
+  return { blocos };
+}
+
 /* ---------------- endpoint ---------------- */
 async function handle(req, res) {
   const fail = (code, msg) => res.status(code).json({ erro: msg });
@@ -325,6 +351,15 @@ async function handle(req, res) {
   // the conversation so far, as plain text turns (the app keeps it; tool calls stay on the server)
   const messages = conversa.slice(-20).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.texto || '').slice(0, 2000) })).filter(m => m.content);
   if (!messages.length || messages[0].role !== 'user') return fail(400, 'a conversa precisa começar com uma pergunta');
+  // pictures of handwritten notes (the open part's pages with the ink drawn on them, or a photo/PDF of a paper score)
+  // go with the latest question only; the app doesn't keep them in the conversation
+  const fotos = fotosDoPedido(req.body.imagens);
+  if (fotos.erro) return fail(400, fotos.erro);
+  if (fotos.blocos.length) {
+    const last = messages[messages.length - 1];
+    if (last.role !== 'user') return fail(400, 'as imagens vão junto com uma pergunta');
+    last.content = [...fotos.blocos, { type: 'text', text: last.content }];
+  }
   const ctx = { band, show, role: member.role, proposta: null, cache: {} };
   const t0 = Date.now();
   const quem = { band, uid: user.uid };
@@ -415,4 +450,5 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
     await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
   }
 });
+exports.__fotosDoPedido = fotosDoPedido;  // tests
 exports.__conferirProposta = (bandId, mudancas) => conferirProposta(db.collection('bands').doc(bandId), mudancas);  // tests
