@@ -47,7 +47,8 @@ const TOOLS = [
   {
     name: 'propor_mudancas',
     description: 'Entrega ao usuário uma lista de mudanças para ele aprovar. Use uma vez, no fim, quando o pedido for para mudar algo. Nada é aplicado sem aprovação.',
-    strict: true,
+    // not strict: with this many kinds of change the strict grammar is too large for the API ("compiled grammar is too
+    // large"). conferirProposta checks every change on the score before the person sees it.
     input_schema: obj({
       resumo: str('uma frase dizendo o que muda'),
       mudancas: {
@@ -248,6 +249,9 @@ class XmlOut { serializeToString(doc) { return doc.toString(); } }
 // the person sees them (wrong sums, words the app doesn't know, bars with two voices, a part that doesn't exist)
 async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
   const ruins = [], porMusica = {};
+  const TIPOS = ['anotar', 'remover_anotacao', 'ordem_show', 'marcador_daw', 'nota_musica', 'corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra', 'redesenhar_pdf', 'renomear_musica'];
+  for (const m of mudancas) if (!m || !TIPOS.includes(m.tipo)) ruins.push(`mudança "${m && m.tipo}" não existe; use só os tipos da lista`);
+  for (const m of mudancas) if (m && ['corrigir_notas', 'cifras', 'letra', 'estrutura', 'nova_parte', 'redesenhar_pdf'].includes(m.tipo) && typeof m.musica !== 'string') ruins.push(`${m.tipo}: falta a música`);
   for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
   for (const [id, lista] of Object.entries(porMusica)) {
     const s = await data(band.collection('songs').doc(id));
