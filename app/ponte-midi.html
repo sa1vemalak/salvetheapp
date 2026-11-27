@@ -16,7 +16,7 @@
 <p id="st">Pedindo acesso ao MIDI…</p>
 <p id="ports"><small></small></p>
 <p id="pos"><small></small></p>
-<p><small>Deixe esta janela aberta enquanto o Logic toca. Ela passa a posição do Logic para o app.</small></p>
+<p><small>Deixe esta janela aberta enquanto a DAW toca. Ela passa a posição da DAW para o app.</small></p>
 <script>
 /* Runs as its own window, outside the claude.ai frame, so the browser can give it MIDI.
    It forwards Logic's clock and position messages to the app tab that opened it. */
@@ -33,7 +33,7 @@
     const d = ev.data; if (!d || !d.length) return;
     if (d[0] !== 0xF2 && d[0] !== 0xF8 && d[0] !== 0xFA && d[0] !== 0xFB && d[0] !== 0xFC) return;
     send({ data: Array.from(d) });
-    if (d[0] !== 0xF8 || ++n % 96 === 0) pos.textContent = d[0] === 0xFC ? 'Logic parado' : 'Recebendo o Logic…';
+    if (d[0] !== 0xF8 || ++n % 96 === 0) pos.textContent = d[0] === 0xFC ? 'DAW parada' : 'Recebendo a DAW…';
   }
   if (!navigator.requestMIDIAccess) { st.textContent = 'Este navegador não tem MIDI. Use o Google Chrome.'; st.className = 'bad'; send({ error: 'no-midi' }); return; }
   navigator.requestMIDIAccess({ sysex: false }).then(acc => {
@@ -44,7 +44,7 @@
       send({ ready: true, ports: names });
     };
     acc.onstatechange = hook; hook();
-    st.textContent = 'MIDI ligado. Pode tocar o Logic.'; st.className = 'ok';
+    st.textContent = 'MIDI ligado. Pode tocar a DAW.'; st.className = 'ok';
   }, e => {
     st.textContent = 'O Chrome não deixou usar o MIDI (' + (e && e.name || 'erro') + ').'; st.className = 'bad';
     send({ error: (e && e.name) || 'denied' });
