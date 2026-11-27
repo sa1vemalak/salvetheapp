@@ -565,6 +565,8 @@ body.editing-score .palette, body.editing-score .moremenu { display: none; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
       <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
+      <button class="iconbtn" id="regenBtn" hidden title="Gerar de novo o áudio de estudo desta música">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span class="lbl">Refazer o áudio de estudo</span></button>
       <button class="iconbtn" id="addBtn" title="Adicionar música ou parte">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar música ou parte</span></button>
       <p class="mm-h">Banda</p>
@@ -1475,7 +1477,7 @@ const Caio = (() => {
 })();
 /* ---------- robot: turns the score (PDF or original file) into player audio and a bar map ---------- */
 const Robo = (() => {
-  const jobs = new Map(); let unsub = null, lastPaint = null;
+  const jobs = new Map(); let unsub = null, lastPaint = null, redo = null;  // redo: song id whose approved audio the editor wants to remake
   function watch() {
     if (unsub || !S.db || !window.SALVE) return;
     unsub = S.db.collection('jobs').onSnapshot(snap => {
@@ -1515,6 +1517,10 @@ const Robo = (() => {
       row.append(el('b', '', 'Áudio gerado pelo Malak: aguardando conferência'),
         el('span', '', `Lido de ${data.source || 'partitura'} · andamento ${Math.round(data.bpm || 0)}${data.tempoLido ? ' (da partitura)' : ''}. Ouça junto com a partitura; se alguma nota ou o andamento estiver errado, peça ao Caio ou gere de novo com outro andamento.`));
       if (S.canWrite) row.append(controls(song, data, true));
+    } else if (data && redo === song.id && S.canWrite) {
+      row.append(el('b', '', 'Refazer o áudio de estudo'),
+        el('span', '', 'Este áudio já foi conferido. O Malak gera de novo a partir da partitura atual (pode mudar o andamento); o áudio de agora continua até o novo ficar pronto.'));
+      row.append(controls(song, data, true, true));
     } else if (!data && song.guia && !(song.parts || []).length) {
       row.append(el('b', '', `“${song.title}” só tem a gravação`), el('span', '', j && j.status === 'erro' ? 'A última tentativa falhou: ' + (j.msg || '') : 'O Mestrinho escuta a gravação e a IA arranjadora escreve os metais; depois o Malak gera a partitura e o áudio de estudo.'));
       if (S.canWrite) { const go = el('button', 'btn primary', 'Escrever o arranjo de metais'); go.type = 'button'; go.onclick = () => arranjo(song.id); const c = el('div', 'robo-row'); c.append(go); row.append(c); }
@@ -1537,14 +1543,15 @@ const Robo = (() => {
     body.hidden = min;
     box.append(head, body);
   }
-  function controls(song, data, done) {
+  function controls(song, data, done, redoing) {
     const c = el('div', 'robo-row');
     const bpm = document.createElement('input'); bpm.type = 'number'; bpm.min = 20; bpm.max = 320; bpm.placeholder = 'auto'; bpm.setAttribute('aria-label', 'Andamento (batidas por minuto)');
     if (data?.bpm && !data.tempoLido) bpm.value = Math.round(data.bpm);
     const lab = el('label', 'robo-bpm'); lab.append('Andamento ♩=', bpm);
-    const go = el('button', 'btn primary', done ? 'Gerar de novo' : 'Gerar áudio'); go.type = 'button'; go.onclick = () => start(song.id, bpm.value, song.partitura?.xml ? 'partitura' : data?.lido ? 'lido' : 'pdf');
+    const go = el('button', 'btn primary', done ? 'Gerar de novo' : 'Gerar áudio'); go.type = 'button'; go.onclick = () => { redo = null; start(song.id, bpm.value, song.partitura?.xml ? 'partitura' : data?.lido ? 'lido' : 'pdf'); };
     c.append(lab, go);
-    if (done) { const ok = el('button', 'btn', 'Está certo, conferido'); ok.type = 'button'; ok.onclick = async () => { try { await S.db.collection('songs').doc(song.id).update({ 'player.conferido': true, status: 'pronta' }); toast('Música conferida.'); } catch { toast('Não consegui salvar.'); } }; c.append(ok); }
+    if (redoing) { const no = el('button', 'btn', 'Cancelar'); no.type = 'button'; no.onclick = () => { redo = null; if (lastPaint) paint(...lastPaint); }; c.append(no); }
+    else if (done) { const ok = el('button', 'btn', 'Está certo, conferido'); ok.type = 'button'; ok.onclick = async () => { try { await S.db.collection('songs').doc(song.id).update({ 'player.conferido': true, status: 'pronta' }); toast('Música conferida.'); } catch { toast('Não consegui salvar.'); } }; c.append(ok); }
     return c;
   }
   // the AI arrangement: what it wrote and each musician's rating (1 to 5)
@@ -1590,7 +1597,16 @@ const Robo = (() => {
     }
     return card;
   }
-  return { start, arranjo, paint, job: id => jobs.get(id), running, watch };
+  function refazer() {
+    const [song, , data] = lastPaint || [];
+    if (!song) { toast('Abra uma música primeiro.'); return; }
+    if (!S.canWrite) { toast('Só o dono ou um editor pode gerar o áudio.'); return; }
+    if (running(jobs.get(song.id))) { toast('O Malak já está trabalhando nesta música.'); return; }
+    if (!data) { toast('Esta música ainda não tem áudio: use o botão "Gerar áudio" no player.'); }
+    else { redo = song.id; ls.set('pmsgmin:' + song.id, false); }
+    Player.open(); paint(...lastPaint);
+  }
+  return { start, arranjo, paint, refazer, job: id => jobs.get(id), running, watch };
 })();
 const Versions = (() => {
   const escH = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1639,6 +1655,7 @@ const Versions = (() => {
     }, () => { list.textContent = 'Não consegui abrir o histórico.'; });
   }
   $('#versBtn').onclick = open;
+  $('#regenBtn').onclick = () => Robo.refazer();
   return { snapshot, open };
 })();
 $('#notesBtn').onclick = () => {
@@ -2430,7 +2447,7 @@ const Player = (() => {
     const done = () => { unlocking = false; audio.muted = !!(P.data && mixKey() === null); soundOn(); };
     audio.play().then(() => { audio.pause(); done(); }, done);
   }
-  return { sync, renderMode, showBar, pause, drive, unlock, lockCount, refollow: () => { if (S.logic?.active) followBar(P.lastBar, true, true); else if (pane0Ready()) followBar(P.lastBar, true); } };
+  return { sync, renderMode, showBar, pause, drive, unlock, lockCount, open: () => { if (!P.open) setOpen(true); }, refollow: () => { if (S.logic?.active) followBar(P.lastBar, true, true); else if (pane0Ready()) followBar(P.lastBar, true); } };
 })();
 
 
@@ -3218,6 +3235,7 @@ async function boot() {
   document.body.classList.toggle('musician', S.personal);
   document.body.classList.toggle('readonly-common', !S.canWrite);
   if (S.personal) { $('#addBtn').hidden = true; }
+  $('#regenBtn').hidden = !S.canWrite;
   setLayer(ls.get('layer', S.canWrite ? 'common' : 'mine'));
   Home.setRole(S.canWrite, !S.uid);
   if (db) Logic.init();
