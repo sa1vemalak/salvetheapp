@@ -85,3 +85,12 @@ repositório e mais o editor; as linhas que parecem removidas na comparação s�
 `corrigir_notas` passou a aceitar também `cifras`).
 - Ainda falta: o Caio no servidor (`server/functions/index.js`) do repositório só conhece `corrigir_notas`. Se o app
   no ar usa `cifras`, a versão publicada das funções também está mais nova que o repositório e precisa ser salva.
+
+**Caio salvo no repositório (mesmo dia).** O código das funções foi baixado do Cloud Functions (só leitura). As três
+funções (`agente` = Caio, `robo` = Malak, `treino`) saem do mesmo `index.js`; a mais nova é a `agente` (03:40), e o
+`index.js` dela foi copiado para `server/functions/index.js`. Só estende o que havia: edição da partitura editável,
+cifras, articulações e ligaduras em `ver_notas`, e ajuda para criar partitura em branco. `llm/`, `package.json` e
+`package-lock.json` já eram iguais. Os backups `index.before-formula.js` e `index.before-cifras.js` que estavam
+no pacote não foram trazidos.
+- `robo` e `treino` no ar ainda rodam um `index.js` mais antigo (publicados às 23:33 e 01:03). Na próxima
+  publicação das funções eles passam a usar este arquivo.
