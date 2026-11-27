@@ -7,12 +7,21 @@ const http = require('http'), fs = require('fs'), path = require('path');
 
 const APP = path.join(__dirname, '..', 'app');
 const TIPOS = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.webmanifest': 'application/json', '.wasm': 'application/wasm' };
+// tons de teste (1 s, estéreo): cada "instrumento" é uma senoide de frequência diferente
+const tom = hz => { const sr = 44100, n = sr, b = Buffer.alloc(44 + n * 4);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + n * 4, 4); b.write('WAVEfmt ', 8); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(2, 22);
+  b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 4, 28); b.writeUInt16LE(4, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 4, 40);
+  for (let i = 0; i < n; i++) { const v = Math.round(Math.sin(2 * Math.PI * hz * i / sr) * 0.2 * 32767); b.writeInt16LE(v, 44 + i * 4); b.writeInt16LE(v, 46 + i * 4); }
+  return b; };
+const TONS = { a: tom(220), b: tom(330), c: tom(440), d: tom(550) };
 const srv = http.createServer((req, res) => {
+  const t = req.url.match(/^\/tom-(\w)\.wav/); if (t) { res.writeHead(200, { 'Content-Type': 'audio/wav' }); return res.end(TONS[t[1]]); }
   const f = path.join(APP, decodeURIComponent(req.url.split('?')[0]).replace(/\/$/, '/index.html'));
   if (!f.startsWith(APP) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
   let b = fs.readFileSync(f);
   // só no teste: deixa o teste ver o estado do app, que fica guardado dentro de uma função fechada
-  if (f.endsWith('index.html')) b = String(b).replace('boot();\n})();', 'window.__t = { S, Robo, Caio };\nboot();\n})();');
+  if (f.endsWith('index.html')) b = String(b).replace('boot();\n})();', 'window.__t = { S, Robo, Caio };\nboot();\n})();')
+    .replace('  function applyMix(keep = true) {', '  window.__mix = () => ({ P, applyMix, mixKey, feito, audio });\n  function applyMix(keep = true) {');
   res.writeHead(200, { 'Content-Type': TIPOS[path.extname(f)] || 'application/octet-stream' }); res.end(b);
 });
 
@@ -23,7 +32,7 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   await new Promise(r => srv.listen(0, r));
   const url = `http://localhost:${srv.address().port}/`;
   const b = await chromium.launch(); const p = await (await b.newContext({ viewport: { width: 1180, height: 820 } })).newPage();
-  const erros = []; p.on('pageerror', e => erros.push(e.message));
+  const erros = []; p.on('pageerror', e => { erros.push(e.message); if (process.env.PILHA) console.log(e.stack); });
   await p.goto(url); await p.waitForFunction(() => window.__t, null, { timeout: 15000 });
 
   console.log('Tela e botões');
@@ -38,7 +47,7 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     S.songs = [{ id: 'teste', title: 'Música Teste', parts: [] }]; S.songId = 'teste';
     window.SALVE.ctx = () => ({ band: 'b', show: 's', user: { uid: 'u' }, order: ['teste'] }); window.SALVE.token = async () => 'x';
     let pedido = null;
-    window.fetch = async (u, o) => { pedido = JSON.parse(o.body); return new Response(JSON.stringify({ texto: 'O trompete fica mais suave no começo.', podeAplicar: true,
+    const fetch0 = window.fetch; window.fetch = async (u, o) => { if (!String(u).includes('agente')) return fetch0(u, o); pedido = JSON.parse(o.body); return new Response(JSON.stringify({ texto: 'O trompete fica mais suave no começo.', podeAplicar: true,
       proposta: { resumo: 'Trompete mais suave', mudancas: [{ tipo: 'corrigir_notas', musica: 'teste', parte: 'trumpet', compasso: 1, notas: 'D5:4', descricao: 'trompete mais suave do compasso 1 ao 8' }] } }), { status: 200 }); };
     document.querySelector('#editCaioBtn').click();
     const d = document.querySelector('.drawer.caio');
@@ -126,6 +135,31 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('Aplicar: cria a parte e escreve as notas dela', ap.r.feitas === 3 && !ap.r.erros.length && ap.alto === 'E5:2 D5:2', JSON.stringify(ap));
   confere('Aplicar: as outras partes seguem com a chave certa', ap.tenor === 'B4:4', ap.tenor);
   confere('Aplicar: nova versão com a lista de instrumentos atualizada', ap.versao === 2 && JSON.stringify(ap.partes) === JSON.stringify(['trumpet', 'sax-alto', 'tenor-sax', 'trombone', 'base']) && !ap.origem && ap.semPdf === 'sax-alto', JSON.stringify(ap));
+  console.log('Player: combinação de instrumentos');
+  const mx = await p.evaluate(async () => {
+    const { P, applyMix, mixKey, feito, audio } = window.__mix(), out = {};
+    P.songId = 'teste';
+    P.data = { instrumentos: ['a', 'b', 'c', 'd'].map(k => ({ key: k, name: k })), measures: [[1, 0]], beats: [0, 0.5], duration: 1,
+      mixes: { tudo: '/tom-a.wav?tudo', 'so-a': '/tom-a.wav', 'so-b': '/tom-b.wav', 'so-c': '/tom-c.wav', 'so-d': '/tom-d.wav' } };
+    P.off = ['c', 'd'];  // só "a" e "b": não existe versão pronta
+    out.chave = mixKey();
+    applyMix();
+    for (let i = 0; i < 100 && !feito.url; i++) await new Promise(r => setTimeout(r, 50));
+    out.pronto = !!feito.url;
+    for (let i = 0; i < 40 && P.src !== feito.url; i++) await new Promise(r => setTimeout(r, 50));
+    out.tocandoAMistura = P.src === feito.url;
+    // a mistura tem que ser a soma exata de "a" + "b"
+    const ac = new AudioContext({ sampleRate: 32000 }), dec = async u => ac.decodeAudioData(await (await fetch(u)).arrayBuffer());
+    const [m, a, b] = await Promise.all([dec(feito.url), dec('/tom-a.wav'), dec('/tom-b.wav')]);
+    let erro = 0; const M = m.getChannelData(0), A = a.getChannelData(0), B = b.getChannelData(0);
+    for (let i = 0; i < m.length; i += 97) erro = Math.max(erro, Math.abs(M[i] - A[i] - B[i]));
+    out.erroMaximo = erro; out.duracao = m.duration;
+    return out;
+  });
+  confere('combinação sem versão pronta é detectada', mx.chave === 'missing', mx.chave);
+  confere('o app junta os instrumentos', mx.pronto);
+  confere('passa a tocar a mistura', mx.tocandoAMistura);
+  confere('a mistura é a soma dos instrumentos escolhidos', mx.erroMaximo < 0.001 && Math.abs(mx.duracao - 1) < 0.01, JSON.stringify(mx));
   console.log('Página');
   confere('nenhum erro de JavaScript', !erros.length, erros.join(' | '));
 

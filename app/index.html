@@ -2083,6 +2083,7 @@ const Player = (() => {
   /* The iPhone (Safari) will not stream these files, so each mix is downloaded whole and played from the copy on the device. */
   const blobs = new Map();
   function getBlob(url) {
+    if (url.startsWith('blob:')) return Promise.resolve(url);  // a mix made here in the app (juntar)
     if (!blobs.has(url)) {
       const p = fetch(url).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.blob(); })
         .then(b => URL.createObjectURL(b.type ? b : new Blob([b], { type: 'video/mp4' })));
@@ -2153,14 +2154,53 @@ const Player = (() => {
     });
     document.querySelector('#pMix .mixall').setAttribute('aria-pressed', String(av.length > 0 && av.every(k => P.mix.includes(k))));
   }
+  /* combinations the Malak did not render (two of four instruments, or more instruments): the app mixes the
+     "so-<instrument>" audios itself, here on the device, into one file; meanwhile everything plays */
+  const feito = { chave: null, url: null }; let decoder = null;
+  const chaveMix = () => P.songId + '|' + avail().filter(k => P.mix.includes(k)).map(k => P.data.mixes['so-' + k]).join('|');
+  async function juntar(urls) {
+    // 32 kHz is plenty for study audio and saves memory on older iPads; one instrument at a time, for the same reason
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!decoder) { try { decoder = new AC({ sampleRate: 32000 }); } catch { decoder = new AC(); } }
+    const baixados = urls.map(async u => (await fetch(await getBlob(u))).arrayBuffer());  // downloads in parallel
+    let L = null, R = null, n = 0, sr = 0;
+    for (const p of baixados) {
+      const b = await decoder.decodeAudioData(await p);
+      if (!L) { sr = b.sampleRate; n = b.length; L = new Float32Array(n); R = new Float32Array(n); }  // the Malak makes all of a song's audios the same length
+      const l = b.getChannelData(0), r = b.numberOfChannels > 1 ? b.getChannelData(1) : l, m = Math.min(b.length, n);
+      for (let i = 0; i < m; i++) { L[i] += l[i]; R[i] += r[i]; }
+    }
+    // 16-bit stereo WAV
+    const out = new DataView(new ArrayBuffer(44 + n * 4)), txt = (o, t) => [...t].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+    txt(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); txt(8, 'WAVEfmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true);
+    out.setUint16(22, 2, true); out.setUint32(24, sr, true); out.setUint32(28, sr * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true);
+    txt(36, 'data'); out.setUint32(40, n * 4, true);
+    for (let i = 0, o = 44; i < n; i++, o += 4) {
+      out.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true); out.setInt16(o + 2, Math.max(-1, Math.min(1, R[i])) * 32767, true);
+    }
+    return URL.createObjectURL(new Blob([out], { type: 'audio/wav' }));
+  }
   /* apply the mixer: pick the audio for the chosen instruments; with nothing on, keep time running silently */
   function applyMix(keep = true) {
     renderMode();
     if (!P.data) return;
     const key = mixKey();
     if (key === 'missing') {
-      toast('Essa combinação ainda está sendo preparada para esta música. Tocando todos por enquanto.');
-      setSrc(P.data.mixes.tudo, keep); audio.muted = false; return;
+      const ch = chaveMix();
+      audio.muted = false;
+      if (feito.chave === ch && feito.url) { setSrc(feito.url, keep); return; }
+      setSrc(P.data.mixes.tudo, keep);
+      if (feito.chave === ch) return;  // already mixing this one
+      if (feito.url) { const old = feito.url; setTimeout(() => URL.revokeObjectURL(old), 5000); }
+      feito.chave = ch; feito.url = null;
+      toast('Juntando esses instrumentos (alguns segundos). Enquanto isso, tocam todos.');
+      const urls = avail().filter(k => P.mix.includes(k)).map(k => P.data.mixes['so-' + k]);
+      juntar(urls).then(u => {
+        if (feito.chave !== ch) { URL.revokeObjectURL(u); return; }
+        feito.url = u;
+        if (mixKey() === 'missing' && chaveMix() === ch) { setSrc(u, true); toast('Pronto: tocando só os instrumentos escolhidos.'); }
+      }, e => { console.error(e); if (feito.chave === ch) feito.chave = null; toast('Não consegui juntar esses instrumentos. Tocando todos.'); });
+      return;
     }
     audio.muted = key === null;
     setSrc(P.data.mixes[key || 'tudo'], keep);
