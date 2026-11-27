@@ -83,6 +83,15 @@ button { cursor: pointer; }
 .pages { margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
 .page { position: relative; width: 100%; background: var(--paper); box-shadow: var(--shadow); container-type: inline-size; }
 .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.page.minha { background: #fff; padding: 4px 0; }
+.page.minha svg { display: block; width: 100%; height: auto; }
+.minha-aviso { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.4; }
+.minha-aviso p { flex: 1 1 220px; margin: 0; }
+.minha-aviso .falhou { flex-basis: 100%; color: #c0392b; }
+.chip.minha-chip[aria-pressed="true"] { outline: 2px solid currentColor; }
+.caio-destino { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.caio-destino button { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.caio-destino button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 .page .num { position: absolute; right: 8px; bottom: 6px; font-family: var(--f-mono); font-size: 11px; color: #9a9890; pointer-events: none; }
 .ink { z-index: 2; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; touch-action: pan-x pan-y; }
 body.drawing .ink { pointer-events: auto; }
@@ -866,6 +875,8 @@ const S = {
   paneParts: ls.get('paneParts', ['grade', 'trumpet']),
   zoom: ls.get('zoom', [1, 1]),
   ann: new Map(),        // key -> {strokes:[], notes:[]}
+  pessoal: new Map(),    // "Minha versão": song__part -> { mudancas, ... } (this person's own changes, private)
+  minha: [false, false], // each pane: showing "Minha versão" instead of the band's PDF
   pageViews: new Map(),  // key -> Set of page views
   undo: [],
   unsubAnn: null,
@@ -955,6 +966,16 @@ function subscribeAnn(songId) {
     return;
   }
   S.unsubAnn = [listen(S.db.collection('ann').where('song', '==', songId), 'common')];
+  S.pessoal.clear();
+  if (mineInDb()) S.unsubAnn.push(S.db.collection('data/users/' + S.uid).where('musica', '==', songId).onSnapshot(snap => {
+    const antes = new Map(S.pessoal); S.pessoal.clear();
+    snap.docs.forEach(d => { const v = d.data(); if (v.tipo === 'versao_pessoal' && Array.isArray(v.mudancas) && v.mudancas.length) S.pessoal.set(v.musica + '__' + v.parte, { id: d.id, ...v }); });
+    panes.forEach(p => {
+      if (!p.part || S.songId !== songId) return;
+      const k = songId + '__' + p.part, mudou = JSON.stringify(antes.get(k) || null) !== JSON.stringify(S.pessoal.get(k) || null);
+      if (mudou && (S.minha[p.i] || !S.pessoal.has(k))) loadPart(p); else renderChips(p);
+    });
+  }, () => {}));
   if (mineInDb()) S.unsubAnn.push(listen(S.db.collection('data/users/' + S.uid).where('song', '==', songId), 'mine'));
 }
 function pushUndo(key) {
@@ -1183,6 +1204,40 @@ function renderChips(pane) {
     b.onclick = () => { if (p.key !== pane.part) { S.paneParts[pane.i] = p.key; ls.set('paneParts', S.paneParts); loadPart(pane); } };
     pane.chips.append(b);
   });
+  if (pane.part && S.pessoal.has(song.id + '__' + pane.part)) {
+    const b = el('button', 'chip minha-chip', 'Minha versão'); b.type = 'button';
+    b.title = 'A sua versão desta parte, com as mudanças que só você vê';
+    b.setAttribute('aria-pressed', String(!!S.minha[pane.i]));
+    b.onclick = () => { S.minha[pane.i] = !S.minha[pane.i]; loadPart(pane); };
+    pane.chips.append(b);
+  }
+}
+/* "Minha versão": the band's score with this person's own changes to the part, drawn from the notes (no PDF) */
+async function loadMinha(pane, song, part, id) {
+  const v = S.pessoal.get(song.id + '__' + part.key);
+  pane.pagesWrap.replaceChildren(el('div', 'loading', 'abrindo a sua versão…'));
+  try {
+    const r = await Editor.versaoPessoal({ ...song }, part.key, v.mudancas);
+    if (id !== pane.loadId) return;
+    const aviso = el('div', 'minha-aviso'), box = el('div', 'minha-pags');
+    const n = v.mudancas.length;
+    aviso.append(el('p', '', `Sua versão de ${part.name}: ${n} ${n > 1 ? 'mudanças' : 'mudança'} que só você vê. A partitura da banda continua a mesma.`));
+    if (r.falharam.length) aviso.append(el('p', 'falhou', `A partitura da banda mudou e ${r.falharam.length > 1 ? 'estas mudanças suas não cabem mais' : 'esta mudança sua não cabe mais'}: compasso ${r.falharam.map(m => m.compasso).join(', ')}. Peça ao Caio para refazer.`));
+    const oficial = el('button', 'btn', 'Ver a da banda'); oficial.type = 'button';
+    oficial.onclick = () => { S.minha[pane.i] = false; loadPart(pane); };
+    const apagar = el('button', 'btn', 'Apagar minha versão'); apagar.type = 'button';
+    apagar.onclick = async () => {
+      if (apagar.dataset.ok !== '1') { apagar.dataset.ok = '1'; apagar.textContent = 'Toque de novo para apagar'; return; }
+      try { await S.db.collection('data/users/' + S.uid).doc(v.id).delete(); S.minha[pane.i] = false; toast('Sua versão foi apagada.'); }
+      catch { toast('Não consegui apagar agora. Confira a internet.'); }
+    };
+    aviso.append(oficial, apagar);
+    pane.pagesWrap.replaceChildren(aviso, box);
+    await Editor.desenhar(r.xml, box);
+  } catch (e) {
+    if (id !== pane.loadId) return;
+    pane.pagesWrap.replaceChildren(el('div', 'loading', 'Não consegui abrir a sua versão: ' + (e.message || e)));
+  }
 }
 async function loadPart(pane) {
   const song = currentSong();
@@ -1201,8 +1256,11 @@ async function loadPart(pane) {
     pane.pagesWrap.append(box); if (pane.i === 0) Player.sync(); return;
   }
   let part = song.parts.find(p => p.key === S.paneParts[pane.i]) || song.parts[pane.i === 1 && song.parts.length > 1 ? song.parts.length - 1 : 0];
-  pane.part = part.key; renderChips(pane);
+  pane.part = part.key;
+  if (S.minha[pane.i] && !S.pessoal.has(song.id + '__' + part.key)) S.minha[pane.i] = false;
+  renderChips(pane);
   if (pane.i === 0) Player.sync();
+  if (S.minha[pane.i] && typeof Editor !== 'undefined') return loadMinha(pane, song, part, id);
   pane.pagesWrap.append(el('div', 'loading', 'abrindo partitura…'));
   let pdf;
   try { pdf = await getPdf(part.src); } catch (e) {
@@ -1475,8 +1533,9 @@ const Band = (() => {
 const Caio = (() => {
   const URL_AGENTE = 'https://southamerica-east1-salvetheapp-3cceb.cloudfunctions.net/agente';
   let conversa = [], panel = null, modo = 'conversa', songId = null;  // modo 'editar': chat to edit the open song in plain words
+  let destino = 'banda';  // in 'editar': 'banda' (the band's score, dono/editor) or 'pessoal' (this person's "Minha versão")
   let fotos = [];  // pictures of handwritten notes waiting to go with the next question (never kept in the conversation)
-  const KEY = () => (modo === 'editar' ? 'caio-editar:' : 'caio:') + (window.SALVE ? SALVE.ctx().band + '/' + SALVE.ctx().show : 'x') + (modo === 'editar' ? '/' + songId : '');
+  const KEY = () => (modo === 'editar' ? 'caio-editar:' : 'caio:') + (window.SALVE ? SALVE.ctx().band + '/' + SALVE.ctx().show : 'x') + (modo === 'editar' ? '/' + songId + (destino === 'pessoal' ? '/eu' : '') : '');
   const load = () => { try { conversa = JSON.parse(sessionStorage.getItem(KEY()) || '[]'); } catch { conversa = []; } };
   const keep = () => { try { sessionStorage.setItem(KEY(), JSON.stringify(conversa.slice(-30))); } catch {} };
 
@@ -1487,13 +1546,18 @@ const Caio = (() => {
     if (modo === 'editar') {
       const song = currentSong();
       if (!song) { toast('Abra uma música primeiro.'); return; }
-      if (!S.canWrite) { toast('Só o dono ou um editor da banda pode editar a partitura.'); return; }
+      // a musician edits only their own "Minha versão"; the band's score is for the owner and editors
+      if (!S.canWrite && !mineInDb()) { toast('Entre com a sua conta para ter a sua versão da partitura.'); return; }
+      destino = S.canWrite ? 'banda' : 'pessoal';
       songId = song.id;
     }
     load();
     const scrim = el('div', 'scrim'), d = el('div', 'drawer caio'); d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Caio');
     d.innerHTML = `<div class="caio-head"><span class="gate-s" aria-hidden="true">C</span><h3>${modo === 'editar' ? 'Editar com o Caio' : 'Caio'}</h3><button class="btn" type="button" id="caioNew" title="Começar outra conversa">Nova</button><button class="btn" type="button" id="caioX">Fechar</button></div>
       <div class="caio-log" aria-live="polite"></div>
+      ${modo === 'editar' ? (S.canWrite && mineInDb()
+        ? `<div class="caio-destino" role="group" aria-label="Para quem vale"><span>Vale para:</span><button type="button" data-d="banda">A banda toda</button><button type="button" data-d="pessoal">Só para mim</button></div>`
+        : `<div class="caio-destino"><span>Vale só para a sua versão (Minha versão). A da banda não muda.</span></div>`) : ''}
       ${modo === 'editar' ? `<div class="caio-anexo"><button type="button" id="caioTinta" title="Manda ao Caio as páginas desta parte com o que foi escrito à mão no app">Ler anotações à mão</button><button type="button" id="caioFoto" title="Foto ou PDF de uma partitura anotada à mão">Foto ou PDF anotado</button><input type="file" id="caioArq" accept="image/*,application/pdf" multiple hidden><span class="fotos" hidden></span></div>` : ''}
       <div class="caio-in"><textarea id="caioTxt" rows="1" placeholder="${modo === 'editar' ? 'Diga com suas palavras o que quer mudar…' : 'Pergunte ou peça uma mudança…'}"></textarea><button class="btn primary" id="caioGo" type="button">Enviar</button></div>`;
     document.body.append(scrim, d); panel = d;
@@ -1505,6 +1569,9 @@ const Caio = (() => {
     ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
     d.querySelector('#caioGo').onclick = send;
     fotos = [];
+    const marcaDestino = () => d.querySelectorAll('.caio-destino [data-d]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.d === destino)));
+    d.querySelectorAll('.caio-destino [data-d]').forEach(b => b.onclick = () => { if (destino === b.dataset.d) return; destino = b.dataset.d; marcaDestino(); load(); paint(); });
+    marcaDestino();
     if (modo === 'editar') {
       d.querySelector('#caioTinta').onclick = () => anexar(paginasComTinta);
       const arq = d.querySelector('#caioArq');
@@ -1520,7 +1587,9 @@ const Caio = (() => {
     const log = panel.querySelector('.caio-log'); log.replaceChildren();
     if (!conversa.length && modo === 'editar') {
       const song = S.songs.find(x => x.id === songId);
-      log.append(el('div', 'caio-msg ele', `Vamos mexer em “${song?.title || 'esta música'}”. Diga do seu jeito, sem precisar de termo técnico, o que quer mudar. Eu mostro o que entendi e você aprova antes de valer.`));
+      log.append(el('div', 'caio-msg ele', destino === 'pessoal'
+        ? `Vamos fazer a sua versão de “${song?.title || 'esta música'}”. O que eu mudar fica só para você (na estante, toque em “Minha versão”). Se quiser, depois você manda para a banda e o dono decide.`
+        : `Vamos mexer em “${song?.title || 'esta música'}”. Diga do seu jeito, sem precisar de termo técnico, o que quer mudar. Eu mostro o que entendi e você aprova antes de valer.`));
       const hints = el('div', 'caio-hints');
       log.append(el('div', 'caio-msg ele', 'Anotou à mão? Toque em “Ler anotações à mão” (o que está escrito na parte aberta) ou mande uma foto ou PDF da partitura anotada.'));
       ['O trompete está muito alto no começo, deixa mais suave', 'No compasso 12 o sax tem que entrar um tempo depois',
@@ -1553,12 +1622,12 @@ const Caio = (() => {
     try {
       const { band, show } = SALVE.ctx();
       const r = await fetch(URL_AGENTE, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + await SALVE.token() },
-        body: JSON.stringify({ band, show, ...(modo === 'editar' ? { modo, musica: songId } : {}), conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })),
+        body: JSON.stringify({ band, show, ...(modo === 'editar' ? { modo, musica: songId, ...(destino === 'pessoal' ? { destino } : {}) } : {}), conversa: conversa.filter(m => !m.erro).map(m => ({ role: m.role, texto: m.texto })),
           ...(indo.length ? { imagens: indo.map(f => ({ tipo: f.tipo, dados: f.dados, legenda: f.legenda })) } : {}) }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.erro || 'erro ' + r.status);
       if (fotos === indo) { fotos = []; mostrarFotos(); }
-      conversa.push({ role: 'assistant', texto: j.texto, proposta: j.proposta || null, podeAplicar: !!j.podeAplicar });
+      conversa.push({ role: 'assistant', texto: j.texto, proposta: j.proposta || null, podeAplicar: !!j.podeAplicar, ...(j.destino === 'pessoal' ? { destino: 'pessoal' } : {}) });
     } catch (e) {
       conversa.push({ role: 'assistant', texto: 'Não consegui responder agora: ' + (e.message === 'Failed to fetch' ? 'sem conexão com o servidor.' : e.message), erro: true });
     }
@@ -1695,10 +1764,18 @@ const Caio = (() => {
     if (msg.feito) row.append(el('span', 'hint', msg.feito));
     else if (!msg.podeAplicar) row.append(el('span', 'hint', 'Só o dono ou um editor da banda pode aplicar.'));
     else {
-      const ok = el('button', 'btn primary', 'Aplicar'); ok.type = 'button';
+      const minha = msg.destino === 'pessoal';
+      const ok = el('button', 'btn primary', minha ? 'Pôr na minha versão' : 'Aplicar'); ok.type = 'button';
       ok.onclick = async () => {
         const chosen = p.mudancas.filter((_, k) => checks[k].checked); if (!chosen.length) return;
         ok.disabled = true; ok.textContent = 'Aplicando…';
+        if (minha) {
+          const r = await applyPessoal(chosen);
+          conversa[i].feito = r.erros.length ? `Pus ${r.ok} de ${chosen.length} na sua versão. Não deu: ${r.erros.join('; ')}`
+            : `Na sua versão (${r.ok}). Só você vê: na estante, toque em “Minha versão” na parte.`;
+          keep(); paint(); toast(r.erros.length ? 'Algumas mudanças não entraram.' : 'Pronto: está na sua versão.');
+          return;
+        }
         const r = await apply(chosen, p.resumo);
         const notas = chosen.some(x => ['corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra', 'redesenhar_pdf'].includes(x.tipo));
         conversa[i].feito = r.erros.length ? `Apliquei ${r.ok} de ${chosen.length}. Não deu: ${r.erros.join('; ')}` : `Aplicado (${r.ok}). As músicas alteradas têm a versão anterior guardada em Versões.${notas ? ' O Malak está gerando o áudio corrigido (1 a 2 minutos).' : ''}`;
@@ -1710,6 +1787,52 @@ const Caio = (() => {
     return box;
   }
 
+  // a short text written over a bar: in the band's "Em comum" layer, or in the person's own "Só eu" layer
+  async function anotar(m, col) {
+    const lay = (await S.db.collection('layout').doc(m.musica).get()).data();
+    const box = (lay?.parts?.[m.parte]?.boxes || []).find(b => b[0] === m.compasso);
+    if (!box) throw new Error(`não achei o compasso ${m.compasso} na parte ${m.parte}`);
+    const key = `${m.musica}__${m.parte}__${box[2]}`, ref = col.doc(key);
+    const cur = (await ref.get()).data() || { song: m.musica, part: m.parte, page: box[2], strokes: [], notes: [] };
+    // notes live in the page's drawing space (1000 wide, H tall); the boxes are fractions of the page
+    const src = (S.songs.find(x => x.id === m.musica)?.parts || []).find(x => x.key === m.parte)?.src;
+    let H = 1414; try { const vp = (await (await getPdf(src)).getPage(box[2])).getViewport({ scale: 1 }); H = Math.round(1000 * vp.height / vp.width); } catch {}
+    const note = { id: Math.random().toString(36).slice(2, 9), x: Math.round(Math.min(.95, box[3] + .004) * 1000), y: Math.round(Math.max(.012, box[4] - .012) * H), t: m.texto, c: '#d92b2b' };
+    await ref.set({ ...cur, song: m.musica, part: m.parte, page: box[2], notes: [...(cur.notes || []), note], strokes: cur.strokes || [], H, updated: Date.now() });
+  }
+
+  /* "Minha versão": the changes go to this person's own list for that part (users/{uid}/ann-{band}, private);
+     each one is tried on the band's score first, and a newer change to the same bar replaces the older one */
+  const TIPOS_PESSOAIS = ['corrigir_notas', 'cifras', 'letra'];
+  async function applyPessoal(list) {
+    let ok = 0; const erros = [], porParte = new Map();
+    const titles = Object.fromEntries(S.songs.map(s => [s.id, s.title]));
+    const col = S.db.collection('data/users/' + S.uid);
+    for (const m of list) {
+      if (m.tipo === 'anotar') { try { await anotar(m, col); ok++; } catch (e) { erros.push(label(m, titles) + ' (' + (e.message || e) + ')'); } continue; }
+      if (!TIPOS_PESSOAIS.includes(m.tipo)) { erros.push(label(m, titles) + ' (isso só o dono muda, para a banda toda)'); continue; }
+      const k = m.musica + '__' + m.parte; if (!porParte.has(k)) porParte.set(k, []); porParte.get(k).push(m);
+    }
+    for (const [k, lista] of porParte) {
+      const { musica, parte } = lista[0];
+      try {
+        const song = (await S.db.collection('songs').doc(musica).get()).data(); if (!song) throw new Error('música não encontrada');
+        const ref = col.doc('pessoal__' + k), cur = (await ref.get()).data();
+        const limpa = m => Object.fromEntries(Object.entries(m).filter(([c, v]) => ['tipo', 'compasso', 'notas', 'cifras', 'silabas', 'descricao'].includes(c) && v != null));
+        const mesma = (a, b) => a.tipo === b.tipo && a.compasso === b.compasso;
+        const velhas = (cur?.mudancas || []).filter(x => !lista.some(y => mesma(x, y)));
+        const todas = [...velhas, ...lista.map(limpa)];
+        const r = await Editor.versaoPessoal(song, parte, todas);
+        const novasRuins = lista.filter(m => r.falharam.some(f => mesma(f, m)));
+        novasRuins.forEach(m => erros.push(label(m, titles) + ' (não coube no compasso)'));
+        const fica = todas.filter(m => !r.falharam.includes(m) || velhas.includes(m));
+        await ref.set({ tipo: 'versao_pessoal', musica, parte, mudancas: fica, versao: song.partitura?.versao || 0, atualizado: Date.now() });
+        ok += lista.length - novasRuins.length;
+      } catch (e) { erros.push(`${titles[musica] || musica}: ${e.message || e}`); }
+    }
+    return { ok, erros };
+  }
+
   async function apply(list, resumo) {
     let ok = 0; const erros = [];
     const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra', 'redesenhar_pdf'].includes(m.tipo)).map(m => m.musica))];
@@ -1719,16 +1842,7 @@ const Caio = (() => {
     for (const m of list) {
       try {
         if (m.tipo === 'anotar') {
-          const lay = (await S.db.collection('layout').doc(m.musica).get()).data();
-          const box = (lay?.parts?.[m.parte]?.boxes || []).find(b => b[0] === m.compasso);
-          if (!box) throw new Error(`não achei o compasso ${m.compasso} na parte ${m.parte}`);
-          const key = `${m.musica}__${m.parte}__${box[2]}`, ref = S.db.collection('ann').doc(key);
-          const cur = (await ref.get()).data() || { song: m.musica, part: m.parte, page: box[2], strokes: [], notes: [] };
-          // notes live in the page's drawing space (1000 wide, H tall); the boxes are fractions of the page
-          const src = (S.songs.find(x => x.id === m.musica)?.parts || []).find(x => x.key === m.parte)?.src;
-          let H = 1414; try { const vp = (await (await getPdf(src)).getPage(box[2])).getViewport({ scale: 1 }); H = Math.round(1000 * vp.height / vp.width); } catch {}
-          const note = { id: Math.random().toString(36).slice(2, 9), x: Math.round(Math.min(.95, box[3] + .004) * 1000), y: Math.round(Math.max(.012, box[4] - .012) * H), t: m.texto, c: '#d92b2b' };
-          await ref.set({ ...cur, song: m.musica, part: m.parte, page: box[2], notes: [...(cur.notes || []), note], strokes: cur.strokes || [], updated: Date.now() });
+          await anotar(m, S.db.collection('ann'));
         } else if (m.tipo === 'remover_anotacao') {
           const ref = S.db.collection('ann').doc(`${m.musica}__${m.parte}__${m.pagina}`);
           const cur = (await ref.get()).data(); if (!cur) throw new Error('anotação não encontrada');

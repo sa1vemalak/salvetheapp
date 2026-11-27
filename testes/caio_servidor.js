@@ -31,7 +31,7 @@ const ref = p => ({
 const col = p => {
   const q = { orderBy: () => q, startAt: () => q, endAt: () => q, limitToLast: () => q, where: () => q,
     get: async () => ({ docs: p.endsWith('/jobs') ? jobs.map(j => ({ id: j.id, data: () => j }))
-      : p.endsWith('/ann') ? Object.keys(docs).filter(k => k.startsWith(p + '/')).map(k => ({ id: k.split('/').pop(), data: () => docs[k] })) : [] }), doc: id => ref(p + '/' + id) };
+      : /\/ann(-[^/]+)?$/.test(p) ? Object.keys(docs).filter(k => k.startsWith(p + '/')).map(k => ({ id: k.split('/').pop(), data: () => docs[k] })) : [] }), doc: id => ref(p + '/' + id) };
   return q;
 };
 docs['bands/b/members/u1'] = { role: 'dono' };
@@ -125,6 +125,22 @@ const srv = require(path.join(FN, 'index.js'));
   const anot = await srv.__runTool('ver_anotacoes', { musica: 'm1', parte: 'todas' }, { band: 'b', show: 's', cache: {} });
   confere('ver_anotacoes acha o compasso de cada texto e manda pedir a imagem dos desenhos',
     anot.anotacoes?.find(a => a.id === 'n1')?.compasso_aprox === 3 && anot.anotacoes?.find(a => a.id === 'n2')?.compasso_aprox === 1 && /Ler anotações à mão/.test(anot.anotacoes?.find(a => a.desenhos_a_mao)?.para_ler || ''), JSON.stringify(anot));
+  console.log('Minha versão (pessoal)');
+  docs['users/u1/ann-b/pessoal__m1__trompete'] = { tipo: 'versao_pessoal', musica: 'm1', parte: 'trompete', mudancas: [{ tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 2, notas: 'G5:4' }] };
+  const cpes = { band: 'b', show: 's', role: 'musico', proposta: null, cache: {}, pessoal: { uid: 'u1' } };
+  const vp = await srv.__runTool('ver_notas', { musica: 'm1', parte: 'trompete', de: 1, ate: 2 }, cpes);
+  const vo = await run('ver_notas', { musica: 'm1', parte: 'trompete', de: 2, ate: 2 });
+  confere('na versão pessoal o Caio lê as mudanças da pessoa; a da banda continua igual', vp.compassos[1].notas === 'G5:4' && vo.compassos[0].notas !== 'G5:4', JSON.stringify([vp.compassos[1], vo.compassos[0]]));
+  const pp = await srv.__runTool('propor_mudancas', { resumo: 'x', mudancas: [
+    { tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 3, notas: 'A5:4', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'andamento', compasso: 1, ate: 1, quantos: 0, valor: '90', parte: 'todas', descricao: 'x' },
+    { tipo: 'ordem_show', ordem: ['m1'], descricao: 'x' }] }, cpes);
+  confere('na versão pessoal estrutura e ordem do show são recusadas', /estrutura" não entra/.test(pp.erro || '') && /ordem_show" não entra/.test(pp.erro || '') && !/trompete c.3/.test(pp.erro || ''), JSON.stringify(pp));
+  cpes.proposta = null;
+  const pp2 = await srv.__runTool('propor_mudancas', { resumo: 'x', mudancas: [{ tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 3, notas: 'A5:4', descricao: 'x' }] }, cpes);
+  confere('nota na versão pessoal passa e avisa que vale só para a pessoa', pp2.ok && /só na versão pessoal/.test(pp2.aviso), JSON.stringify(pp2));
+  const rp = await pedir({ ...pedido, destino: 'pessoal' });
+  confere('pedido pessoal: pode aplicar e volta marcado como pessoal; o Caio recebe o modo Minha versão', rp.code === 200 && rp.j.podeAplicar && rp.j.destino === 'pessoal', JSON.stringify(rp));
   console.log(`\n${ok} ok, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
