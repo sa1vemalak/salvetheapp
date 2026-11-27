@@ -180,6 +180,36 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('casa 1 e casa 2', es.info6.includes('"casa":"1"') && es.info6.includes('volta_ao_inicio') && es.info7.includes('"casa":"2"'), es.info6 + es.info7);
   confere('apagar letra de ensaio e texto', es.limpo === '{"repete_daqui":true}{}', es.limpo);
   confere('nenhum compasso com tempo errado depois de tudo', es.check === 0, es.check);
+  // segunda voz e letra
+  const vl = await p.evaluate(() => {
+    const P = new Partitura(Partitura.blank({ instrumentos: ['voz', 'trombone'], compassos: 4 }));
+    const out = {};
+    P.setTokens(1, 1, 'E4:4 || C4:2 B3:2');
+    out.duas = P.tokens(1, 1);
+    P.setTokens(1, 1, 'F4:2 G4:2'); out.mantem = P.tokens(1, 1);          // sem "||": a segunda voz fica
+    let e = ''; try { P.setTokens(1, 1, 'F4:4 || C4:3'); } catch (x) { e = x.message; } out.erro2 = /segunda voz/.test(e);
+    P.transpose(2, 1, 1, 1); out.transp = P.tokens(1, 1);
+    P.setTokens(1, 2, 'A4:4 ||'); out.tira = P.tokens(1, 2);
+    P.setTokens(0, 1, 'C5:1 D5:1 E5:2~'); P.setTokens(0, 2, 'E5:1 F5:1 G5:2');
+    P.setLyrics(0, 1, 'Can- ta- va'); P.setLyrics(0, 2, 'mos nós');
+    const Q = new Partitura(P.toString());
+    out.l1 = Q.lyrics(0, 1); out.l2 = Q.lyrics(0, 2);
+    out.sil = [...Q.measure(0, 1).getElementsByTagName('syllabic')].map(x => x.textContent).join() + '|' + [...Q.measure(0, 2).getElementsByTagName('syllabic')].map(x => x.textContent).join();
+    let e2 = ''; try { Q.setLyrics(0, 2, 'a b c'); } catch (x) { e2 = x.message; } out.erroL = /sílabas/.test(e2);
+    Q.setTokens(0, 1, 'C5:2 D5:1 E5:1~'); out.letraFica = Q.lyrics(0, 1);   // reescrever as notas mantém a letra
+    out.v2xml = Q.measure(1, 1).getElementsByTagName('backup').length === 1 && [...Q.measure(1, 1).getElementsByTagName('stem')].map(x => x.textContent).join();
+    return out;
+  });
+  console.log('Segunda voz e letra');
+  confere('lê e escreve duas vozes', vl.duas === 'E4:4 || C4:2 B3:2', vl.duas);
+  confere('mexer na voz 1 mantém a segunda voz', vl.mantem === 'F4:2 G4:2 || C4:2 B3:2', vl.mantem);
+  confere('segunda voz com soma errada é recusada', vl.erro2, JSON.stringify(vl));
+  confere('transpor leva as duas vozes', vl.transp === 'G4:2 A4:2 || D4:2 C#4:2', vl.transp);
+  confere('"||" vazio tira a segunda voz', vl.tira === 'A4:4', vl.tira);
+  confere('desenha com hastes para cima e para baixo', vl.v2xml === 'up,up,down,down', String(vl.v2xml));
+  confere('letra com hífen entre compassos', vl.l1 === 'Can- ta- va' && vl.l2 === 'mos nós' && vl.sil === 'begin,middle,end|single,single', JSON.stringify(vl));
+  confere('mais sílabas que notas é recusado', vl.erroL, JSON.stringify(vl));
+  confere('reescrever as notas mantém a letra', vl.letraFica === 'Can- ta- va', vl.letraFica);
   // o botão Aplicar com uma proposta "nova_parte" + notas para ela: salva uma versão nova com a parte e a lista de instrumentos
   const ap = await p.evaluate(async () => {
     const xml = Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'sax-tenor', 'trombone', 'base'], formula: '4/4', fifths: 0, compassos: 4 });

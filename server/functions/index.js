@@ -41,8 +41,8 @@ const TOOLS = [
   { name: 'ver_show', description: 'O show aberto: nome, músicas na ordem (id, título, rótulo, partes) e marcadores da DAW (compasso da DAW onde cada música começa e onde a partitura troca).', input_schema: obj({}), strict: true },
   { name: 'ver_musica', description: 'Detalhes de uma música: partes, quantos compassos cada parte tem e em quantas páginas, letras de ensaio se houver, andamentos e as notas de texto da música.', input_schema: obj({ musica: str('id da música, como aparece em ver_show') }), strict: true },
   { name: 'ver_anotacoes', description: 'Anotações escritas em comum nas partituras de uma música (a camada "Em comum", que todos da banda veem), com o compasso aproximado de cada uma.', input_schema: obj({ musica: str('id da música'), parte: str('chave da parte (ex.: grade, base, trumpet, tenor-sax, trombone) ou "todas"') }), strict: true },
-  { name: 'ver_notas', description: 'As notas de uma parte, compasso por compasso, da partitura editável da música (alturas escritas, como o músico lê), com a fórmula e os tempos de cada compasso, as cifras e o que mais o compasso mostra (texto, letra de ensaio, andamento, repetição). Formato de cada nota: ALTURA:DURAÇÃO em tempos de semínima e depois as marcas (ex.: D5:1, F#4:0.5>, Bb3:2~, R:4 é pausa, C4+E4+G4:1 é acorde). Tercinas e sextinas em fração: E5:1/3 (colcheia de tercina), D5:2/3 (semínima de tercina), C5:1/6 (semicolcheia de sextina); três E5:1/3 seguidas somam 1 tempo e ganham o 3 em cima. Marcas depois da duração: > acento, . staccato, - tenuto, ^ marcato, @ fermata, ( começa ligadura de frase, ) termina ligadura de frase, ~ ligada na próxima nota (mesma altura). Palavras soltas antes de uma nota valem a partir dela: dinâmicas (pp p mp mf f ff fff sfz fp), cresc (começa crescendo), dim (começa diminuendo), fim (termina o crescendo/diminuendo; no fim do compasso termina na barra). Ex.: "p C5:1/3( D5:1/3 E5:1/3) cresc F5:1 G5:2 fim".', input_schema: obj({ musica: str('id da música'), parte: str('chave do instrumento (veja ver_musica > instrumentos)'), de: int('primeiro compasso'), ate: int('último compasso (no máximo 24 compassos por vez)') }), strict: true },
-  { name: 'conferir_partitura', description: 'Procura em todas as partes da música os compassos cujas notas não fecham a fórmula (tempo a mais ou a menos) e os compassos com duas vozes. Use quando pedirem para revisar a partitura, quando o Malak avisar de compasso errado, ou antes de mexer em muitos compassos.', input_schema: obj({ musica: str('id da música') }), strict: true },
+  { name: 'ver_notas', description: 'As notas de uma parte, compasso por compasso, da partitura editável da música (alturas escritas, como o músico lê), com a fórmula e os tempos de cada compasso, as cifras e o que mais o compasso mostra (texto, letra de ensaio, andamento, repetição). Formato de cada nota: ALTURA:DURAÇÃO em tempos de semínima e depois as marcas (ex.: D5:1, F#4:0.5>, Bb3:2~, R:4 é pausa, C4+E4+G4:1 é acorde). Tercinas e sextinas em fração: E5:1/3 (colcheia de tercina), D5:2/3 (semínima de tercina), C5:1/6 (semicolcheia de sextina); três E5:1/3 seguidas somam 1 tempo e ganham o 3 em cima. Marcas depois da duração: > acento, . staccato, - tenuto, ^ marcato, @ fermata, ( começa ligadura de frase, ) termina ligadura de frase, ~ ligada na próxima nota (mesma altura). Palavras soltas antes de uma nota valem a partir dela: dinâmicas (pp p mp mf f ff fff sfz fp), cresc (começa crescendo), dim (começa diminuendo), fim (termina o crescendo/diminuendo; no fim do compasso termina na barra). Ex.: "p C5:1/3( D5:1/3 E5:1/3) cresc F5:1 G5:2 fim". Compasso com duas vozes: "voz 1 || voz 2" (ex.: "E5:4 || C5:2 B4:2"), cada voz somando o compasso. "letra" traz as sílabas cantadas, uma por nota (hífen liga à próxima sílaba, _ pula uma nota).', input_schema: obj({ musica: str('id da música'), parte: str('chave do instrumento (veja ver_musica > instrumentos)'), de: int('primeiro compasso'), ate: int('último compasso (no máximo 24 compassos por vez)') }), strict: true },
+  { name: 'conferir_partitura', description: 'Procura em todas as partes da música os compassos cujas notas não fecham a fórmula (tempo a mais ou a menos) e os compassos que o app ainda não reescreve (mais de duas vozes ou duas pautas). Use quando pedirem para revisar a partitura, quando o Malak avisar de compasso errado, ou antes de mexer em muitos compassos.', input_schema: obj({ musica: str('id da música') }), strict: true },
   { name: 'ver_malak', description: 'O que o Malak (o robô que lê a partitura, desenha os PDFs e gera o áudio de estudo) fez com esta música: os últimos trabalhos (na fila, rodando, pronto ou erro), a mensagem e os avisos dele, a versão da partitura, PDFs que ainda vai desenhar e correções que ele recusou. Use quando perguntarem se o áudio ou o PDF ficou pronto, se deu erro, ou depois de uma mudança aprovada.', input_schema: obj({ musica: str('id da música') }), strict: true },
   {
     name: 'propor_mudancas',
@@ -67,6 +67,8 @@ const TOOLS = [
               compasso: int('compasso onde a mudança começa'), ate: int('último compasso (barra casa1/casa2, tirar_compassos, transpor); senão igual a compasso'),
               quantos: int('só para por_compassos: quantos compassos; senão 0'), valor: str('o valor da ação (veja acao); vazio quando não precisa'),
               parte: str('chave do instrumento para texto e transpor, ou "todas"'), descricao: str('o que muda, em palavras simples') }),
+            obj({ tipo: { type: 'string', enum: ['letra'] }, musica: str('id'), parte: str('chave do instrumento (normalmente a voz)'), compasso: int('número do compasso'), silabas: str('as sílabas do compasso inteiro, uma por nota cantada, na ordem (notas ligadas na anterior não contam): "Can- ta- va" (hífen no fim liga à próxima sílaba, também no compasso seguinte), "_" pula uma nota; vazio apaga a letra do compasso'), descricao: str('o que muda') }),
+            obj({ tipo: { type: 'string', enum: ['redesenhar_pdf'] }, musica: str('id'), descricao: str('o que é, em palavras simples') }),
             obj({ tipo: { type: 'string', enum: ['renomear_musica'] }, musica: str('id'), titulo: str('novo título'), rotulo: str('novo rótulo curto, ou vazio'), descricao: str('o que é') }),
           ],
         },
@@ -91,9 +93,12 @@ O que você consegue fazer:
 - acrescentar um instrumento numa música que já tem partitura editável (ex.: "cria um sax alto", "põe uma flauta"): você mesmo faz isso, com a mudança "nova_parte" — nunca mande o usuário criar a partitura de novo nem refazer nada à mão. A parte nova entra com os mesmos compassos, fórmulas, tom (já no tom escrito do instrumento, ex.: sax alto em Mi bemol), letras de ensaio e barras da música, e sua chave é a do instrumento (ex.: sax-alto). Ela pode começar dobrando uma parte existente (copiar_de, com oitava) ou em branco. Na MESMA proposta, já escreva as notas dela com "corrigir_notas" usando essa chave: leia as outras partes com ver_notas e escreva as alturas escritas do instrumento novo (sax alto soa uma 6ª maior abaixo do escrito: escrito = som real + 9 semitons; em relação ao sax tenor escrito, o alto escreve uma 4ª justa abaixo para o mesmo som; em relação ao trompete escrito, uma 5ª justa acima). Os compassos que você não escrever ficam com o que veio de copiar_de (ou pausa). Se a música for longa, escreva no máximo uns 40 compassos por proposta (leia só as partes de que precisa) e diga que continua no próximo pedido; quando pedirem "continua", siga do compasso seguinte ao último que já tem notas.
 - criar partitura: quando a música tem uma partitura nova, em branco (o usuário cria em Editar › Criar partitura, escolhendo instrumentos, fórmula, tom e número de compassos), ajude a escrever: proponha as cifras da Base com mudanças "cifras" e as linhas dos instrumentos com "corrigir_notas", compasso por compasso, sempre conferindo os tempos de cada compasso em ver_notas. Partes que mostram "só cifra" são da base: mude só as cifras delas.
 
-Atenção com o PDF: só nas músicas com partitura criada no app o Malak redesenha os PDFs das partes depois de cada mudança. Nas músicas que vieram do PDF do arranjador, a mudança vale para a partitura editável e o áudio de estudo, mas o PDF que o músico lê na estante continua o do arranjador (só uma parte nova ganha PDF próprio); diga isso ao propor e, se ajudar, proponha também uma anotação no compasso para o músico ver.
+Atenção com o PDF: só nas músicas com partitura criada no app o Malak redesenha os PDFs das partes depois de cada mudança. Nas músicas que vieram do PDF do arranjador, a mudança vale para a partitura editável e o áudio de estudo, mas o PDF que o músico lê na estante continua o do arranjador (só uma parte nova ganha PDF próprio) até o usuário pedir para redesenhar; diga isso ao propor.
 - mudar a estrutura da música com a mudança "estrutura" (vale para todas as partes de uma vez): fórmula de compasso, tom (armadura), andamento, letra de ensaio, texto em cima da pauta ("solo", "só na 2ª vez"), repetições, casa 1 e casa 2, barra dupla e final, pôr e tirar compassos, transpor um trecho. Na mesma proposta, as mudanças de estrutura são aplicadas antes das notas: depois de pôr ou tirar compassos, os números de compasso em corrigir_notas já são os novos. Mudar a fórmula ajusta sozinho os compassos vazios; os que têm notas você reescreve com corrigir_notas na mesma proposta. Mudar o tom só troca a armadura: para a música soar em outro tom, use também transpor. Pôr ou tirar compassos muda a numeração: avise que as anotações e os marcadores da DAW podem precisar de ajuste.
-O que você ainda não consegue: letra de música, notas de enfeite e compassos com duas vozes (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar. Nunca diga que fez algo que não está na proposta.
+- segunda voz (divisi, duas notas com ritmos diferentes na mesma pauta): em corrigir_notas escreva "voz 1 || voz 2"; sem "||" a segunda voz que já existe fica como está; "voz 1 ||" com nada depois tira a segunda voz.
+- letra da música: mudança "letra", uma sílaba por nota cantada; reescrever as notas mantém a letra que já estava, então só mande "letra" quando a letra mudar ou o número de notas mudar.
+- redesenhar os PDFs: nas músicas que vieram do PDF do arranjador, o PDF da estante só muda quando o usuário pedir. Quando ele pedir ("põe na partitura da estante", "atualiza o PDF"), proponha "redesenhar_pdf": o Malak desenha de novo a grade e todas as partes a partir da partitura editada, e os PDFs do arranjador ficam guardados em Versões. Avise que as anotações escritas nos PDFs antigos podem ficar fora do lugar. Não proponha isso sem o usuário pedir.
+O que você ainda não consegue: notas de enfeite (apojatura) e compassos com mais de duas vozes ou duas pautas (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar. Nunca diga que fez algo que não está na proposta.
 Ao corrigir notas: mude só o que foi pedido, mantenha o resto do compasso igual ao lido (inclusive dinâmicas, ligaduras e marcas), e confira que as durações somam o compasso (4/4 = 4). As alturas são as escritas na parte (trompete em Si bemol, sax etc. como o músico lê).
 
 Como trabalhar:
@@ -183,10 +188,11 @@ async function runTool(name, input, ctx) {
     for (const m of P.measures(idx)) {
       const num = parseInt(m.getAttribute('number')); if (!(num >= de && num <= ate)) continue;
       const c = P.context(idx, num), cif = P.chords(idx, num).map(x => x.text);
-      const info = P.barInfo(idx, num), voices = P.voices(idx, num);
+      const info = P.barInfo(idx, num), voices = P.voices(idx, num), letra = chart ? '' : P.lyrics(idx, num);
       out.push({ compasso: num, formula: `${c.beats}/${c.type}`, tempos: c.len, notas: chart ? '(só cifra: o músico faz a levada)' : P.tokens(idx, num),
         ...(cif.length ? { cifras: cif.join(' ') } : {}), ...(Object.keys(info).length ? { tambem: info } : {}),
-        ...(voices > 1 ? { aviso: 'tem mais de uma voz; mostrei só a voz 1 e este compasso ainda não pode ser reescrito' } : {}) });
+        ...(letra ? { letra } : {}),
+        ...(voices > 2 ? { aviso: 'tem mais de duas vozes ou duas pautas; este compasso ainda não pode ser reescrito por aqui' } : {}) });
     }
     return { musica: input.musica, parte: input.parte, nome: partes[idx].name, compassos: out };
   }
@@ -200,7 +206,7 @@ async function runTool(name, input, ctx) {
     return { musica: input.musica,
       compassos_com_tempo_errado: r.compassos.slice(0, 60).map(x => ({ parte: k(x.pi), compasso: +x.num, soma: x.tem, deveria: x.deveria })),
       total_com_tempo_errado: r.compassos.length,
-      compassos_com_duas_vozes: r.duasVozes.slice(0, 40).map(x => ({ parte: k(x.pi), compasso: +x.num })),
+      compassos_que_nao_da_para_reescrever: r.duasVozes.slice(0, 40).map(x => ({ parte: k(x.pi), compasso: +x.num })),
       dica: r.compassos.length ? 'Leia esses compassos com ver_notas e proponha corrigir_notas com o compasso inteiro somando o certo (compare com as outras partes no mesmo compasso).' : 'Todos os compassos fecham.' };
   }
   if (name === 'ver_malak') {
@@ -242,7 +248,7 @@ class XmlOut { serializeToString(doc) { return doc.toString(); } }
 // the person sees them (wrong sums, words the app doesn't know, bars with two voices, a part that doesn't exist)
 async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
   const ruins = [], porMusica = {};
-  for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte', 'estrutura'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
+  for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte', 'estrutura', 'letra'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
   for (const [id, lista] of Object.entries(porMusica)) {
     const s = await data(band.collection('songs').doc(id));
     let P; try { P = await abrir(ctx, s); } catch (e) { ruins.push(`${id}: não consegui abrir a partitura (${e.message})`); continue; }
@@ -267,11 +273,13 @@ async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
         P.applyStructure(c, pi);
       } catch (e) { ruins.push(`${c.acao} c.${c.compasso}: ${e.message}`); }
     }
-    for (const c of lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo))) {
+    const notasPrimeiro = lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo)).sort((a, b) => (a.tipo === 'letra') - (b.tipo === 'letra'));
+    for (const c of notasPrimeiro) {
       const pi = keys.indexOf(c.parte);
       try {
         if (pi < 0) throw new Error('instrumento não encontrado (use as chaves de ver_musica)');
         if (c.tipo === 'cifras') P.setChords(pi, c.compasso, c.cifras);
+        else if (c.tipo === 'letra') { if (soLida) throw new Error('letra só em partitura editável'); P.setLyrics(pi, c.compasso, c.silabas); }
         else if (soLida) {
           const ev = Partitura.parseTokens(c.notas), len = P.context(pi, c.compasso).len;
           const soma = ev.reduce((t, e) => t + e.dur, 0);
@@ -279,6 +287,11 @@ async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
         } else P.setTokens(pi, c.compasso, c.notas);
       } catch (e) { ruins.push(`${c.parte} c.${c.compasso}: ${e.message}`); }
     }
+  }
+  for (const m of mudancas.filter(x => x.tipo === 'redesenhar_pdf')) {
+    const s = await data(band.collection('songs').doc(m.musica));
+    if (!s?.partitura?.xml) ruins.push(`${m.musica}: redesenhar os PDFs só em música com partitura editável`);
+    else if (s.partitura.origem === 'criada no app') ruins.push(`${m.musica}: os PDFs desta música já são redesenhados sozinhos a cada mudança`);
   }
   return ruins.slice(0, 12);
 }

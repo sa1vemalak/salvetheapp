@@ -82,6 +82,20 @@ const srv = require(path.join(FN, 'index.js'));
     { tipo: 'estrutura', musica: 'm1', acao: 'tom', compasso: 1, ate: 1, quantos: 0, valor: 'H', parte: 'todas', descricao: 'x' },
     { tipo: 'estrutura', musica: 'm1', acao: 'tirar_compassos', compasso: 1, ate: 6, quantos: 0, valor: '', parte: 'todas', descricao: 'x' }] });
   confere('fórmula, tom e apagar tudo inválidos voltam para o Caio', est2.erro && /7\/5/.test(est2.erro) && /"H"/.test(est2.erro) && /todos os compassos/.test(est2.erro), JSON.stringify(est2));
+  console.log('Segunda voz, letra e PDF');
+  ctx.proposta = null;
+  const vl = await run('propor_mudancas', { resumo: 'x', mudancas: [
+    { tipo: 'letra', musica: 'm1', parte: 'trompete', compasso: 2, silabas: 'La- iá', descricao: 'x' },
+    { tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 2, notas: 'C5:2 D5:2 || A4:4', descricao: 'x' }] });
+  confere('letra depois das notas novas e segunda voz', vl.ok === true, JSON.stringify(vl));
+  ctx.proposta = null;
+  const vl2 = await run('propor_mudancas', { resumo: 'x', mudancas: [
+    { tipo: 'letra', musica: 'm1', parte: 'trompete', compasso: 1, silabas: 'a b c d e f', descricao: 'x' },
+    { tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 4, notas: 'C5:4 || A4:3', descricao: 'x' },
+    { tipo: 'redesenhar_pdf', musica: 'm1', descricao: 'x' }] });
+  confere('sílabas demais e segunda voz curta voltam; PDF de música sem PDF de arranjador também', vl2.erro && /sílabas/.test(vl2.erro) && /segunda voz/.test(vl2.erro) && !/redesenhar/.test(vl2.erro), JSON.stringify(vl2));
+  const vn2 = await run('ver_notas', { musica: 'm1', parte: 'trompete', de: 1, ate: 1 });
+  confere('ver_notas segue sem letra quando não há', !('letra' in vn2.compassos[0]), JSON.stringify(vn2.compassos[0]));
   console.log(`\n${ok} ok, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

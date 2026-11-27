@@ -84,17 +84,17 @@
 
   // bar -> events (voice 1): [{pitches: ['D5','F#5'], dur, rest, arts: '>', tie, pre: ['mf', 'cresc'], slur: ')(', fermata}]
   // the list also carries .tail: marks after the last note (ex.: a hairpin that ends at the barline)
-  P.events = function (pi, num) {
+  P.events = function (pi, num, voice = '1') {
     const m = this.measure(pi, num); if (!m) return null;
     const out = []; let pre = [];
     for (const n of m.children) {
       if (n.tagName === 'direction') {
-        const v = txt(n, 'voice', '1'); const ds = v === '1' ? dynDir(n) : null;
+        const v = txt(n, 'voice', '1'); const ds = v === '1' && voice === '1' ? dynDir(n) : null;
         if (ds) pre.push(...ds);
         continue;
       }
       if (n.tagName !== 'note') continue;
-      if (txt(n, 'voice', '1') !== '1' || kid(n, 'grace')) continue;
+      if (txt(n, 'voice', '1') !== voice || kid(n, 'grace')) continue;
       const dur = (parseInt(txt(n, 'duration', '0')) || 0) / DIV;
       const pitch = kid(n, 'pitch');
       const name = pitch ? txt(pitch, 'step') + ({ '-2': 'bb', '-1': 'b', '1': '#', '2': '##' }[String(Math.round(parseFloat(txt(pitch, 'alter', '0'))))] || '') + txt(pitch, 'octave') : null;
@@ -128,10 +128,13 @@
   const tokenOf = e => [...(e.pre || []), (e.rest ? 'R' : e.pitches.join('+')) + ':' + fmt(e.dur) + (e.arts || '') + (e.fermata ? '@' : '') + (e.slur || '') + (e.tie ? '~' : '')].join(' ');
   const joinTokens = list => list.map(tokenOf).concat(list.tail || []).join(' ');
   Partitura.tokenOf = tokenOf; Partitura.joinTokens = joinTokens;
+  // a bar with a second voice reads "voice 1 || voice 2"
   P.tokens = function (pi, num) {
     const ev = this.events(pi, num); if (!ev) return null;
-    return joinTokens(ev);
+    const v2 = this.hasVoice2(pi, num) ? this.events(pi, num, '2') : null;
+    return joinTokens(ev) + (v2 ? ' || ' + joinTokens(v2) : '');
   };
+  P.hasVoice2 = function (pi, num) { const m = this.measure(pi, num); return !!m && kids(m, 'note').some(n => txt(n, 'voice', '1') === '2'); };
 
   function parseTokens(s) {
     const out = []; let pre = [];
@@ -171,12 +174,24 @@
 
   // rewrite voice 1 of one bar; everything else in the bar (attributes, text, rehearsal marks, barlines, harmony) stays.
   // The bar's dynamics and hairpins are part of the tokens, so they are rewritten too.
+  // A second voice goes after "||" ("E5:4 || C5:2 B4:2"); without "||" the bar's second voice (if any) stays as it is,
+  // and "voz 1 ||" with nothing after it removes the second voice. The bar's lyrics are kept on the new notes.
   P.setTokens = function (pi, num, tokenStr) {
     const m = this.measure(pi, num); if (!m) throw new Error(`não achei o compasso ${num}`);
-    if (this.voices(pi, num) > 1) throw new Error(`o compasso ${num} tem mais de uma voz; edite pelo MuseScore`);
-    const ev = parseTokens(tokenStr), { len } = this.context(pi, num);
-    const units = ev.reduce((t, e) => t + Math.round(e.dur * DIV), 0);
-    if (units !== Math.round(len * DIV)) throw new Error(`o compasso ${num} tem ${fmt(len)} tempos e a correção soma ${fmt(units / DIV)}`);
+    const vs = new Set(kids(m, 'note').map(n => txt(n, 'voice', '1')));
+    if ([...vs].some(v => v !== '1' && v !== '2') || kids(m, 'note').some(n => txt(n, 'staff', '1') !== '1'))
+      throw new Error(`o compasso ${num} tem mais de duas vozes ou duas pautas; edite pelo MuseScore`);
+    let [s1, s2] = String(tokenStr).split('||');
+    if (s2 === undefined && vs.has('2')) s2 = joinTokens(this.events(pi, num, '2'));
+    const two = s2 !== undefined && s2.trim() !== '';
+    const lyr = this.lyrics(pi, num);
+    const { len } = this.context(pi, num);
+    const check = (ev, v) => {
+      const units = ev.reduce((t, e) => t + Math.round(e.dur * DIV), 0);
+      if (units !== Math.round(len * DIV)) throw new Error(`o compasso ${num} tem ${fmt(len)} tempos e a ${v === '2' ? 'segunda voz' : 'correção'} soma ${fmt(units / DIV)}`);
+    };
+    const ev = parseTokens(s1); check(ev, '1');
+    const ev2 = two ? parseTokens(s2) : null; if (ev2) check(ev2, '2');
     const d = this.doc, mk = (tag, text, attrs) => { const e = d.createElement(tag); if (text != null) e.textContent = text; for (const k in (attrs || {})) e.setAttribute(k, attrs[k]); return e; };
     const dirOf = w => {
       const dir = mk('direction', null, { placement: 'below' }), dt = mk('direction-type');
@@ -188,11 +203,12 @@
     };
     const old = kids(m, 'note').concat(kids(m, 'backup'), kids(m, 'forward'), kids(m, 'direction').filter(x => dynDir(x)));
     const anchor = kids(m, 'note')[0] || null;
+    const prev = this.measures(pi)[this.measures(pi).indexOf(m) - 1];
+    const notes = [];
+    const build = (ev, voice) => {
     // tie into this bar from the previous one
     let tiedIn = new Set();
-    const prev = this.measures(pi)[this.measures(pi).indexOf(m) - 1];
-    if (prev) { const pe = this.events(pi, prev.getAttribute('number')); const last = pe && pe[pe.length - 1]; if (last && last.tie) tiedIn = new Set(last.pitches); }
-    const notes = [];
+    if (prev) { const pe = this.events(pi, prev.getAttribute('number'), voice); const last = pe && pe[pe.length - 1]; if (last && last.tie) tiedIn = new Set(last.pitches); }
     let tup = null;   // open triplet bracket: {units, heads}
     // close the bracket on its last note; a group of eighths or shorter (no rests) is beamed together
     const closeTup = () => {
@@ -204,7 +220,7 @@
       tup = null;
     };
     ev.forEach((e, ei) => {
-      for (const w of e.pre || []) notes.push(dirOf(w));
+      if (voice === '1') for (const w of e.pre || []) notes.push(dirOf(w));
       const trip = isTriplet(e.dur);
       const ps = trip ? pieces(e.dur * 3 / 2).map(p => ({ ...p, real: p.q * 2 / 3 })) : pieces(e.dur).map(p => ({ ...p, real: p.q }));
       const heads = [];   // first note element (not chord) of each piece
@@ -225,9 +241,10 @@
           const start = name && (!lastPiece || e.tie);
           if (stop) n.append(mk('tie', null, { type: 'stop' }));
           if (start) n.append(mk('tie', null, { type: 'start' }));
-          n.append(mk('voice', '1'));
+          n.append(mk('voice', voice));
           n.append(mk('type', pc.type)); for (let x = 0; x < pc.dots; x++) n.append(mk('dot'));
           if (trip) { const tm = mk('time-modification'); tm.append(mk('actual-notes', '3'), mk('normal-notes', '2')); n.append(tm); }
+          if (two && name) n.append(mk('stem', voice === '1' ? 'up' : 'down'));
           const nots = [];
           if (stop) nots.push(mk('tied', null, { type: 'stop' }));
           if (start) nots.push(mk('tied', null, { type: 'start' }));
@@ -252,11 +269,50 @@
       } else if (tup) closeTup();
     });
     if (tup) closeTup();
+    };
+    build(ev, '1');
+    if (ev2) { notes.push(mk('backup', null)); notes[notes.length - 1].append(mk('duration', String(Math.round(len * DIV)))); build(ev2, '2'); }
     for (const w of ev.tail || []) notes.push(dirOf(w));
     // the new notes go where the old ones were (after the bar's attributes, before its closing barline)
     const before = anchor || kids(m, 'barline').find(b => b.getAttribute('location') === 'right') || null;
     notes.forEach(n => before ? m.insertBefore(n, before) : m.append(n));
     old.forEach(o => o.remove());
+    if (lyr) this.setLyrics(pi, num, lyr, { cortar: true });
+    return this;
+  };
+
+  /* lyrics (voice 1): one syllable per note, in order; "Ca- sa" (a hyphen links to the next syllable, also across the
+     barline), "_" skips a note (the syllable before keeps sounding). Notes tied over from the one before get nothing. */
+  const lyricNotes = (m) => kids(m, 'note').filter(n => txt(n, 'voice', '1') === '1' && !kid(n, 'chord') && !kid(n, 'rest') && !kid(n, 'grace')
+    && !kids(n, 'tie').some(t => t.getAttribute('type') === 'stop'));
+  P.lyrics = function (pi, num) {
+    const m = this.measure(pi, num); if (!m) return null;
+    const out = lyricNotes(m).map(n => {
+      const l = kid(n, 'lyric'); if (!l) return '_';
+      const sy = txt(l, 'syllabic', 'single');
+      return txt(l, 'text') + (sy === 'begin' || sy === 'middle' ? '-' : '');
+    });
+    while (out.length && out[out.length - 1] === '_') out.pop();
+    return out.join(' ');
+  };
+  P.setLyrics = function (pi, num, text, opts = {}) {
+    const m = this.measure(pi, num); if (!m) throw new Error(`não achei o compasso ${num}`);
+    const toks = String(text || '').trim().split(/\s+/).filter(Boolean);
+    const ns = lyricNotes(m);
+    if (toks.length > ns.length && !opts.cortar) throw new Error(`o compasso ${num} tem ${ns.length} nota${ns.length === 1 ? '' : 's'} para cantar e a letra tem ${toks.length} sílabas`);
+    for (const n of kids(m, 'note')) for (const l of kids(n, 'lyric')) l.remove();
+    // does the syllable before this bar continue into it?
+    const ms = this.measures(pi), prevM = ms[ms.indexOf(m) - 1];
+    let before = false;
+    if (prevM) { const pl = lyricNotes(prevM).map(n => kid(n, 'lyric')).filter(Boolean).pop(); before = !!pl && ['begin', 'middle'].includes(txt(pl, 'syllabic')); }
+    toks.slice(0, ns.length).forEach((t, i) => {
+      if (t === '_') return;
+      const after = t.length > 1 && t.endsWith('-'), word = after ? t.slice(0, -1) : t;
+      const l = this._mk('lyric', null, { number: '1' });
+      l.append(this._mk('syllabic', before && after ? 'middle' : before ? 'end' : after ? 'begin' : 'single'), this._mk('text', word));
+      ns[i].append(l);
+      before = after;
+    });
     return this;
   };
 
@@ -282,7 +338,7 @@
     return out;
   };
   // bars whose notes don't fill the time signature (voice 1), for every part. A bar that is short in every part
-  // (a pickup) is fine. Returns [{pi, num, tem, deveria}] in quarters, plus the bars with more than one voice.
+  // (a pickup) is fine. Returns [{pi, num, tem, deveria}] in quarters, plus the bars the app can't rewrite (3+ voices, 2 staves).
   P.checkBars = function () {
     const parts = this.parts(), byNum = {}, voices = [];
     for (const p of parts) for (const m of this.measures(p.i)) {
@@ -290,7 +346,7 @@
       const u = kids(m, 'note').filter(n => txt(n, 'voice', '1') === '1' && !kid(n, 'chord') && !kid(n, 'grace')).reduce((t, n) => t + (parseInt(txt(n, 'duration', '0')) || 0), 0);
       const len = Math.round(this.context(p.i, num).len * DIV);
       (byNum[num] = byNum[num] || []).push({ pi: p.i, num, u, len, chart: false });
-      if (this.voices(p.i, num) > 1) voices.push({ pi: p.i, num });
+      if (kids(m, 'note').some(n => !['1', '2'].includes(txt(n, 'voice', '1')) || txt(n, 'staff', '1') !== '1')) voices.push({ pi: p.i, num });
     }
     const out = [];
     for (const list of Object.values(byNum)) {
@@ -311,11 +367,12 @@
   P.transpose = function (semis, a, b, pi) {
     const parts = (pi == null ? this.parts().map(p => p.i) : [pi]).filter(p => !this.isChart(p));   // the Base's slashes don't move
     for (const p of parts) for (const m of this.measures(p)) {
-      const num = parseInt(m.getAttribute('number')); if (num < a || num > b || this.voices(p, num) > 1) continue;
+      const num = parseInt(m.getAttribute('number')); if (num < a || num > b || this.voices(p, num) > 2) continue;
       const { fifths } = this.context(p, num);
-      const ev = this.events(p, num); if (!ev || ev.every(e => e.rest)) continue;
-      const moved = ev.map(e => ({ ...e, pitches: e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)) })); moved.tail = ev.tail;
-      this.setTokens(p, num, joinTokens(moved));
+      const mv = ev => { const o = ev.map(e => ({ ...e, pitches: e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)) })); o.tail = ev.tail; return joinTokens(o); };
+      const ev = this.events(p, num), v2 = this.hasVoice2(p, num) ? this.events(p, num, '2') : null;
+      if (!ev || (ev.every(e => e.rest) && !v2)) continue;
+      try { this.setTokens(p, num, mv(ev) + (v2 ? ' || ' + mv(v2) : '')); } catch { /* a bar the app can't rewrite (two staves) stays */ }
     }
     return this;
   };

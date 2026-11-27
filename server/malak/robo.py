@@ -1105,9 +1105,11 @@ def run(job):
                 e_grade = lambda p: bool(re.search(r'grade|score|partitura|full', (p.get('name') or '') + (p.get('key') or ''), re.I))
                 grade = next((p for p in atuais if e_grade(p)), None)
                 grade_velha = grade is not None and not do_app(grade) and any(do_app(p) for p in atuais if not e_grade(p))
-                if novas or grade_velha:
-                    so = novas | ({'grade'} if grade is not None else set())
-                    job.step('Desenhando o PDF da parte nova e a grade', 8)
+                # the band asked (through Caio) to redraw every PDF from the edited score, replacing the arranger's
+                redesenhar = bool(pmeta.get('redesenhar'))
+                if novas or grade_velha or redesenhar:
+                    so = None if redesenhar else novas | ({'grade'} if grade is not None else set())
+                    job.step('Desenhando de novo todos os PDFs' if redesenhar else 'Desenhando o PDF da parte nova e a grade', 8)
                     dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
                     feitas = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest, so=so)
                     for p in feitas:  # the new grade keeps the old one's key and name (the reader and the notes use them)
@@ -1120,6 +1122,8 @@ def run(job):
                     upd_pdf = {'parts': todas}
                     if novas:
                         upd_pdf['partitura.partesSemPdf'] = firestore.DELETE_FIELD
+                    if redesenhar:
+                        upd_pdf['partitura.redesenhar'] = firestore.DELETE_FIELD
                     song_ref.update(upd_pdf)
                     parts = [p for p in todas if p.get('src')]
         fontes = [] if (reuse or src_files) else [f for f in song.get('fontes', []) if re.search(r'\.(musicxml|mxl|xml|mscz|mscx)$', f.get('name', ''), re.I)]
