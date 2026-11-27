@@ -62,6 +62,11 @@ const TOOLS = [
             obj({ tipo: { type: 'string', enum: ['corrigir_notas'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas'), compasso: int('número do compasso'), notas: str('o compasso inteiro, corrigido, no formato de ver_notas, com as dinâmicas, ligaduras e marcas que devem ficar (ex.: "mf D5:1( E5:1) F#5:2@" ou "C5:1/3 D5:1/3 E5:1/3 F5:3"); as durações devem somar exatamente "tempos" daquele compasso em ver_notas (2 num 2/4, 3 num 3/4, 4 num 4/4). O que você não escrever some do compasso (dinâmica, ligadura, acento).'), descricao: str('o que muda, em palavras de músico (ex.: "a 3ª nota é Fá#, não Fá")') }),
             obj({ tipo: { type: 'string', enum: ['cifras'] }, musica: str('id'), parte: str('chave do instrumento, como em ver_notas (normalmente a Base)'), compasso: int('número do compasso'), cifras: str('as cifras do compasso inteiro, em ordem, separadas por espaço (ex.: "Am7" ou "Am7 D7" para dividir ao meio, ou "Am7:3 D7:1" dizendo os tempos de cada); vazio apaga'), descricao: str('o que muda') }),
             obj({ tipo: { type: 'string', enum: ['nova_parte'] }, musica: str('id'), instrumento: { type: 'string', enum: Object.keys(INSTRUMENTOS), description: 'o instrumento novo: ' + Object.entries(INSTRUMENTOS).map(([k, n]) => k + ' = ' + n).join(', ') }, copiar_de: str('chave de uma parte que já existe para a nova começar dobrando (mesmo som, o app transpõe sozinho para o instrumento novo), ou vazio para começar só com pausas'), oitava: int('com copiar_de: 0 no mesmo som, 1 uma oitava acima, -1 uma oitava abaixo; sem copiar_de use 0'), descricao: str('o que é, em palavras simples') }),
+            obj({ tipo: { type: 'string', enum: ['estrutura'] }, musica: str('id'),
+              acao: { type: 'string', enum: ['formula', 'tom', 'andamento', 'ensaio', 'texto', 'barra', 'por_compassos', 'tirar_compassos', 'transpor'], description: 'formula: fórmula de compasso a partir de "compasso" (valor "3/4", "6/8"); tom: armadura a partir de "compasso", em tom de concerto (valor "Bb", "F#m"; cada instrumento ganha o tom escrito dele; as notas não mudam); andamento: marca de andamento no começo do compasso (valor "96" ou "96 Balada"; "0" apaga); ensaio: letra de ensaio em todas as partes (valor "A", "Refrão"; vazio apaga); texto: texto em cima da pauta (valor "solo", "só na 2ª vez"; vazio apaga os textos do compasso) na parte "parte" ou em todas; barra: valor inicio (começa repetição), fim (volta para o começo da repetição), casa1 ou casa2 (de "compasso" até "ate"), dupla, final, nada (tira repetições e casas); por_compassos: põe "quantos" compassos vazios depois de "compasso" (os seguintes são renumerados); tirar_compassos: apaga de "compasso" até "ate" (os seguintes são renumerados); transpor: sobe ou desce as notas de "compasso" até "ate" (valor em semitons, ex.: "2", "-12") na parte "parte" ou em todas' },
+              compasso: int('compasso onde a mudança começa'), ate: int('último compasso (barra casa1/casa2, tirar_compassos, transpor); senão igual a compasso'),
+              quantos: int('só para por_compassos: quantos compassos; senão 0'), valor: str('o valor da ação (veja acao); vazio quando não precisa'),
+              parte: str('chave do instrumento para texto e transpor, ou "todas"'), descricao: str('o que muda, em palavras simples') }),
             obj({ tipo: { type: 'string', enum: ['renomear_musica'] }, musica: str('id'), titulo: str('novo título'), rotulo: str('novo rótulo curto, ou vazio'), descricao: str('o que é') }),
           ],
         },
@@ -87,7 +92,8 @@ O que você consegue fazer:
 - criar partitura: quando a música tem uma partitura nova, em branco (o usuário cria em Editar › Criar partitura, escolhendo instrumentos, fórmula, tom e número de compassos), ajude a escrever: proponha as cifras da Base com mudanças "cifras" e as linhas dos instrumentos com "corrigir_notas", compasso por compasso, sempre conferindo os tempos de cada compasso em ver_notas. Partes que mostram "só cifra" são da base: mude só as cifras delas.
 
 Atenção com o PDF: só nas músicas com partitura criada no app o Malak redesenha os PDFs das partes depois de cada mudança. Nas músicas que vieram do PDF do arranjador, a mudança vale para a partitura editável e o áudio de estudo, mas o PDF que o músico lê na estante continua o do arranjador (só uma parte nova ganha PDF próprio); diga isso ao propor e, se ajudar, proponha também uma anotação no compasso para o músico ver.
-O que você ainda não consegue: mudar a fórmula de compasso, o tom ou o andamento, pôr ou tirar compassos, letras de ensaio, repetições e casas, textos na pauta ("solo", "só na 2ª"), letra de música, notas de enfeite e compassos com duas vozes (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar (ex.: escrever "tocar 8ª abaixo" no compasso). Nunca diga que fez algo que não está na proposta.
+- mudar a estrutura da música com a mudança "estrutura" (vale para todas as partes de uma vez): fórmula de compasso, tom (armadura), andamento, letra de ensaio, texto em cima da pauta ("solo", "só na 2ª vez"), repetições, casa 1 e casa 2, barra dupla e final, pôr e tirar compassos, transpor um trecho. Na mesma proposta, as mudanças de estrutura são aplicadas antes das notas: depois de pôr ou tirar compassos, os números de compasso em corrigir_notas já são os novos. Mudar a fórmula ajusta sozinho os compassos vazios; os que têm notas você reescreve com corrigir_notas na mesma proposta. Mudar o tom só troca a armadura: para a música soar em outro tom, use também transpor. Pôr ou tirar compassos muda a numeração: avise que as anotações e os marcadores da DAW podem precisar de ajuste.
+O que você ainda não consegue: letra de música, notas de enfeite e compassos com duas vozes (ver_notas avisa). Se pedirem, diga com clareza que isso ainda não dá por aqui e, se ajudar, proponha uma anotação no lugar. Nunca diga que fez algo que não está na proposta.
 Ao corrigir notas: mude só o que foi pedido, mantenha o resto do compasso igual ao lido (inclusive dinâmicas, ligaduras e marcas), e confira que as durações somam o compasso (4/4 = 4). As alturas são as escritas na parte (trompete em Si bemol, sax etc. como o músico lê).
 
 Como trabalhar:
@@ -236,7 +242,7 @@ class XmlOut { serializeToString(doc) { return doc.toString(); } }
 // the person sees them (wrong sums, words the app doesn't know, bars with two voices, a part that doesn't exist)
 async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
   const ruins = [], porMusica = {};
-  for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
+  for (const m of mudancas) if (['corrigir_notas', 'cifras', 'nova_parte', 'estrutura'].includes(m.tipo)) (porMusica[m.musica] = porMusica[m.musica] || []).push(m);
   for (const [id, lista] of Object.entries(porMusica)) {
     const s = await data(band.collection('songs').doc(id));
     let P; try { P = await abrir(ctx, s); } catch (e) { ruins.push(`${id}: não consegui abrir a partitura (${e.message})`); continue; }
@@ -253,7 +259,15 @@ async function conferirProposta(band, mudancas, ctx = { cache: {} }) {
         keys.splice(r.pi, 0, c.instrumento);
       } catch (e) { ruins.push(`nova parte ${c.instrumento}: ${e.message}`); }
     }
-    for (const c of lista.filter(x => x.tipo !== 'nova_parte')) {
+    for (const c of lista.filter(x => x.tipo === 'estrutura')) {
+      try {
+        if (soLida) throw new Error('a estrutura só muda em partitura editável');
+        const pi = !c.parte || c.parte === 'todas' ? null : keys.indexOf(c.parte);
+        if (pi === -1) throw new Error(`não achei a parte "${c.parte}"`);
+        P.applyStructure(c, pi);
+      } catch (e) { ruins.push(`${c.acao} c.${c.compasso}: ${e.message}`); }
+    }
+    for (const c of lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo))) {
       const pi = keys.indexOf(c.parte);
       try {
         if (pi < 0) throw new Error('instrumento não encontrado (use as chaves de ver_musica)');

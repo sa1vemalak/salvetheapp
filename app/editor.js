@@ -298,7 +298,7 @@ const Editor = (() => {
     } catch (e) { console.error(e); scrim.querySelector('.ed-pages').textContent = 'Não consegui abrir a partitura: ' + e.message; }
   }
   // Caio's approved changes to the score: new instruments ({tipo: 'nova_parte', instrumento, copiar_de, oitava}) first,
-  // then bar rewrites ({parte (instrument key), compasso, notas} or cifras)
+  // then the structure ({tipo: 'estrutura', acao, ...}), then bar rewrites ({parte (instrument key), compasso, notas} or cifras)
   async function aplicarCorrecoes(song, lista) {
     const P = new Partitura(await (await fetch(song.partitura.xml)).text());
     const slugify = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -323,7 +323,15 @@ const Editor = (() => {
         feitas.push(c); novas.push(ins.key);
       } catch (e) { erros.push(`${c.instrumento}: ${e.message}`); }
     }
-    for (const c of lista.filter(x => x.tipo !== 'nova_parte')) {
+    // structure changes (time, key, tempo, rehearsal marks, repeats, bars in or out) in the order Caio wrote them, before the notes
+    for (const c of lista.filter(x => x.tipo === 'estrutura')) {
+      try {
+        const pi = !c.parte || c.parte === 'todas' ? null : achar(c.parte);
+        if (pi != null && pi < 0) throw new Error(`não achei a parte "${c.parte}"`);
+        P.applyStructure(c, pi); feitas.push(c);
+      } catch (e) { erros.push(`${c.descricao || c.acao} (c.${c.compasso}): ${e.message}`); }
+    }
+    for (const c of lista.filter(x => !['nova_parte', 'estrutura'].includes(x.tipo))) {
       const pi = achar(c.parte);
       try {
         if (pi < 0) throw new Error('instrumento não encontrado');
