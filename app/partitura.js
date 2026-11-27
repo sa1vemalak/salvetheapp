@@ -421,10 +421,43 @@
         if (!ev || ev.every(e => e.rest)) continue;
         const { fifths } = this.context(pi, num);
         const toks = ev.map(e => (e.rest ? 'R' : e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)).join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : ''));
-        try { this.setTokens(pi, num, toks.join(' ')); copiados++; } catch { pulados.push(num); }
+        try { this.setTokens(pi, num, toks.join(' ')); copiados++; }
+        catch { if (this.copyBar(src, pi, num, semis)) copiados++; else pulados.push(num); }
       }
     }
     return { pi, id, copiados, pulados };
+  };
+
+  /* copy voice 1 of a bar note by note (keeps triplets, sextuplets, beams), transposed by semis and spelled in the
+     target's key; a bar shorter than its time signature gets a rest at the end. A bar longer than its time signature
+     is not copied (returns false). */
+  P.copyBar = function (src, pi, num, semis) {
+    const from = this.measure(src, num), to = this.measure(pi, num); if (!from || !to) return false;
+    const { len, fifths } = this.context(pi, num), full = Math.round(len * DIV);
+    const notes = kids(from, 'note').filter(n => txt(n, 'voice', '1') === '1');
+    const total = notes.filter(n => !kid(n, 'chord') && !kid(n, 'grace')).reduce((t, n) => t + (parseInt(txt(n, 'duration', '0')) || 0), 0);
+    if (!total || total > full) return false;
+    const d = this.doc, mk = (tag, text) => { const e = d.createElement(tag); if (text != null) e.textContent = String(text); return e; };
+    const out = notes.map(n => {
+      const c = n.cloneNode(true);
+      for (const tag of ['lyric', 'accidental', 'staff']) for (const x of kids(c, tag)) x.remove();
+      const pt = kid(c, 'pitch');
+      if (pt) {
+        const nm = nameOf(midiOf(txt(pt, 'step') + ({ '-2': 'bb', '-1': 'b', '1': '#', '2': '##' }[String(Math.round(parseFloat(txt(pt, 'alter', '0'))))] || '') + txt(pt, 'octave')) + semis, fifths);
+        const m = /^([A-G])(#|b)?(-?\d)$/.exec(nm);
+        while (pt.firstChild) pt.firstChild.remove();
+        pt.append(mk('step', m[1])); if (m[2]) pt.append(mk('alter', m[2] === '#' ? 1 : -1)); pt.append(mk('octave', m[3]));
+      }
+      return c;
+    });
+    if (total < full) {  // the source bar is short: finish it with rests so the new part is whole
+      for (const pc of pieces((full - total) / DIV)) { const r = mk('note'); r.append(mk('rest'), mk('duration', Math.round(pc.q * DIV)), mk('voice', 1), mk('type', pc.type)); for (let x = 0; x < pc.dots; x++) r.append(mk('dot')); out.push(r); }
+    }
+    const old = kids(to, 'note').concat(kids(to, 'backup'), kids(to, 'forward'));
+    const anchor = old[0] || null;
+    out.forEach(n => anchor ? to.insertBefore(n, anchor) : to.append(n));
+    old.forEach(o => o.remove());
+    return true;
   };
 
   root.Partitura = Partitura;

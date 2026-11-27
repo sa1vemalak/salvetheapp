@@ -320,7 +320,7 @@ const Editor = (() => {
         if (antes < 0) antes = P.parts().findIndex((p, i) => P.isChart(i) || /^base/i.test(p.name));
         const r = P.addPart(ins.key, { copiarDe: src, oitava: c.oitava | 0, antes: antes < 0 ? null : antes });
         partes.splice(r.pi, 0, { key: ins.key, name: ins.nome });
-        if (r.pulados.length) erros.push(`${ins.nome}: não copiei os compassos ${r.pulados.slice(0, 8).join(', ')}${r.pulados.length > 8 ? '…' : ''} (escreva à mão)`);
+        if (r.pulados.length) erros.push(`${ins.nome}: não copiei os compassos ${r.pulados.slice(0, 8).join(', ')}${r.pulados.length > 8 ? '…' : ''} : eles têm tempo a mais na parte de origem. Corrija a origem ou peça ao Caio para escrever esses compassos`);
         feitas.push(c); novas.push(ins.key);
       } catch (e) { erros.push(`${c.instrumento}: ${e.message}`); }
     }

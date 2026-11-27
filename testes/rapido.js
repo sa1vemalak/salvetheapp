@@ -89,6 +89,22 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('compasso vazio continua pausa', np.c2 === 'R:4', np.c2);
   confere('o tenor não mudou', np.tenor === 'G4:1 A4:1 B4:2', np.tenor);
   confere('dá para escrever notas na parte nova', np.escreve === 'A4:4', np.escreve);
+  // compassos difíceis da parte de origem: tercina, compasso curto (ganha pausa no fim) e compasso longo (fica de fora)
+  const dif = await p.evaluate(() => {
+    const P = new Partitura(Partitura.blank({ instrumentos: ['trompete', 'sax-tenor'], compassos: 3 }));
+    const put = (num, xs) => { const m = P.measure(1, num); for (const n of [...m.getElementsByTagName('note')]) n.remove();
+      for (const x of xs) m.append(P.doc.importNode(new DOMParser().parseFromString(x, 'application/xml').documentElement, true)); };
+    const nt = (st, d, extra = '') => `<note><pitch><step>${st}</step><octave>5</octave></pitch><duration>${d}</duration><voice>1</voice><type>quarter</type>${extra}</note>`;
+    const tri = '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>';
+    put(1, [nt('C', 8, tri), nt('D', 8, tri), nt('E', 8, tri), nt('F', 72)]);
+    put(2, [nt('G', 24), nt('A', 24), nt('B', 24)]);
+    put(3, [nt('C', 72), nt('D', 30)]);
+    const r = P.addPart('sax-alto', { copiarDe: 1 });
+    return { pulados: r.pulados, c1: P.tokens(r.pi, 1), c2: P.tokens(r.pi, 2), c3: P.tokens(r.pi, 3) };
+  });
+  confere('copia compasso com tercina', dif.c1 === 'G4:0.333 A4:0.333 B4:0.333 C5:3', dif.c1);
+  confere('compasso curto na origem ganha pausa no fim', dif.c2 === 'D5:1 E5:1 F#5:1 R:1', dif.c2);
+  confere('compasso longo demais na origem fica de fora e é avisado', JSON.stringify(dif.pulados) === '["3"]' && dif.c3 === 'R:4', JSON.stringify(dif));
   // o botão Aplicar com uma proposta "nova_parte" + notas para ela: salva uma versão nova com a parte e a lista de instrumentos
   const ap = await p.evaluate(async () => {
     const xml = Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'sax-tenor', 'trombone', 'base'], formula: '4/4', fifths: 0, compassos: 4 });
