@@ -1,0 +1,353 @@
+/* salvetheapp · Partitura: the editable score (MusicXML) as the song's source of truth.
+   Every edit — a finger on a note or Caio's proposal — becomes "rewrite this bar of this part" in one token language,
+   the same one Caio reads and writes:  "D5:1 E5:0.5. R:0.5 F#5+A5:2>~"   (written pitch, durations in quarter notes)
+     suffixes: > accent  . staccato  - tenuto  ^ marcato  ~ tied to the next note
+   Works in the browser (DOMParser) and in Node tests (pass a DOMParser / XMLSerializer pair). */
+(function (root) {
+  const STEPS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+  const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const DIV = 24;  // every duration in the score is rewritten to 24 per quarter, so bars can be swapped freely
+  const SHARP_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const FLAT_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+  const TYPES = [[4, 'whole'], [2, 'half'], [1, 'quarter'], [0.5, 'eighth'], [0.25, '16th'], [0.125, '32nd']];
+  const ARTS = { '>': 'accent', '.': 'staccato', '-': 'tenuto', '^': 'strong-accent' };
+
+  const kids = (el, tag) => el ? [...el.children].filter(c => c.tagName === tag) : [];
+  const kid = (el, tag) => kids(el, tag)[0] || null;
+  const txt = (el, tag, d = '') => { const k = kid(el, tag); return k ? k.textContent.trim() : d; };
+
+  function Partitura(xmlText, env) {
+    env = env || {};
+    const Parser = env.DOMParser || root.DOMParser, Ser = env.XMLSerializer || root.XMLSerializer;
+    this._ser = new Ser();
+    this.doc = new Parser().parseFromString(xmlText, 'application/xml');
+    if (this.doc.getElementsByTagName('parsererror').length) throw new Error('MusicXML inválido');
+    this.normalize();
+  }
+  const P = Partitura.prototype;
+
+  P.parts = function () {
+    const list = [...this.doc.getElementsByTagName('score-part')];
+    return [...this.doc.getElementsByTagName('part')].map((p, i) => {
+      const sp = list.find(x => x.getAttribute('id') === p.getAttribute('id')) || list[i];
+      return { i, id: p.getAttribute('id'), name: sp ? txt(sp, 'part-name', `Parte ${i + 1}`) : `Parte ${i + 1}`, el: p };
+    });
+  };
+  P.measures = function (pi) { return kids(this.parts()[pi].el, 'measure'); };
+  P.measure = function (pi, num) { return this.measures(pi).find(m => m.getAttribute('number') === String(num)) || null; };
+
+  // one unit for all durations (24 per quarter)
+  P.normalize = function () {
+    for (const part of this.doc.getElementsByTagName('part')) {
+      let div = 1, fifths = null;
+      for (const m of kids(part, 'measure')) {
+        // a key signature that repeats the one in force (left over from reading a PDF) is noise on the page
+        for (const at of kids(m, 'attributes')) for (const k of kids(at, 'key')) {
+          const f = parseInt(txt(k, 'fifths', '0')) || 0;
+          if (fifths !== null && f === fifths) k.remove(); else fifths = f;
+        }
+        for (const el of m.getElementsByTagName('*')) {
+          if (el.tagName === 'divisions') { div = Math.max(1, parseFloat(el.textContent) || 1); el.textContent = String(DIV); }
+          else if (el.tagName === 'duration') el.textContent = String(Math.round(parseFloat(el.textContent || '0') * DIV / div));
+        }
+      }
+    }
+  };
+
+  // bar length (quarters) and key (fifths) in force at a bar of a part
+  P.context = function (pi, num) {
+    let beats = 4, type = 4, fifths = 0;
+    for (const m of this.measures(pi)) {
+      for (const at of kids(m, 'attributes')) {
+        const t = kid(at, 'time'); if (t && txt(t, 'beats')) { beats = parseInt(txt(t, 'beats')) || beats; type = parseInt(txt(t, 'beat-type')) || type; }
+        const k = kid(at, 'key'); if (k && txt(k, 'fifths') !== '') fifths = parseInt(txt(k, 'fifths')) || 0;
+      }
+      if (m.getAttribute('number') === String(num)) break;
+    }
+    return { len: beats * 4 / type, beats, type, fifths };
+  };
+
+  // bar -> events (voice 1): [{pitches: ['D5','F#5'], dur, rest, arts: '>', tie}]
+  P.events = function (pi, num) {
+    const m = this.measure(pi, num); if (!m) return null;
+    const out = [];
+    for (const n of kids(m, 'note')) {
+      if (txt(n, 'voice', '1') !== '1' || kid(n, 'grace')) continue;
+      const dur = (parseInt(txt(n, 'duration', '0')) || 0) / DIV;
+      const pitch = kid(n, 'pitch');
+      const name = pitch ? txt(pitch, 'step') + ({ '-2': 'bb', '-1': 'b', '1': '#', '2': '##' }[String(Math.round(parseFloat(txt(pitch, 'alter', '0'))))] || '') + txt(pitch, 'octave') : null;
+      const tie = kids(n, 'tie').some(t => t.getAttribute('type') === 'start');
+      let arts = '';
+      const not = kid(n, 'notations'), ar = kid(not, 'articulations');
+      if (ar) for (const [sym, tag] of Object.entries(ARTS)) if (kid(ar, tag)) arts += sym;
+      if (kid(n, 'chord') && out.length) { const last = out[out.length - 1]; if (name) last.pitches.push(name); continue; }
+      out.push({ pitches: name ? [name] : [], dur, rest: !pitch, arts, tie });
+    }
+    return out;
+  };
+  P.voices = function (pi, num) { const m = this.measure(pi, num); return m ? new Set(kids(m, 'note').map(n => txt(n, 'voice', '1'))).size : 0; };
+
+  const fmt = x => String(Math.round(x * 1000) / 1000);
+  P.tokens = function (pi, num) {
+    const ev = this.events(pi, num); if (!ev) return null;
+    return ev.map(e => (e.rest ? 'R' : e.pitches.join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : '')).join(' ');
+  };
+
+  function parseTokens(s) {
+    const out = [];
+    for (const t of String(s || '').trim().split(/\s+/).filter(Boolean)) {
+      const m = /^(R|[A-G](?:##|bb|#|b)?-?\d(?:\+[A-G](?:##|bb|#|b)?-?\d)*):(\d+(?:\.\d+)?)([>.\-^~]*)$/.exec(t);
+      if (!m) throw new Error(`não entendi "${t}"`);
+      const dur = parseFloat(m[2]); if (!(dur > 0)) throw new Error(`duração inválida em "${t}"`);
+      out.push({ rest: m[1] === 'R', pitches: m[1] === 'R' ? [] : m[1].split('+'), dur, arts: m[3].replace(/~/g, ''), tie: m[3].includes('~') });
+    }
+    return out;
+  }
+  Partitura.parseTokens = parseTokens;
+
+  // a duration -> pieces that have a note type (2.5 -> 2 + 0.5 tied)
+  function pieces(d) {
+    const out = []; let left = d;
+    while (left > 1e-6) {
+      let found = null;
+      for (const [q, t] of TYPES) { for (const dots of [2, 1, 0]) { const v = q * (dots === 2 ? 1.75 : dots === 1 ? 1.5 : 1); if (v <= left + 1e-6) { found = { q: v, type: t, dots }; break; } } if (found) break; }
+      if (!found) found = { q: left, type: '32nd', dots: 0 };
+      out.push(found); left -= found.q;
+    }
+    return out;
+  }
+
+  // rewrite voice 1 of one bar; everything else in the bar (attributes, directions, barlines, harmony) stays
+  P.setTokens = function (pi, num, tokenStr) {
+    const m = this.measure(pi, num); if (!m) throw new Error(`não achei o compasso ${num}`);
+    if (this.voices(pi, num) > 1) throw new Error(`o compasso ${num} tem mais de uma voz; edite pelo MuseScore`);
+    const ev = parseTokens(tokenStr), { len } = this.context(pi, num);
+    const sum = ev.reduce((t, e) => t + e.dur, 0);
+    if (Math.abs(sum - len) > 1e-6) throw new Error(`o compasso ${num} tem ${fmt(len)} tempos e a correção soma ${fmt(sum)}`);
+    const d = this.doc, mk = (tag, text, attrs) => { const e = d.createElement(tag); if (text != null) e.textContent = text; for (const k in (attrs || {})) e.setAttribute(k, attrs[k]); return e; };
+    const old = kids(m, 'note').concat(kids(m, 'backup'), kids(m, 'forward'));
+    const anchor = old.length ? old[0] : null;
+    // tie into this bar from the previous one
+    let tiedIn = new Set();
+    const prev = this.measures(pi)[this.measures(pi).indexOf(m) - 1];
+    if (prev) { const pe = this.events(pi, prev.getAttribute('number')); const last = pe && pe[pe.length - 1]; if (last && last.tie) tiedIn = new Set(last.pitches); }
+    const notes = [];
+    ev.forEach((e, ei) => {
+      const ps = pieces(e.dur);
+      ps.forEach((pc, k) => {
+        const lastPiece = k === ps.length - 1;
+        (e.rest ? [null] : e.pitches).forEach((name, j) => {
+          const n = mk('note');
+          if (j > 0) n.append(mk('chord'));
+          if (!name) n.append(mk('rest'));
+          else {
+            const pm = /^([A-G])(##|bb|#|b)?(-?\d)$/.exec(name);
+            const p = mk('pitch'); p.append(mk('step', pm[1]));
+            const alt = { '#': 1, '##': 2, b: -1, bb: -2 }[pm[2] || ''] || 0; if (alt) p.append(mk('alter', String(alt)));
+            p.append(mk('octave', pm[3])); n.append(p);
+          }
+          n.append(mk('duration', String(Math.round(pc.q * DIV))));
+          const stop = name && ((k > 0) || (ei === 0 && k === 0 && tiedIn.has(name)) || (k === 0 && ei > 0 && ev[ei - 1].tie && ev[ei - 1].pitches.includes(name)));
+          const start = name && (!lastPiece || e.tie);
+          if (stop) n.append(mk('tie', null, { type: 'stop' }));
+          if (start) n.append(mk('tie', null, { type: 'start' }));
+          n.append(mk('voice', '1'));
+          n.append(mk('type', pc.type)); for (let x = 0; x < pc.dots; x++) n.append(mk('dot'));
+          const nots = [];
+          if (stop) nots.push(mk('tied', null, { type: 'stop' }));
+          if (start) nots.push(mk('tied', null, { type: 'start' }));
+          if (name && k === 0 && j === 0 && e.arts) {
+            const ar = mk('articulations'); for (const ch of e.arts) if (ARTS[ch]) ar.append(mk(ARTS[ch])); nots.push(ar);
+          }
+          if (nots.length) { const no = mk('notations'); nots.forEach(x => no.append(x)); n.append(no); }
+          notes.push(n);
+        });
+      });
+    });
+    notes.forEach(n => anchor ? m.insertBefore(n, anchor) : m.append(n));
+    old.forEach(o => o.remove());
+    return this;
+  };
+
+  // pitch helpers (written pitch); spelling follows the key: flats in flat keys, sharps otherwise
+  const midiOf = name => { const m = /^([A-G])(##|bb|#|b)?(-?\d)$/.exec(name); return PC[m[1]] + ({ '#': 1, '##': 2, b: -1, bb: -2 }[m[2] || ''] || 0) + 12 * (parseInt(m[3]) + 1); };
+  const nameOf = (midi, fifths) => { const nm = (fifths < 0 ? FLAT_NAMES : SHARP_NAMES)[((midi % 12) + 12) % 12]; return nm + (Math.floor(midi / 12) - 1); };
+  Partitura.midiOf = midiOf; Partitura.nameOf = nameOf;
+
+  // transpose a stretch (bars a..b, one part or all) by semitones, re-spelled in the key
+  P.transpose = function (semis, a, b, pi) {
+    const parts = pi == null ? this.parts().map(p => p.i) : [pi];
+    for (const p of parts) for (const m of this.measures(p)) {
+      const num = parseInt(m.getAttribute('number')); if (num < a || num > b || this.voices(p, num) > 1) continue;
+      const { fifths } = this.context(p, num);
+      const ev = this.events(p, num); if (!ev || ev.every(e => e.rest)) continue;
+      const toks = ev.map(e => (e.rest ? 'R' : e.pitches.map(x => nameOf(midiOf(x) + semis, fifths)).join('+')) + ':' + fmt(e.dur) + e.arts + (e.tie ? '~' : ''));
+      this.setTokens(p, num, toks.join(' '));
+    }
+    return this;
+  };
+
+  // a dynamic mark (p, mf, f, ff, sfz...) before the event at index idx of a bar
+  P.setDynamic = function (pi, num, idx, mark) {
+    const m = this.measure(pi, num); if (!m) return this;
+    const notes = kids(m, 'note').filter(n => txt(n, 'voice', '1') === '1' && !kid(n, 'chord'));
+    const target = notes[idx] || notes[0];
+    for (const d of kids(m, 'direction')) if (d.getElementsByTagName('dynamics').length && d.nextElementSibling === target) d.remove();
+    if (!mark) return this;
+    const d = this.doc.createElement('direction'); d.setAttribute('placement', 'below');
+    const dt = this.doc.createElement('direction-type'), dy = this.doc.createElement('dynamics'); dy.append(this.doc.createElement(mark));
+    dt.append(dy); d.append(dt);
+    target ? m.insertBefore(d, target) : m.append(d);
+    return this;
+  };
+
+  // bars where a part plays nothing, grouped: [{from, to, bars}] (for counting rests while following the DAW)
+  P.restSpans = function (pi, minBars = 4) {
+    const out = []; let cur = null;
+    for (const m of this.measures(pi)) {
+      const num = parseInt(m.getAttribute('number'));
+      const silent = kids(m, 'note').every(n => !kid(n, 'pitch'));
+      if (silent) { if (cur && cur.to === num - 1) cur.to = num; else { cur = { from: num, to: num }; out.push(cur); } }
+      else cur = null;
+    }
+    return out.map(s => ({ ...s, bars: s.to - s.from + 1 })).filter(s => s.bars >= minBars);
+  };
+
+  // just one part (to draw a musician's part), long rests drawn as one bar with the count on top; MusicXML text
+  P.onlyPart = function (pi, opts = {}) {
+    const clone = this.doc.cloneNode(true);
+    const parts = [...clone.getElementsByTagName('part')], sps = [...clone.getElementsByTagName('score-part')];
+    parts.forEach((p, i) => { if (i !== pi) p.remove(); });
+    sps.forEach((sp, i) => { if (i !== pi) sp.remove(); });
+    for (const g of [...clone.getElementsByTagName('part-group')]) g.remove();
+    if (opts.multirest !== false) multiRests(clone, clone.getElementsByTagName('part')[0]);
+    return this._ser.serializeToString(clone);
+  };
+  // consecutive silent bars -> <multiple-rest>N, broken where the reader needs to see something
+  // (a new time or key signature, a rehearsal mark or text, a repeat or double bar)
+  function multiRests(doc, part) {
+    const ms = kids(part, 'measure');
+    const silent = m => kids(m, 'note').every(n => !kid(n, 'pitch'));
+    const breaksBefore = m => kids(m, 'attributes').some(a => kid(a, 'time') || kid(a, 'key') || kid(a, 'clef')) ||
+      kids(m, 'direction').some(d => d.getElementsByTagName('rehearsal').length || d.getElementsByTagName('words').length) ||
+      kids(m, 'barline').some(b => kid(b, 'repeat') && kid(b, 'repeat').getAttribute('direction') === 'forward' || kid(b, 'ending'));
+    const breaksAfter = m => kids(m, 'barline').some(b => kid(b, 'repeat') || ['light-light', 'light-heavy'].includes(txt(b, 'bar-style')) || kid(b, 'ending'));
+    let i = 0;
+    while (i < ms.length) {
+      if (!silent(ms[i])) { i++; continue; }
+      let j = i;
+      while (j + 1 < ms.length && silent(ms[j + 1]) && !breaksAfter(ms[j]) && !breaksBefore(ms[j + 1])) j++;
+      const n = j - i + 1;
+      if (n >= 2) {
+        let at = kid(ms[i], 'attributes');
+        if (!at) { at = doc.createElement('attributes'); ms[i].insertBefore(at, ms[i].firstElementChild); }
+        const st = doc.createElement('measure-style'), mr = doc.createElement('multiple-rest'); mr.textContent = String(n);
+        st.append(mr); at.append(st);
+      }
+      i = j + 1;
+    }
+  }
+  P.toString = function () { return this._ser.serializeToString(this.doc); };
+
+  /* ---------- chord symbols (the band's chart part, or over any part) ---------- */
+  // "Bbm7", "F#7(#9)", "Am7/G", "Cº" -> MusicXML <harmony>; the text is kept exactly as written
+  const KINDS = [[/^(maj7|7M|Δ7?)$/, 'major-seventh'], [/^(m7b5|ø7?)$/, 'half-diminished'], [/^(dim7|º7|°7)$/, 'diminished-seventh'],
+    [/^(dim|º|°)$/, 'diminished'], [/^(m|min|-)$/, 'minor'], [/^(m7|min7|-7)$/, 'minor-seventh'], [/^(m6)$/, 'minor-sixth'],
+    [/^(m9)$/, 'minor-ninth'], [/^(m11)$/, 'minor-11th'], [/^(maj9)$/, 'major-ninth'], [/^6$/, 'major-sixth'], [/^7$/, 'dominant'],
+    [/^9$/, 'dominant-ninth'], [/^11$/, 'dominant-11th'], [/^13$/, 'dominant-13th'], [/^(\+|aug)$/, 'augmented'],
+    [/^sus4?$/, 'suspended-fourth'], [/^sus2$/, 'suspended-second'], [/^$/, 'major']];
+  function chordParts(sym) {
+    const m = /^([A-G])([b#]?)(.*?)(?:\/([A-G])([b#]?))?$/.exec(String(sym || '').trim());
+    if (!m) throw new Error(`não entendi a cifra "${sym}"`);
+    const suffix = m[3], core = suffix.replace(/\(.*\)$/, '').replace(/^(.*?)(7?)(b5|#5|b9|#9|#11|b13|add9)+$/, '$1$2');
+    const bare = suffix.replace(/[()]/g, '');
+    const kind = (KINDS.find(([rx]) => rx.test(bare)) || KINDS.find(([rx]) => rx.test(core)) || KINDS.find(([rx]) => rx.test(core.replace(/\D+$/, ''))) || [0, core.startsWith('m') ? 'minor-seventh' : 'dominant'])[1];
+    return { step: m[1], alter: m[2] === 'b' ? -1 : m[2] === '#' ? 1 : 0, suffix, kind, bass: m[4] ? { step: m[4], alter: m[5] === 'b' ? -1 : m[5] === '#' ? 1 : 0 } : null };
+  }
+  Partitura.chordParts = chordParts;
+  // chord symbols written in a bar: [{beat (quarters from the start), text}]
+  P.chords = function (pi, num) {
+    const m = this.measure(pi, num); if (!m) return [];
+    const out = []; let pos = 0;
+    for (const c of [...m.children]) {
+      if (c.tagName === 'harmony') {
+        const r = kid(c, 'root'), b = kid(c, 'bass'), k = kid(c, 'kind');
+        const nm = (st, al) => st + (al === '-1' ? 'b' : al === '1' ? '#' : '');
+        const off = parseInt(txt(c, 'offset', '0')) || 0;
+        out.push({ beat: (pos + off) / DIV, text: nm(txt(r, 'root-step'), txt(r, 'root-alter')) + (k ? (k.getAttribute('text') ?? '') : '') + (b ? '/' + nm(txt(b, 'bass-step'), txt(b, 'bass-alter')) : '') });
+      } else if (c.tagName === 'note' && !kid(c, 'chord')) pos += parseInt(txt(c, 'duration', '0')) || 0;
+      else if (c.tagName === 'backup') pos -= parseInt(txt(c, 'duration', '0')) || 0;
+      else if (c.tagName === 'forward') pos += parseInt(txt(c, 'duration', '0')) || 0;
+    }
+    return out;
+  };
+  // replace the chord symbols of a bar: "Am7" (whole bar) or "Am7 D7" (spread evenly) or "Am7:3 D7:1" (beats each)
+  P.setChords = function (pi, num, text) {
+    const m = this.measure(pi, num); if (!m) throw new Error(`o compasso ${num} não existe`);
+    const { len } = this.context(pi, num);
+    const items = String(text || '').trim().split(/\s+/).filter(Boolean).map(t => { const [c, d] = t.split(':'); return { c, d: d ? parseFloat(d) : null }; });
+    const given = items.filter(x => x.d).reduce((a, x) => a + x.d, 0), free = items.filter(x => !x.d).length;
+    let at = 0; const placed = items.map(x => { const r = { c: x.c, beat: at }; at += x.d || (len - given) / Math.max(1, free); return r; });
+    if (at > len + 1e-6) throw new Error(`as cifras somam ${at} tempos e o compasso tem ${len}`);
+    const parsed = placed.map(x => ({ ...x, p: chordParts(x.c) }));  // all or nothing
+    for (const h of kids(m, 'harmony')) h.remove();
+    const doc = this.doc, mk = (tag, t) => { const e = doc.createElement(tag); if (t != null) e.textContent = String(t); return e; };
+    // put each <harmony> right before the note that starts at (or covers) its beat, with an offset for the rest
+    const notes = kids(m, 'note'); let pos = 0; const starts = [];
+    for (const n of notes) { if (kid(n, 'chord')) continue; if (txt(n, 'voice', '1') !== '1') continue; starts.push([pos, n]); pos += parseInt(txt(n, 'duration', '0')) || 0; }
+    for (const { beat, p } of parsed) {
+      const h = doc.createElement('harmony'), r = mk('root');
+      r.append(mk('root-step', p.step)); if (p.alter) r.append(mk('root-alter', p.alter)); h.append(r);
+      const k = mk('kind', p.kind); k.setAttribute('text', p.suffix); h.append(k);
+      if (p.bass) { const b = mk('bass'); b.append(mk('bass-step', p.bass.step)); if (p.bass.alter) b.append(mk('bass-alter', p.bass.alter)); h.append(b); }
+      const t = Math.round(beat * DIV); let host = null, hostAt = 0;
+      for (const [s, n] of starts) if (s <= t) { host = n; hostAt = s; }
+      if (t - hostAt) h.append(mk('offset', t - hostAt));
+      if (host) m.insertBefore(h, host); else m.append(h);
+    }
+  };
+
+  /* ---------- a new score from nothing ---------- */
+  // instruments the app knows how to write for (written pitch; transpose = what sounds)
+  Partitura.INSTRUMENTOS = [
+    { key: 'trompete', nome: 'Trompete em B♭', abrev: 'Tpt.', clef: 'G', tr: [-1, -2] },
+    { key: 'sax-alto', nome: 'Sax Alto', abrev: 'A. Sax', clef: 'G', tr: [-5, -9] },
+    { key: 'sax-tenor', nome: 'Sax Tenor', abrev: 'T. Sax', clef: 'G', tr: [-8, -14] },
+    { key: 'trombone', nome: 'Trombone', abrev: 'Tbn.', clef: 'F' },
+    { key: 'flauta', nome: 'Flauta', abrev: 'Fl.', clef: 'G' },
+    { key: 'violino', nome: 'Violino', abrev: 'Vln.', clef: 'G' },
+    { key: 'acordeon', nome: 'Acordeon', abrev: 'Acd.', clef: 'G' },
+    { key: 'voz', nome: 'Voz', abrev: 'Vz.', clef: 'G' },
+    { key: 'guitarra', nome: 'Guitarra', abrev: 'Gt.', clef: 'G', tr: [-7, -12] },
+    { key: 'baixo', nome: 'Baixo', abrev: 'Bx.', clef: 'F', tr: [-7, -12] },
+    { key: 'base', nome: 'Base', abrev: 'Base', clef: 'G', cifra: true },
+  ];
+  // opts: {titulo, instrumentos: [keys], formula: '4/4', fifths, compassos, bpm}
+  Partitura.blank = function (opts) {
+    const [beats, type] = String(opts.formula || '4/4').split('/').map(Number);
+    const len = beats * 4 / type, bars = Math.max(1, Math.min(400, opts.compassos | 0 || 32)), fifths = opts.fifths | 0;
+    const list = (opts.instrumentos || []).map(k => Partitura.INSTRUMENTOS.find(x => x.key === k)).filter(Boolean);
+    if (!list.length) throw new Error('escolha pelo menos um instrumento');
+    const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const rest = `<note><rest measure="yes"/><duration>${len * DIV}</duration><voice>1</voice></note>`;
+    const slashes = Array.from({ length: beats }, () => `<note><pitch><step>B</step><octave>4</octave></pitch><duration>${len * DIV / beats}</duration><voice>1</voice><type>${type === 8 ? 'eighth' : type === 2 ? 'half' : 'quarter'}</type><stem>none</stem><notehead>slash</notehead></note>`).join('');
+    const parts = list.map((ins, i) => {
+      // a transposing instrument shows its own key signature
+      const f = ins.tr ? ((fifths - ins.tr[1] * 7) % 12 + 12 + 6) % 12 - 6 : fifths;
+      const clef = ins.clef === 'F' ? '<clef><sign>F</sign><line>4</line></clef>' : '<clef><sign>G</sign><line>2</line></clef>';
+      const tr = ins.tr ? `<transpose><diatonic>${ins.tr[0]}</diatonic><chromatic>${ins.tr[1]}</chromatic></transpose>` : '';
+      let ms = '';
+      for (let n = 1; n <= bars; n++) {
+        const attrs = n === 1 ? `<attributes><divisions>${DIV}</divisions><key><fifths>${f}</fifths></key><time><beats>${beats}</beats><beat-type>${type}</beat-type></time>${clef}${tr}</attributes>` : '';
+        const tempo = n === 1 && i === 0 && opts.bpm ? `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${opts.bpm | 0}</per-minute></metronome></direction-type><sound tempo="${opts.bpm | 0}"/></direction>` : '';
+        ms += `<measure number="${n}">${attrs}${tempo}${ins.cifra ? slashes : rest}</measure>`;
+      }
+      return { head: `<score-part id="P${i + 1}"><part-name>${esc(ins.nome)}</part-name><part-abbreviation>${esc(ins.abrev)}</part-abbreviation></score-part>`, body: `<part id="P${i + 1}">${ms}</part>` };
+    });
+    return `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0"><work><work-title>${esc(opts.titulo || 'Sem título')}</work-title></work>` +
+      `<part-list>${parts.map(p => p.head).join('')}</part-list>${parts.map(p => p.body).join('')}</score-partwise>`;
+  };
+
+  root.Partitura = Partitura;
+  if (typeof module !== 'undefined') module.exports = Partitura;
+})(typeof window !== 'undefined' ? window : globalThis);
