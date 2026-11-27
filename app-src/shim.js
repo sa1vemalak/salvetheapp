@@ -123,6 +123,31 @@ async function newCode(limite, nota) {
 }
 const setCodeActive = (c, ativo) => updateDoc(doc(fs, 'codigos', c), { ativo });
 const setSignupOpen = open => setDoc(doc(fs, 'config', 'app'), { cadastroAberto: !!open });
+// the app team (admins + partners such as the band's arranger): suggestions, the AI arranger's rules and lessons
+async function teamState() {
+  const [adm, eq] = await Promise.all([getDoc(doc(fs, 'admins', CTX.user.uid)).catch(() => null), getDoc(doc(fs, 'equipe', CTX.user.uid)).catch(() => null)]);
+  const admin = !!(adm && adm.exists()), partner = !!(eq && eq.exists());
+  return { team: admin || partner, admin, papel: partner ? (eq.data().papel || '') : (admin ? 'admin' : '') };
+}
+const me = () => ({ uid: CTX.user.uid, nome: (CTX.user.displayName || CTX.user.email || '').slice(0, 80) });
+const byNewest = k => (a, b) => (b[k] || 0) - (a[k] || 0);
+const team = {
+  watchSugestoes: cb => onSnapshot(collection(fs, 'sugestoes'), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNewest('criadoEm'))), () => cb(null)),
+  addSugestao: texto => setDoc(doc(collection(fs, 'sugestoes')), { texto: String(texto).slice(0, 2000), ...me(), criadoEm: Date.now(), status: 'nova' }),
+  setSugestao: (id, status, resposta) => updateDoc(doc(fs, 'sugestoes', id), { status, ...(resposta != null ? { resposta: String(resposta).slice(0, 2000) } : {}), atualizadoEm: Date.now() }),
+  delSugestao: id => deleteDoc(doc(fs, 'sugestoes', id)),
+  regras: () => getDoc(doc(fs, 'treino', 'regras')).then(d => d.exists() ? d.data() : null),
+  async salvarRegras(texto) {  // keeps the text it replaces, so any edit can be undone
+    const now = Date.now(), m = me();
+    await setDoc(doc(fs, 'treino', 'regras', 'versoes', String(now)), { texto, uid: m.uid, nome: m.nome, em: now });
+    await setDoc(doc(fs, 'treino', 'regras'), { texto, uid: m.uid, nome: m.nome, atualizadoEm: now });
+  },
+  versoes: () => getDocs(collection(fs, 'treino', 'regras', 'versoes')).then(s => s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNewest('em'))),
+  watchLicoes: cb => onSnapshot(collection(fs, 'treino', 'regras', 'licoes'), s => cb(s.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNewest('criadoEm'))), () => cb(null)),
+  addLicao: (texto, musica) => setDoc(doc(collection(fs, 'treino', 'regras', 'licoes')), { texto: String(texto).slice(0, 1500), ...(musica ? { musica: String(musica).slice(0, 120) } : {}), ...me(), criadoEm: Date.now(), ativa: true }),
+  setLicao: (id, ativa, texto) => updateDoc(doc(fs, 'treino', 'regras', 'licoes', id), { ativa: !!ativa, texto: String(texto).slice(0, 1500) }),
+  delLicao: id => deleteDoc(doc(fs, 'treino', 'regras', 'licoes', id)),
+};
 // files (scores and sources) go to the band's folder in Cloud Storage; only band members can open the links' folder by rules
 function uploadFile(file, opts = {}) {
   if (!CTX.band) return Promise.reject(new Error('sem banda'));
@@ -297,6 +322,7 @@ function pickScreen(bands, inviteError, st) {
       needCode ? h('div', { class: 'gate-row' }, name) : h('div', { class: 'gate-row' }, name, h('button', { class: 'gate-btn primary', type: 'button', onclick: create }, 'Criar banda')),
       needCode ? h('div', { class: 'gate-row' }, codeIn, h('button', { class: 'gate-btn primary', type: 'button', onclick: create }, 'Criar banda')) : '',
       err,
+      st.team ? h('p', { class: 'gate-sub' }, h('a', { href: 'equipe.html', class: 'gate-link' }, 'Equipe do app: sugestões, regras e lições do Mestrinho →')) : '',
       h('div', { class: 'gate-foot' }, h('span', {}, CTX.user.email || CTX.user.displayName || 'conta'), h('button', { class: 'gate-link', type: 'button', onclick: () => fbAuth.signOut() }, 'Sair')));
   });
 }
@@ -332,7 +358,11 @@ async function start() {
     else if (bands.length === 1 && !invErr) target = { band: bands[0].id };
   }
   while (true) {
-    if (!target) target = await pickScreen(bands, invErr, await signupState().catch(() => ({ open: false, admin: false })));
+    if (!target) {
+      const st = await signupState().catch(() => ({ open: false, admin: false }));
+      st.team = st.admin || (await teamState().catch(() => ({ team: false }))).team;
+      target = await pickScreen(bands, invErr, st);
+    }
     try { await open(target.band, target.show); break; }
     catch (e) { invErr = e.message; target = null; }
   }
@@ -363,7 +393,7 @@ window.SALVE = {
   token: () => auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null),
   listShows, createShow: name => createShow(CTX.band, name), saveShow, deleteShow, library,
   makeInvite, members, setRole, removeMember, myBands,
-  signupState, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile,
+  signupState, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile, teamState, team,
   switchTo: (band, show) => { CTX.band = band; CTX.show = show; remember(); location.reload(); },
   switchBand: () => { try { localStorage.removeItem(LS); sessionStorage.setItem('salve:pick', '1'); } catch {} location.reload(); },
 };

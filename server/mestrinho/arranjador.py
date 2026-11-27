@@ -152,9 +152,10 @@ O que os arranjadores desta banda fazem (medido em partituras oficiais):
 5. Expressão escrita: dinâmica na entrada de cada frase (f nas frases fortes, mf/f nos riffs), ligaduras curtas de
    frase (2 a 5 notas), acento > e tenuto - nos riffs, staccato . nas notas curtas, ligadura de duração ~ para notas
    que passam da barra de compasso.
-6. Repetições da música (refrões que voltam) devem ter o mesmo arranjo nas repetições.
+6. Repetições da música (refrões que voltam) devem ter o mesmo arranjo nas repetições."""
 
-Formato de cada compasso (som real, durações em semínimas, cada compasso soma exatamente 4):
+# the answer format is fixed (the program reads it); the musical rules above can be edited by the app team
+FORMATO = """Formato de cada compasso (som real, durações em semínimas, cada compasso soma exatamente 4):
   "B4:2 D5:1.5> R:0.5"  nota:duração; R = pausa; sufixos: > acento, . staccato, - tenuto, ^ marcato, ~ ligada à próxima
   nota (mesma altura); "(" antes da nota abre ligadura de frase e ")" depois da nota fecha.
 Em "linha" escreva a voz de cima (trompete, som real). Em textura "oitavas" deixe "sax" e "tbn" vazios: o programa
@@ -178,7 +179,16 @@ SCHEMA = {
 }
 
 
-def escrever(sk, model=None, effort=None):
+def sistema(regras=None, licoes=None):
+    """system prompt: the musical rules (the team's version when there is one), the lessons, then the fixed format"""
+    txt = (regras or REGRAS).strip()
+    if licoes:
+        txt += '\n\nLições dos arranjadores da banda (correções feitas em arranjos anteriores; valem tanto quanto as regras):\n' + \
+               '\n'.join(f'- {l}' for l in licoes)
+    return txt + '\n\n' + FORMATO
+
+
+def escrever(sk, model=None, effort=None, regras=None, licoes=None):
     import anthropic
     client = anthropic.Anthropic()
     model = model or os.environ.get('ARRANJO_MODELO', 'claude-opus-5-5')
@@ -187,7 +197,7 @@ def escrever(sk, model=None, effort=None):
     with client.beta.messages.stream(
         model=model, max_tokens=64000,
         betas=['server-side-fallback-2026-07-01'], fallbacks='default',
-        system=[{'type': 'text', 'text': REGRAS, 'cache_control': {'type': 'ephemeral'}}],
+        system=[{'type': 'text', 'text': sistema(regras, licoes), 'cache_control': {'type': 'ephemeral'}}],
         output_config={'effort': effort, 'format': {'type': 'json_schema', 'schema': SCHEMA}},
         messages=[{'role': 'user', 'content': 'Esqueleto da música:\n\n' + texto +
                    '\n\nEscreva o arranjo dos metais para a música inteira.'}],

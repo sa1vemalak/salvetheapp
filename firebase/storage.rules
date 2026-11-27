@@ -14,6 +14,15 @@ service firebase.storage {
       allow read: if member(band);
       allow write: if editor(band) && (request.resource == null || request.resource.size < 200 * 1024 * 1024);
     }
+    // the app team's training files (recording + official score per round): only the team reads, each writes his own
+    function team() {
+      return request.auth != null && (firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)) ||
+        firestore.exists(/databases/(default)/documents/equipe/$(request.auth.uid)));
+    }
+    match /treino/{uid}/{path=**} {
+      allow read: if team();
+      allow write: if team() && request.auth.uid == uid && (request.resource == null || request.resource.size < 200 * 1024 * 1024);
+    }
     match /{other=**} { allow read, write: if false; }
   }
 }

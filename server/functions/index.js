@@ -253,3 +253,26 @@ exports.robo = onDocumentCreated({ document: 'bands/{b}/jobs/{j}', region: 'sout
     await ref.update({ status: 'erro', msg: `Não consegui ligar ${robot.name.toLowerCase()}. Tente de novo em alguns minutos.` });
   }
 });
+
+// training round from the Equipe page (treino/regras/rodadas/{r}): the Mestrinho arranges the recording without seeing
+// the official score, compares and suggests lessons. Up to 10 rounds a day for the whole team (each one calls the AI twice).
+exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', region: 'southamerica-east1' }, async event => {
+  const ref = event.data.ref, job = event.data.data() || {};
+  if (job.status !== 'pendente') return;
+  const day = new Date().toISOString().slice(0, 10);
+  const usage = db.collection('sistema').doc('uso-treino').collection(day).doc('equipe');
+  const n = await db.runTransaction(async t => { const s = await t.get(usage); const k = (s.exists ? s.data().n : 0) + 1; t.set(usage, { n: k }, { merge: true }); return k; });
+  if (n > 10) return ref.update({ status: 'erro', msg: 'A equipe chegou ao limite de 10 rodadas de treino por dia.' });
+  try {
+    const client = await gauth.getClient();
+    const project = process.env.GCLOUD_PROJECT || 'salvetheapp-3cceb';
+    await client.request({
+      url: `https://run.googleapis.com/v2/projects/${project}/locations/southamerica-east1/jobs/mestrinho:run`, method: 'POST',
+      data: { overrides: { containerOverrides: [{ env: [{ name: 'JOB', value: ref.path }] }] } },
+    });
+    await ref.update({ status: 'na fila', msg: 'O Mestrinho vai começar em instantes.', atualizado: Date.now() });
+  } catch (e) {
+    console.error(e?.response?.data || e);
+    await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
+  }
+});

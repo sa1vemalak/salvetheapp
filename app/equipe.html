@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Equipe · salvetheapp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+:root {
+  --bg: #e9e8e3; --chrome: #f7f6f2; --line: #d3d1c8; --fg: #1d1e22; --muted: #6c6d73;
+  --accent: #2f45b5; --accent-ink: #ffffff; --paper: #ffffff;
+  --shadow: 0 1px 2px rgba(20,20,30,.08), 0 8px 24px rgba(20,20,30,.10);
+  --f-display: "Familjen Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --f-body: "IBM Plex Sans", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #16171b; --chrome: #202127; --line: #34353d; --fg: #ececef; --muted: #9a9ba3;
+  --accent: #8a9cff; --accent-ink: #11131c; --paper: #202127; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.45);
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #16171b; --chrome: #202127; --line: #34353d; --fg: #ececef; --muted: #9a9ba3;
+  --accent: #8a9cff; --accent-ink: #11131c; --paper: #202127; --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.45);
+  color-scheme: dark }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 var(--f-body); }
+header { position: sticky; top: 0; z-index: 2; background: var(--chrome); border-bottom: 1px solid var(--line); padding: 12px 16px; }
+.bar { max-width: 860px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: space-between; }
+h1 { font: 700 20px/1.2 var(--f-display); margin: 0; }
+h1 small { font: 500 13px var(--f-body); color: var(--muted); margin-left: 6px; }
+h2 { font: 700 17px/1.3 var(--f-display); margin: 0 0 6px; }
+nav { max-width: 860px; margin: 10px auto 0; display: flex; gap: 6px; overflow-x: auto; }
+.tab { font: 600 14px var(--f-body); border: 1px solid var(--line); background: transparent; color: var(--fg); border-radius: 999px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+main { max-width: 860px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.list { display: flex; flex-direction: column; gap: 10px; }
+.item { box-shadow: none; }
+.item.off { opacity: .6; }
+.item.feita { border-left: 4px solid #2e8b57; } .item.descartada { opacity: .6; } .item.em-andamento { border-left: 4px solid var(--accent); }
+.muted { color: var(--muted); margin: 0; }
+.texto { white-space: pre-wrap; margin: 0; font-family: var(--f-body); }
+pre.texto { font-size: 13px; max-height: 320px; overflow: auto; background: var(--bg); padding: 10px; border-radius: 8px; }
+label { font-weight: 600; font-size: 14px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+textarea, input[type=text], select { width: 100%; font: 15px/1.45 var(--f-body); color: var(--fg); background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+select { width: auto; }
+textarea:focus, input:focus, select:focus, .btn:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.between { justify-content: space-between; } .end { justify-content: flex-end; }
+.btn { font: 600 14px var(--f-body); border: 1px solid var(--line); background: var(--chrome); color: var(--fg); border-radius: 8px; padding: 8px 14px; cursor: pointer; text-decoration: none; display: inline-block; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { background: transparent; }
+.switch { font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
+details summary { cursor: pointer; font-weight: 600; }
+h3 { font: 700 15px var(--f-display); margin: 8px 0 0; }
+.nota { font: 700 18px var(--f-display); margin: 0; }
+.erro { color: #b3261e; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; font-size: 12px; }
+.barra { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) var(--p), var(--line) var(--p)); }
+.licao-sug { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+.licao-sug .btn { align-self: flex-end; }
+input[type=file] { font: 14px var(--f-body); }
+#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-weight: 500; max-width: calc(100% - 32px); }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar"><h1>Equipe do salvetheapp<small id="who"></small></h1><a class="btn" href="./">Voltar para o app</a></div>
+  <nav id="tabs" role="tablist" aria-label="Seções" hidden></nav>
+</header>
+<main id="main"><p class="muted">carregando…</p></main>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="equipe.js"></script>
+</body>
+</html>

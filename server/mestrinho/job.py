@@ -81,6 +81,71 @@ def log_llm(band, arr):
         print('log do LLM:', e)
 
 
+def escutar(job, audio, tmp):
+    """the Mestrinho listens: instruments apart, beats, notes, chords, where the horns sound"""
+    out = os.path.join(tmp, 'out')
+    run_logged([sys.executable, os.path.join(HERE, 'mestrinho.py'), audio, out], job,
+               'Separando os instrumentos da gravação', 5, 55,
+               [('stems:', 'Achando o andamento e os compassos'), ('transcrevendo vocals', 'Ouvindo a melodia cantada'),
+                ('transcrevendo other', 'Ouvindo os metais e outros instrumentos'), ('transcrevendo piano', 'Ouvindo a harmonia'),
+                ('cifras:', 'Escrevendo o rascunho')])
+    run_logged([sys.executable, os.path.join(HERE, 'metais.py'), os.path.join(out, 'stems', 'other.wav'),
+                os.path.join(out, 'metais.json')], job, 'Procurando onde os metais tocam', 56, 60, [])
+    return out
+
+
+def run_treino(job):
+    """training round from the Equipe page: arrange the recording blind, compare with the official score, suggest lessons"""
+    import treino
+    d = job.data; rid = job.ref.id; uid = d.get('uid', 'equipe')
+    titulo = d.get('titulo') or 'Música'
+    with tempfile.TemporaryDirectory() as tmp:
+        job.step('Baixando a gravação e a partitura oficial', 2)
+        g, o = d.get('guia') or {}, d.get('oficial') or {}
+        if not g.get('src') or not o.get('src'):
+            raise RuntimeError('Faltou a gravação ou a partitura oficial.')
+        audio = download(g['src'], os.path.join(tmp, 'guia' + (os.path.splitext(g.get('name', ''))[1].lower() or '.mp3')))
+        ofic = download(o['src'], os.path.join(tmp, 'oficial' + (os.path.splitext(o.get('name', ''))[1].lower() or '.musicxml')))
+        out = escutar(job, audio, tmp)
+        job.step('Montando o esqueleto da música', 61)
+        sk = A.esqueleto(out)
+        regras, licoes = regras_da_equipe()
+        job.step('A IA arranjadora está escrevendo, sem ver a partitura oficial (leva alguns minutos)', 62)
+        arr = A.escrever(sk, regras=regras, licoes=licoes); log_llm('equipe', arr)
+        job.step('Desenhando a grade da IA', 82)
+        xml = A.musicxml(sk, arr, os.path.join(tmp, 'ia.musicxml'), titulo=f'{titulo} (arranjo da IA, treino)')
+        base = f'treino/{uid}/{rid}'
+        grade = upload(engrave(xml, os.path.join(tmp, 'ia.pdf')), f'{base}/ia-grade.pdf', 'application/pdf')
+        ia_xml = upload(xml, f'{base}/ia.musicxml', 'application/vnd.recordare.musicxml+xml')
+        for f in ('notas.json', 'batidas.json', 'cifras.json', 'metais.json'):  # what the Mestrinho heard, to check later
+            if os.path.exists(os.path.join(out, f)):
+                upload(os.path.join(out, f), f'{base}/ouvido/{f}', 'application/json')
+        json.dump(sk, open(os.path.join(tmp, 'esqueleto.json'), 'w'), ensure_ascii=False); upload(os.path.join(tmp, 'esqueleto.json'), f'{base}/ouvido/esqueleto.json', 'application/json')
+        json.dump(arr, open(os.path.join(tmp, 'arranjo.json'), 'w'), ensure_ascii=False); upload(os.path.join(tmp, 'arranjo.json'), f'{base}/ouvido/arranjo.json', 'application/json')
+        job.step('Comparando com a partitura oficial e tirando lições', 88)
+        res, uso = treino.avaliar(out, sk, arr, ofic, titulo, regras)
+        log_llm('equipe', {'_uso': {'modelo': 'licoes', 'entrada': uso.input_tokens, 'saida': uso.output_tokens}})
+        res['regras_usadas'] = 'da equipe' if regras else 'iniciais'; res['licoes_usadas'] = len(licoes)
+        job.ref.update({'status': 'pronto', 'progresso': 100, 'atualizado': int(time.time() * 1000), 'resultado': res,
+                        'iaGrade': grade, 'iaMusicxml': ia_xml, 'resumoIA': arr.get('resumo', ''),
+                        'msg': f'Pronto: nota média {round(res["media_f1"] * 100)}%.'})
+
+
+def regras_da_equipe():
+    """the writing rules and active lessons the app team keeps in the Equipe page (treino/regras)"""
+    try:
+        r = db.document('treino/regras').get()
+        regras = (r.to_dict() or {}).get('texto') if r.exists else None
+        ls = [d.to_dict() for d in db.collection('treino/regras/licoes').where('ativa', '==', True).stream()]
+        ls.sort(key=lambda x: x.get('criadoEm', 0))
+        licoes = [(f"{x['musica']}: " if x.get('musica') else '') + x['texto'] for x in ls][-60:]
+        print('regras da equipe:', 'sim' if regras else 'não', '| lições ativas:', len(licoes), flush=True)
+        return regras, licoes
+    except Exception as e:
+        print('regras da equipe:', e, flush=True)
+        return None, []
+
+
 def run(job):
     band = job.ref.parent.parent.id
     song_id = job.data['song']
@@ -96,20 +161,14 @@ def run(job):
         ext = os.path.splitext(guia.get('name') or 'guia.mp3')[1].lower() or '.mp3'
         job.step('Baixando a gravação', 2)
         audio = download(guia['src'], os.path.join(tmp, 'guia' + ext))
-        out = os.path.join(tmp, 'out')
-        run_logged([sys.executable, os.path.join(HERE, 'mestrinho.py'), audio, out], job,
-                   'Separando os instrumentos da gravação', 5, 55,
-                   [('stems:', 'Achando o andamento e os compassos'), ('transcrevendo vocals', 'Ouvindo a melodia cantada'),
-                    ('transcrevendo other', 'Ouvindo os metais e outros instrumentos'), ('transcrevendo piano', 'Ouvindo a harmonia'),
-                    ('cifras:', 'Escrevendo o rascunho')])
-        run_logged([sys.executable, os.path.join(HERE, 'metais.py'), os.path.join(out, 'stems', 'other.wav'),
-                    os.path.join(out, 'metais.json')], job, 'Procurando onde os metais tocam', 56, 60, [])
+        out = escutar(job, audio, tmp)
 
         job.step('Montando o esqueleto da música', 61)
         sk = A.esqueleto(out)
         json.dump(sk, open(os.path.join(tmp, 'esqueleto.json'), 'w'), ensure_ascii=False)
         job.step('A IA arranjadora está escrevendo os metais (leva alguns minutos)', 62)
-        arr = A.escrever(sk)
+        regras, licoes = regras_da_equipe()
+        arr = A.escrever(sk, regras=regras, licoes=licoes)
         log_llm(band, arr)
         json.dump(arr, open(os.path.join(tmp, 'arranjo.json'), 'w'), ensure_ascii=False)
 
@@ -153,7 +212,7 @@ def run(job):
 if __name__ == '__main__':
     job = Job(os.environ['JOB'])
     try:
-        run(job)
+        (run_treino if os.environ['JOB'].startswith('treino/') else run)(job)
     except Exception as e:
         traceback.print_exc()
         job.ref.update({'status': 'erro', 'msg': str(e)[:500], 'atualizado': int(time.time() * 1000)})

@@ -167,8 +167,6 @@ body.reading .page .num { display: none; }
 /* Player: a collapsible band under the top bar, so it never covers the score or the tool palette. */
 .player { display: flex; flex-direction: column; gap: 8px; background: var(--chrome); border-bottom: 1px solid var(--line);
   padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-/* the player band never takes more than half the screen: it scrolls inside, so the score below always has room */
-.player { max-height: 50vh; max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; flex: none; }
 .prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .pplay { flex: none; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: inline-flex; align-items: center; justify-content: center; }
 .pplay svg { width: 20px; height: 20px; }
@@ -188,12 +186,14 @@ body.reading .page .num { display: none; }
 .pfield select, .pfield input { padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font-family: var(--f-mono); font-size: 13px; }
 .pfield input { width: 52px; text-align: center; }
 .pmsg { font-size: 13.5px; color: var(--muted); }
+/* the robot / arrangement notice can be long: it folds away (remembered per song) and the player strip scrolls inside */
+.player { max-height: 50vh; max-height: 50dvh; overflow-y: auto; overscroll-behavior: contain; flex: none; }
 .pmsg-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .pmsg-title { font-family: var(--f-display); font-size: 14px; color: var(--fg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmsg-toggle { flex: none; min-height: 36px; }
 .pmsg-body { margin-top: 6px; }
 .pmsg-body[hidden] { display: none; }
-.pmsg-body > .robo:first-child > b { display: none; } /* already shown as the title */
+.pmsg-body > .robo:first-child > b { display: none; }
 .mixer { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; }
 .mixer button { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
   background: transparent; font-weight: 500; font-size: 14px; white-space: nowrap; color: var(--muted); }
@@ -375,7 +375,7 @@ body.at-home .palette { display: none; }
 .mkshift select, .mkanc select { padding: 5px 6px; border-radius: 8px; border: 1px solid var(--line); font: inherit; }
 .mkerr { color: #c0392b; font-size: 14px; }
 #lgDaw { margin-top: 4px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); font: inherit; }
-.role .linkbtn { margin-left: auto; background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 4px 0; }
+.role .linkbtn { margin-left: 4px; background: none; border: 0; color: var(--accent); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 4px 0; }
 .role .linknote { width: 100%; color: var(--muted); }
 .role i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
 .credits { margin: 0; max-width: 46ch; font-size: 11.5px; line-height: 1.45; color: var(--muted); opacity: .85; }
@@ -395,6 +395,8 @@ body.at-home .palette { display: none; }
 .robo-bar { display: block; height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--accent) var(--p), var(--line) var(--p)); transition: background .4s; }
 .robo-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
 .robo.arranjo { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.robo .licao textarea { width: 100%; margin: 6px 0; font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--chrome); color: var(--fg); }
+.robo .licao summary { cursor: pointer; font-weight: 600; }
 .robo-row.stars .btn { min-width: 40px; padding-left: 0; padding-right: 0; }
 .robo-bpm { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
 .robo-bpm input { width: 72px; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: var(--paper); color: #1d1e22; font: 14px var(--f-mono); }
@@ -432,6 +434,68 @@ body.at-home .palette { display: none; }
   .stage.split .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
 }
 @media (prefers-reduced-motion: no-preference) { .tool, .chip, .iconbtn { transition: background-color .12s, color .12s; } }
+
+/* ===== clearer screens (Nov 2026): fewer things at once, every action named ===== */
+/* song screen top bar: Setlist · song · Ouvir · Mais */
+.top { flex-wrap: nowrap; gap: 8px; }
+.top .brand { display: none; }
+@media (min-width: 1100px) { .top .brand { display: block; } }
+.songpick { flex: 1 1 auto; }
+.songpick select { max-width: none; }
+.actions { flex-wrap: nowrap; flex: none; }
+#playerBtn { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+#playerBtn[aria-pressed="true"] { color: var(--accent-ink); }
+#moreBtn.live::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #2fb36b; margin-left: 2px; }
+.status { min-width: 0; }
+.status.quiet { display: none; }
+.moremenu { position: fixed; z-index: 40; right: max(12px, env(safe-area-inset-right, 0px)); width: min(300px, calc(100vw - 24px));
+  max-height: calc(100vh - 90px); overflow: auto; background: var(--chrome); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.moremenu[hidden] { display: none; }
+.moremenu .mm-h { margin: 8px 10px 2px; font: 600 11px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.moremenu .iconbtn { width: 100%; justify-content: flex-start; border: 0; border-radius: 10px; min-height: 44px; padding: 0 10px; gap: 12px; font-size: 15px; }
+.moremenu .iconbtn:hover { background: var(--bg); }
+.moremenu .iconbtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.moremenu .iconbtn[hidden] { display: none; }
+.moremenu .lbl { display: inline !important; }
+/* part tabs: a calm strip, zoom kept small */
+.zoom span { display: none; }
+.zoom button { width: 34px; height: 34px; }
+/* annotation palette: one "Anotar" button until you want to write */
+.palette.closed { left: auto; right: max(16px, env(safe-area-inset-right, 0px)); transform: none; padding: 4px; border-radius: 999px; }
+.palette.closed > *:not(#annotBtn) { display: none; }
+.palette .tool[data-tool="read"] { display: none; }  /* "Fechar" goes back to reading */
+.tool.annot { flex-direction: row; gap: 8px; min-width: 0; padding: 10px 16px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--fg); }
+.palette.closed .tool.annot { background: var(--accent); color: var(--accent-ink); }
+.palette.closed .tool.annot svg { color: var(--accent-ink); }
+.layers button { font-size: 13px; }
+/* home: the setlist is the page; less decoration */
+.home .hero-mark { display: none; }
+.hero { gap: 14px; }
+.hero h1 { font-size: clamp(40px, 6vw, 76px); line-height: .95; }
+.lede { font-size: 16px; }
+.setwrap { transform: none; border-radius: 16px; }
+.setwrap::before, .setwrap::after { display: none; }
+.sethead { border-bottom-width: 1.5px; font-size: 22px; }
+.songrow .m .badge { font-family: var(--f-body); font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #efede6; color: #55565c; }
+.songrow .m .badge.todo { background: #fbeccf; color: #7a4b00; }
+.songrow .m .badge.work { background: #e3e7fb; color: #2f45b5; }
+.songrow[aria-current="true"] .t b::after { content: ""; }
+.songrow[aria-current="true"] { background: #f4f3ee; }
+.credits { order: 99; }
+@media (max-width: 860px) {
+  .home .lede { display: none; }
+  .home .hero h1 { font-size: clamp(34px, 10vw, 48px); }
+  .hero-actions .btn { padding: 8px 12px; }
+  .home .credits { display: none; }
+}
+@media (max-width: 700px) {
+  .top { padding-block: 6px; }
+  #playerBtn .lbl { display: inline; }
+  .palette:not(.closed) { left: 8px; right: 8px; transform: none; max-width: none; flex-wrap: wrap; justify-content: center; overflow: visible; row-gap: 6px; }
+  .palette:not(.closed) .sep:first-of-type { display: none; }
+  .home-in { gap: 18px; }
+}
 </style>
 
 <div class="app">
@@ -439,28 +503,35 @@ body.at-home .palette { display: none; }
     <button class="iconbtn" id="homeBtn" title="Voltar para a setlist" aria-label="Setlist">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h2M9 6h11M4 12h2M9 12h11M4 18h2M9 18h11"/></svg><span class="lbl">Setlist</span></button>
     <div class="brand">salvetheapp<small id="brandShow"></small></div>
-    <button class="iconbtn" id="bandBtn" title="Banda, shows e convites">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda</span></button>
     <div class="songpick">
       <select id="song" aria-label="Música"></select>
     </div>
     <div class="actions">
+      <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a música (player)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Ouvir</span></button>
+      <button class="iconbtn" id="moreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu" title="Mais opções">
+        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg><span class="lbl">Mais</span></button>
+    </div>
+    <div class="moremenu" id="moreMenu" role="menu" aria-label="Mais opções" hidden>
+      <p class="mm-h">Ver</p>
       <button class="iconbtn" id="splitBtn" aria-pressed="false" title="Ver duas partes lado a lado">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="lbl">Lado a lado</span></button>
       <button class="iconbtn" id="readBtn" title="Só a partitura, em tela cheia">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span class="lbl">Tela cheia</span></button>
+      <p class="mm-h">Música</p>
       <button class="iconbtn" id="notesBtn" title="Notas do ensaio">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas</span></button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
       <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Caio</span></button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
       <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões</span></button>
-      <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a partitura">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Player</span></button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
       <button class="iconbtn" id="logicBtn" aria-pressed="false" hidden title="A partitura segue a DAW">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9M11 15v-4M15 15V8M19 15v-2"/></svg><span class="lbl">Logic</span></button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9M11 15v-4M15 15V8M19 15v-2"/></svg><span class="lbl">Seguir a DAW (Logic)</span></button>
       <button class="iconbtn" id="addBtn" title="Adicionar música ou parte">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar</span></button>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar música ou parte</span></button>
+      <p class="mm-h">Banda</p>
+      <button class="iconbtn" id="bandBtn" title="Banda, shows e convites">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda, shows e convites</span></button>
     </div>
     <div class="status" id="status">carregando</div>
   </header>
@@ -515,7 +586,7 @@ body.at-home .palette { display: none; }
         <button class="cta" id="homeContinue" hidden></button>
         <button class="cta" id="homeAdd" type="button" hidden><span><small>Partituras</small>Adicionar música</span><span aria-hidden="true">+</span></button>
         <button class="btn" id="homeCaio" type="button" hidden>Perguntar ao Caio</button>
-        <button class="btn" id="homeBand" type="button" hidden>Banda, shows e convites</button>
+        <button class="btn" id="homeBand" type="button" hidden>Banda e convites</button>
       </div>
       <p class="role" id="homeRole"></p>
       <p class="credits" id="homeCredits" hidden>Sons dos sopros: gravações de VSCO 2 Community Edition (Versilian Studios, domínio público) e MTG Solo Saxophones (Music Technology Group, Universitat Pompeu Fabra, licença CC BY 4.0).</p>
@@ -529,10 +600,11 @@ body.at-home .palette { display: none; }
 
 <button class="readexit" id="readExit" hidden aria-label="Sair da tela cheia" title="Sair da tela cheia">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v5H4M15 4v5h5M15 20v-5h5M9 20v-5H4"/></svg></button>
-<nav class="palette" id="palette" aria-label="Ferramentas">
+<nav class="palette closed" id="palette" aria-label="Anotações">
+  <button class="tool annot" id="annotBtn" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M14 7l3 3"/></svg><span>Anotar</span></button>
   <div class="layers" role="group" aria-label="Aba de anotações">
-    <button data-layer="mine" aria-pressed="true" title="Anotações só suas">Minhas</button>
-    <button data-layer="common" aria-pressed="false" title="Anotações que todos veem"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Em comum</button>
+    <button data-layer="mine" aria-pressed="true" title="Anotações que só você vê">Só eu</button>
+    <button data-layer="common" aria-pressed="false" title="Anotações que todos veem"><svg class="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Banda toda</button>
   </div>
   <span class="sep"></span>
   <button class="tool" data-tool="read" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11.5V4a1.5 1.5 0 0 1 3 0v7.5M14 11.5V5.5a1.5 1.5 0 0 1 3 0V14c0 4-2.5 7-6.5 7S5 18.5 4 16l-1.3-3a1.4 1.4 0 0 1 2.4-1.4L8 15"/></svg>Ler</button>
@@ -554,7 +626,7 @@ body.at-home .palette { display: none; }
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
-window.APP_VERSION = '20261126233510';
+window.APP_VERSION = '20261127015756';
 (() => {
   const check = () => fetch('version.json?' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(v => {
     if (!v || !v.v || v.v === window.APP_VERSION || window.APP_VERSION === 'dev') return;
@@ -596,7 +668,7 @@ const panes = [];
 
 /* ---------- status + toast ---------- */
 const statusEl = $('#status');
-function status(t) { statusEl.textContent = t; }
+function status(t) { statusEl.textContent = t; statusEl.classList.toggle('quiet', /^(pronto|salvo)$/i.test(String(t).trim())); }
 let toastT;
 function toast(msg) {
   let t = $('.toast'); if (!t) { t = el('div', 'toast'); document.body.append(t); }
@@ -1003,6 +1075,30 @@ function setTool(t) {
   if (t !== 'text') document.querySelectorAll('.noteedit').forEach(n => n.remove());
 }
 document.querySelectorAll('.tool[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+/* "Anotar": the tool palette stays closed (reading) until you want to write on the score */
+(() => {
+  const pal = $('#palette'), btn = $('#annotBtn'), lab = btn.querySelector('span');
+  const set = open => {
+    pal.classList.toggle('closed', !open); btn.setAttribute('aria-expanded', String(open)); lab.textContent = open ? 'Fechar' : 'Anotar';
+    if (!open && S.tool !== 'read') setTool('read');
+    if (open && S.tool === 'read') setTool('pen');
+  };
+  btn.onclick = () => set(pal.classList.contains('closed'));
+})();
+/* "Mais": the screen's other actions, with names, in one menu */
+(() => {
+  const btn = $('#moreBtn'), menu = $('#moreMenu');
+  const show = open => {
+    menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.setAttribute('aria-pressed', String(open));
+    if (open) { const r = btn.getBoundingClientRect(); menu.style.top = (r.bottom + 6) + 'px'; menu.querySelector('.iconbtn:not([hidden])')?.focus(); }
+  };
+  btn.onclick = e => { e.stopPropagation(); show(menu.hidden); };
+  menu.addEventListener('click', e => { if (e.target.closest('.iconbtn')) setTimeout(() => show(false), 0); });
+  document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) show(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { show(false); btn.focus(); } });
+  // the DAW link is live: show it on the Mais button too
+  new MutationObserver(() => btn.classList.toggle('live', $('#logicBtn').classList.contains('live'))).observe($('#logicBtn'), { attributes: true, attributeFilter: ['class'] });
+})();
 function setLayer(l) {
   S.layer = l; ls.set('layer', l);
   document.querySelectorAll('.layers button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.layer === l)));
@@ -1084,6 +1180,13 @@ const Band = (() => {
     const ob = m.querySelector('#bOther'); if (ob) ob.onclick = () => SALVE.switchBand();
     m.querySelector('#bNewBand').onclick = () => SALVE.switchBand();
     m.querySelector('#bOut').onclick = () => fbAuth.signOut();
+    // the app team (owner + partners): link to the Equipe page
+    SALVE.teamState && SALVE.teamState().then(t => {
+      if (!t.team || !m) return;
+      const sec = el('div', 'bsec'); sec.innerHTML = '<b>Equipe do app</b><div class="hint">Sugestões de melhoria, as regras que a IA arranjadora segue e as lições dos arranjadores.</div>';
+      const a = el('a', 'btn', 'Abrir a página da equipe'); a.href = 'equipe.html'; sec.append(a);
+      const adm = m.querySelector('#bAdmin'); adm ? adm.before(sec) : m.append(sec);
+    }).catch(() => {});
     // app admin: access codes
     SALVE.signupState().then(async st => {
       if (!st.admin || !m) return;
@@ -1358,7 +1461,6 @@ const Robo = (() => {
     if (song.arranjo && !running(j)) body.append(arranjoCard(song));
     box.hidden = !body.childNodes.length;
     if (box.hidden) return;
-    // the notice can be minimized, so it never hides the score (remembered per song on this device)
     const min = ls.get('pmsgmin:' + song.id, false);
     const head = el('div', 'pmsg-head');
     const title = body.querySelector('b')?.textContent || 'Aviso';
@@ -1381,6 +1483,7 @@ const Robo = (() => {
   }
   // the AI arrangement: what it wrote and each musician's rating (1 to 5)
   const rated = new Map(); const ratingSubs = new Map();
+  let TEAM = false; if (window.SALVE && SALVE.teamState) SALVE.teamState().then(t => { TEAM = t.team; if (TEAM && lastPaint) paint(...lastPaint); }).catch(() => {});
   function arranjoCard(song) {
     const a = song.arranjo, card = el('div', 'robo arranjo');
     card.append(el('b', '', 'Arranjo de metais escrito pela IA arranjadora'),
@@ -1411,6 +1514,14 @@ const Robo = (() => {
       }, () => {}));
     }
     paintStars(); card.append(stars, info);
+    if (TEAM) {
+      const fix = el('details', 'licao'); fix.append(el('summary', '', 'Corrigir este arranjo (ensina o Mestrinho)'));
+      const ta = document.createElement('textarea'); ta.rows = 3; ta.maxLength = 1500; ta.placeholder = 'O que você faria diferente? Ex.: c.17–20 os metais seguram Si e Ré ligados, não repetem colcheias';
+      ta.setAttribute('aria-label', 'Correção do arranjo');
+      const go = el('button', 'btn primary', 'Guardar como lição'); go.type = 'button';
+      go.onclick = async () => { const t = ta.value.trim(); if (!t) return; try { await SALVE.team.addLicao(t, song.title); ta.value = ''; toast('Lição guardada: vale para os próximos arranjos.'); } catch { toast('Não consegui guardar.'); } };
+      fix.append(ta, go); card.append(fix);
+    }
     return card;
   }
   return { start, arranjo, paint, job: id => jobs.get(id), running, watch };
@@ -2240,9 +2351,9 @@ const Home = (() => {
       if (s.player?.duration) m.append(el('span', '', fmt(s.player.duration)));
       if (bpm) m.append(el('span', 'bpm', `♩ ${bpm}`));
       const rj = typeof Robo !== 'undefined' && Robo.job(s.id);
-      if (rj && Robo.running(rj)) m.append(el('span', 'bpm', `Malak ${rj.progresso || 0}%`));
-      else if (!s.player) m.append(el('span', '', rj && rj.status === 'erro' ? 'Malak falhou' : 'sem áudio'));
-      else if (s.player.conferido === false) m.append(el('span', '', 'conferir'));
+      if (rj && Robo.running(rj)) m.append(el('span', 'badge work', `${rj.tipo === 'arranjo' ? 'Mestrinho' : 'Malak'} ${rj.progresso || 0}%`));
+      else if (!s.player) m.append(el('span', 'badge', rj && rj.status === 'erro' ? 'falhou' : (s.guia && !(s.parts || []).length ? 'só gravação' : 'sem áudio')));
+      else if (s.player.conferido === false) m.append(el('span', 'badge todo', 'áudio a conferir'));
       b.append(el('span', 'n', String(s.order ?? '').padStart(2, '0')), t, m, el('span', 'go', '→'));
       b.onclick = () => open(s.id);
       li.append(b); return li;
@@ -2258,10 +2369,12 @@ const Home = (() => {
   function show() { render(); home.hidden = false; document.body.classList.add('at-home'); home.scrollTop = 0; const f = list.querySelector('[aria-current="true"]') || list.querySelector('button'); f?.focus({ preventScroll: true }); }
   function hide() { home.hidden = true; document.body.classList.remove('at-home'); }
   function setRole(admin, open) {
-    const r = $('#homeRole'); r.replaceChildren(el('i'));
+    const r = $('#homeRole'); r.replaceChildren();
     const c = window.SALVE ? SALVE.ctx() : null;
     const roleName = c ? ({ dono: 'dono da banda', editor: 'editor', musico: 'músico' }[c.role] || 'músico') : (admin ? 'administrador' : 'músico');
-    const t = el('span'); t.append('Você está como ', el('b', '', roleName), admin ? ' · edita as músicas, os shows e a aba Em comum' : open ? ' · sem login: suas anotações ficam neste aparelho' : ' · suas anotações ficam só com você');
+    const who = c?.user ? (c.user.displayName || c.user.email || '') : '';
+    const t = el('span'); t.append(who ? who + ' · ' : '', el('b', '', roleName));
+    t.title = admin ? 'Pode editar as músicas, os shows e as anotações da banda toda' : open ? 'Sem login: suas anotações ficam neste aparelho' : 'Suas anotações ficam só com você';
     r.append(t);
     if (window.fbAuth && fbAuth.user()) {
       const b = el('button', 'linkbtn', 'Sair'); b.type = 'button';

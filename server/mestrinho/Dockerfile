@@ -12,5 +12,5 @@ RUN pip install -q --no-cache-dir --prefer-binary --no-build-isolation demucs "b
 RUN python -c "from demucs.pretrained import get_model; get_model('htdemucs_6s')" \
     && python -c "from panns_inference import SoundEventDetection; SoundEventDetection(checkpoint_path=None, device='cpu')"
 WORKDIR /app
-COPY mestrinho.py metais.py arranjador.py job.py /app/
+COPY mestrinho.py metais.py arranjador.py job.py treino.py /app/
 CMD ["python", "/app/job.py"]

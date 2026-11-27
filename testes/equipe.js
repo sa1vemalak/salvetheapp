@@ -1,0 +1,27 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY, bypass: 'localhost' } }); const p = await b.newPage({ viewport: { width: 390, height: 844 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
+  await p.addInitScript(t => { window.__testToken = t; }, 'eyJhbGciOiAiUlMyNTYiLCAidHlwIjogIkpXVCJ9.eyJpc3MiOiAiZmlyZWJhc2UtYWRtaW5zZGstZmJzdmNAcG5wbDEweS5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsICJzdWIiOiAiZmlyZWJhc2UtYWRtaW5zZGstZmJzdmNAcG5wbDEweS5pYW0uZ3NlcnZpY2VhY2NvdW50LmNvbSIsICJhdWQiOiAiaHR0cHM6Ly9pZGVudGl0eXRvb2xraXQuZ29vZ2xlYXBpcy5jb20vZ29vZ2xlLmlkZW50aXR5LmlkZW50aXR5dG9vbGtpdC52MS5JZGVudGl0eVRvb2xraXQiLCAiaWF0IjogMTc5NTc0MDgyMywgImV4cCI6IDE3OTU3NDQ0MjMsICJ1aWQiOiAienotdGVzdGUtZXF1aXBlIn0.OCPGPVScwtP3ujmXe_ISHxUAw_xl--MPDMsUDE5RUcEKcyFLx89xd2-Jm3_cS9B78vKD76ICDgHV7cC_fqJ6oGuRbVG3dWEXUJVtS72_CJ1Z22jydaUZeO4VP3MKEgFy6MioAKUEbOz_P63BRjwiAqdyVrYonTeFBtsQ6sE41CvbpXkptK3g1_BTF15p-rvkDAcZVOOCYj05vg-WkTjqfFdq7ZQfF53QcwgKIAyExevVsoD8M6MSy05DdbSDqdLEiUgaZp9ENwWBJEVoYpGuYVZ2G4g7Yq9Eb-eysiK-ivKUfgENQw29_wzyvBjfuM3riPDi9UINto7-6feSQADpnw');
+  await p.goto('http://localhost:8765/');
+  await p.waitForSelector('input[type=email]', { timeout: 30000 });
+  await p.fill('input[type=email]', process.argv[2]); await p.fill('input[type=password]', 'teste12345'); await p.click('.gate-btn.primary');
+  await p.waitForSelector('text=Equipe do app', { timeout: 30000 });
+  await p.screenshot({ path: 'ltest/equipe-gate.png' });
+  await p.goto('http://localhost:8765/equipe.html#sugestoes');
+  await p.waitForSelector('[role=tab]', { timeout: 30000 });
+  await p.fill('#sgTxt', 'Teste automático: sugestão de exemplo');
+  await p.click('form button[type=submit]');
+  await p.waitForSelector('text=Teste automático: sugestão de exemplo', { timeout: 15000 });
+  await p.selectOption('article select', 'feita');
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: 'ltest/equipe-sug.png', fullPage: true });
+  await p.click('[data-k=regras]'); await p.waitForFunction(() => document.querySelector('#rgTxt') && document.querySelector('#rgTxt').value.length > 100, null, { timeout: 15000 });
+  const n = await p.$eval('#rgTxt', e => e.value.length); console.log('regras carregadas, caracteres:', n);
+  await p.screenshot({ path: 'ltest/equipe-regras.png' });
+  await p.click('[data-k=licoes]'); await p.fill('#lcMus', 'Teste'); await p.fill('#lcTxt', 'Teste automático: lição de exemplo');
+  await p.click('form button[type=submit]'); await p.waitForSelector('text=Lições (1 ativas', { timeout: 15000 }).catch(() => {});
+  await p.screenshot({ path: 'ltest/equipe-licoes.png', fullPage: true });
+  console.log('erros:', errs.length ? errs : 'nenhum');
+  await b.close();
+})().catch(e => { console.error('FALHOU', e.message); process.exit(1); });

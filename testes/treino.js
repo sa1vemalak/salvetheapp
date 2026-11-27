@@ -1,0 +1,20 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({ proxy: { server: process.env.HTTPS_PROXY, bypass: 'localhost' } }); const p = await b.newPage({ viewport: { width: 390, height: 844 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/');
+  await p.waitForSelector('input[type=email]', { timeout: 30000 });
+  await p.fill('input[type=email]', process.argv[2]); await p.fill('input[type=password]', 'teste12345'); await p.click('.gate-btn.primary');
+  await p.waitForSelector('text=Equipe do app', { timeout: 30000 });
+  await p.goto('http://localhost:8765/equipe.html#treinar');
+  await p.waitForSelector('#trTit', { timeout: 30000 });
+  await p.fill('#trTit', 'Capricorniana (teste)');
+  await p.setInputFiles('#trGuia', 'rtest/capricorniana-gravacao.mp3');
+  await p.setInputFiles('#trOf', 'rtest/oficial-capricorniana.musicxml');
+  await p.click('#trGo');
+  await p.waitForSelector('text=Rodadas de treino (1)', { timeout: 120000 });
+  await p.waitForTimeout(4000);
+  await p.screenshot({ path: 'ltest/treino-1.png', fullPage: true });
+  console.log('rodada criada; erros:', errs.length ? errs : 'nenhum');
+  await b.close();
+})().catch(e => { console.error('FALHOU', e.message); process.exit(1); });

@@ -108,6 +108,59 @@ service cloud.firestore {
 
     // app administrators and signup settings
     match /admins/{uid} { allow read: if signed() && request.auth.uid == uid; }
+
+    // the app team (admins + partners like the band's arranger): suggestions, the Mestrinho's writing rules,
+    // lessons from corrected arrangements, training runs. Partners are added by the server only.
+    function team() { return isAdmin() || (signed() && exists(/databases/$(database)/documents/equipe/$(request.auth.uid))); }
+    function shortText(v, n) { return v is string && v.size() > 0 && v.size() <= n; }
+    match /equipe/{uid} { allow read: if signed() && (request.auth.uid == uid || isAdmin()); }
+    match /sugestoes/{id} {
+      allow read: if team();
+      allow create: if team() && request.resource.data.keys().hasOnly(['texto', 'uid', 'nome', 'criadoEm', 'status']) &&
+        shortText(request.resource.data.texto, 2000) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.criadoEm is int && request.resource.data.status == 'nova' &&
+        (!('nome' in request.resource.data) || request.resource.data.nome is string && request.resource.data.nome.size() <= 80);
+      // anyone on the team can move a suggestion along and answer it; the text and author stay
+      allow update: if team() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'atualizadoEm']) &&
+        request.resource.data.status in ['nova', 'em andamento', 'feita', 'descartada'] &&
+        (!('resposta' in request.resource.data) || request.resource.data.resposta is string && request.resource.data.resposta.size() <= 2000);
+      allow delete: if isAdmin() || (team() && resource.data.uid == request.auth.uid);
+    }
+    // the writing rules the AI arranger follows (one doc, every edit keeps the text before it in /versoes)
+    match /treino/regras {
+      allow read: if team();
+      allow write: if team() && request.resource.data.keys().hasOnly(['texto', 'uid', 'nome', 'atualizadoEm']) &&
+        shortText(request.resource.data.texto, 20000) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.atualizadoEm is int;
+      match /versoes/{v} {
+        allow read: if team();
+        allow create: if team() && request.resource.data.keys().hasOnly(['texto', 'uid', 'nome', 'em']) &&
+          shortText(request.resource.data.texto, 20000) && request.resource.data.em is int;
+      }
+    }
+    // training rounds: a team member uploads a recording + the official score; the Mestrinho arranges blind, compares
+    // and suggests lessons. The team asks; only the server updates the round.
+    match /treino/regras/rodadas/{r} {
+      allow read: if team();
+      allow create: if team() && request.resource.data.keys().hasOnly(['titulo', 'guia', 'oficial', 'uid', 'nome', 'criadoEm', 'status']) &&
+        shortText(request.resource.data.titulo, 120) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.criadoEm is int && request.resource.data.status == 'pendente' &&
+        request.resource.data.guia is map && request.resource.data.oficial is map &&
+        request.resource.data.guia.src is string && request.resource.data.oficial.src is string &&
+        request.resource.data.guia.src.size() < 2000 && request.resource.data.oficial.src.size() < 2000;
+      allow delete: if isAdmin() || (team() && resource.data.uid == request.auth.uid);
+    }
+    // lessons: what an arranger changed in an AI arrangement, said in words (the AI reads the active ones)
+    match /treino/regras/licoes/{id} {
+      allow read: if team();
+      allow create: if team() && request.resource.data.keys().hasOnly(['texto', 'musica', 'uid', 'nome', 'criadoEm', 'ativa']) &&
+        shortText(request.resource.data.texto, 1500) && request.resource.data.uid == request.auth.uid &&
+        request.resource.data.criadoEm is int && request.resource.data.ativa is bool &&
+        (!('musica' in request.resource.data) || request.resource.data.musica is string && request.resource.data.musica.size() <= 120);
+      allow update: if team() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ativa', 'texto']) &&
+        request.resource.data.ativa is bool && shortText(request.resource.data.texto, 1500);
+      allow delete: if team();
+    }
     match /config/app {
       allow read: if signed();
       allow write: if isAdmin() && request.resource.data.keys().hasOnly(['cadastroAberto']) && request.resource.data.cadastroAberto is bool;
