@@ -1028,7 +1028,7 @@ def engrave_parts(xml_path, title, partes, tmp, dest, so=None):
         return pdf
     full = m21.converter.parse(xml_path)
     out = []
-    if len(full.parts) > 1 and not so:
+    if len(full.parts) > 1 and (not so or 'grade' in so):
         out.append({'key': 'grade', 'name': 'Grade', 'src': upload(eng(xml_path, os.path.join(tmp, 'grade.pdf')), f'{dest}/grade.pdf', 'application/pdf')})
     for i, pt in enumerate(full.parts):
         meta = partes[i] if i < len(partes) else {}
@@ -1072,14 +1072,33 @@ def run(job):
                 dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
                 parts = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest)
                 song_ref.update({'parts': parts})
-            elif pmeta.get('partesSemPdf'):  # an instrument Caio added to a score read from PDFs: draw just its part
-                novas = set(pmeta['partesSemPdf'])
-                job.step('Desenhando o PDF da parte nova', 8)
-                dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
-                feitas = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest, so=novas)
-                antigas = [p for p in song.get('parts', []) if p.get('key') not in novas]
-                song_ref.update({'parts': antigas + feitas, 'partitura.partesSemPdf': firestore.DELETE_FIELD})
-                parts = [p for p in antigas + feitas if p.get('src')]
+            else:
+                # an instrument Caio added to a score read from PDFs: draw its part, and redraw the grade so it shows it.
+                # Also heals songs whose new part got a PDF before the grade was redrawn: the grade is still the
+                # arranger's PDF while some part was drawn by the app (its file lives under /partituras/).
+                novas = set(pmeta.get('partesSemPdf') or [])
+                atuais = song.get('parts', [])
+                do_app = lambda p: '%2Fpartituras%2F' in (p.get('src') or '')
+                e_grade = lambda p: bool(re.search(r'grade|score|partitura|full', (p.get('name') or '') + (p.get('key') or ''), re.I))
+                grade = next((p for p in atuais if e_grade(p)), None)
+                grade_velha = grade is not None and not do_app(grade) and any(do_app(p) for p in atuais if not e_grade(p))
+                if novas or grade_velha:
+                    so = novas | ({'grade'} if grade is not None else set())
+                    job.step('Desenhando o PDF da parte nova e a grade', 8)
+                    dest = f'bands/{band}/partituras/{song_id}/pdf-v{pmeta.get("versao", 1)}'
+                    feitas = engrave_parts(src_files[0], song.get('title') or song_id, pmeta.get('partes') or [], tmp, dest, so=so)
+                    for p in feitas:  # the new grade keeps the old one's key and name (the reader and the notes use them)
+                        if p['key'] == 'grade' and grade is not None:
+                            p['key'], p['name'] = grade.get('key') or 'grade', grade.get('name') or 'Grade'
+                    novas_keys = {p['key'] for p in feitas}
+                    antigas = [p for p in atuais if p.get('key') not in novas_keys and not (grade is not None and p is grade)]
+                    # the grade first, as the arranger's PDFs had it
+                    todas = sorted(antigas + feitas, key=lambda p: not e_grade(p))
+                    upd_pdf = {'parts': todas}
+                    if novas:
+                        upd_pdf['partitura.partesSemPdf'] = firestore.DELETE_FIELD
+                    song_ref.update(upd_pdf)
+                    parts = [p for p in todas if p.get('src')]
         fontes = [] if (reuse or src_files) else [f for f in song.get('fontes', []) if re.search(r'\.(musicxml|mxl|xml|mscz|mscx)$', f.get('name', ''), re.I)]
         if fontes:
             f = fontes[-1]
