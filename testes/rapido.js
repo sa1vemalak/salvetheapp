@@ -146,6 +146,40 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
   confere('reescrever não duplica dinâmica', ln.dyn === 1 && ln.wedge === 2, ln.dyn + ' ' + ln.wedge);
   confere('transpor mantém as marcas', ln.tr === 'mf D5:1/3( E5:1/3 F#5:1/3) cresc G5:1 A5:2 fim', ln.tr);
   confere('editar à mão mantém as marcas', ln.mao === 'p G5:2/3 B5:1/3 dim C6:1/6 B5:1/6 A5:1/6 G5:0.5 F5:2@', ln.mao);
+  // a estrutura da música, em todas as partes de uma vez
+  const es = await p.evaluate(() => {
+    const P = new Partitura(Partitura.blank({ instrumentos: ['trompete', 'sax-alto', 'base'], compassos: 8, fifths: 0 }));
+    for (let n = 1; n <= 8; n++) P.setTokens(0, n, `C5:${4}`);
+    P.setTime(5, '3/4'); P.setKey(3, 'Bb'); P.setTempo(1, 96, 'Balada'); P.setRehearsal(3, 'A'); P.setText(0, 2, 'solo');
+    P.setBarline(3, 'inicio'); P.setBarline(6, 'casa1'); P.setBarline(7, 'casa2'); P.setBarline(8, 'final');
+    const out = {};
+    let erro = ''; try { P.setTokens(0, 5, 'C5:4'); } catch (e) { erro = e.message; } out.erro34 = /3 tempos/.test(erro);
+    P.setTokens(0, 5, 'D5:3'); P.setTokens(0, 6, 'E5:3'); P.setTokens(0, 7, 'F5:3'); P.setTokens(0, 8, 'G5:3');
+    P.insertBars(2, 2);
+    out.n = P.measures(0).length; out.nb = P.measures(2).length; out.novo = P.tokens(0, 3); out.depois = P.tokens(0, 7);
+    out.base = P.tokens(2, 3);
+    P.deleteBars(3, 4);
+    const Q = new Partitura(P.toString());
+    out.n2 = Q.measures(0).length; out.c5 = Q.tokens(0, 5);
+    out.tom = [Q.context(0, 3).fifths, Q.context(1, 3).fifths, Q.context(2, 3).fifths].join();
+    out.formula = Q.context(0, 5).len;
+    out.info3 = JSON.stringify(Q.barInfo(0, 3)); out.info1 = JSON.stringify(Q.barInfo(0, 1)); out.info2 = JSON.stringify(Q.barInfo(0, 2)); out.info6 = JSON.stringify(Q.barInfo(1, 6)); out.info7 = JSON.stringify(Q.barInfo(2, 7));
+    // pôr e tirar letra/texto
+    Q.setRehearsal(3, ''); Q.setText(0, 2, ''); out.limpo = JSON.stringify(Q.barInfo(0, 3)) + JSON.stringify(Q.barInfo(0, 2));
+    out.check = Q.checkBars().compassos.length;
+    return out;
+  });
+  console.log('Estrutura da música');
+  confere('fórmula nova vale para os compassos seguintes', es.erro34 && es.formula === 3, JSON.stringify(es));
+  confere('pôr 2 compassos em todas as partes', es.n === 10 && es.nb === 10 && es.novo === 'R:4' && es.depois === 'D5:3', JSON.stringify(es));
+  confere('a Base ganha compasso com a levada', /só|B4/.test(es.base), es.base);
+  confere('tirar 2 compassos volta ao tamanho e a numeração segue', es.n2 === 8 && es.c5 === 'D5:3', JSON.stringify(es));
+  confere('tom de Si bemol escrito certo em cada instrumento', es.tom === '0,1,-2', es.tom);
+  confere('letra de ensaio e repetição no compasso 3', es.info3 === '{"ensaio":"A","repete_daqui":true}', es.info3);
+  confere('andamento e texto', es.info1.includes('"andamento":"quarter = 96"') && es.info1.includes('Balada') && es.info2 === '{"textos":["solo"]}', es.info1 + es.info2);
+  confere('casa 1 e casa 2', es.info6.includes('"casa":"1"') && es.info6.includes('volta_ao_inicio') && es.info7.includes('"casa":"2"'), es.info6 + es.info7);
+  confere('apagar letra de ensaio e texto', es.limpo === '{"repete_daqui":true}{}', es.limpo);
+  confere('nenhum compasso com tempo errado depois de tudo', es.check === 0, es.check);
   // o botão Aplicar com uma proposta "nova_parte" + notas para ela: salva uma versão nova com a parte e a lista de instrumentos
   const ap = await p.evaluate(async () => {
     const xml = Partitura.blank({ titulo: 't', instrumentos: ['trompete', 'sax-tenor', 'trombone', 'base'], formula: '4/4', fifths: 0, compassos: 4 });
@@ -158,14 +192,18 @@ const confere = (nome, cond, extra = '') => { if (cond) { ok++; console.log('  o
     const r = await Editor.aplicarCorrecoes({ ...song, id: 'teste' }, [
       { tipo: 'nova_parte', musica: 'teste', instrumento: 'sax-alto', copiar_de: '', oitava: 0, descricao: 'sax alto novo' },
       { tipo: 'corrigir_notas', musica: 'teste', parte: 'sax-alto', compasso: 2, notas: 'E5:2 D5:2', descricao: 'entrada do sax alto' },
-      { tipo: 'corrigir_notas', musica: 'teste', parte: 'tenor-sax', compasso: 2, notas: 'B4:4', descricao: 'tenor' }]);
+      { tipo: 'corrigir_notas', musica: 'teste', parte: 'tenor-sax', compasso: 2, notas: 'B4:4', descricao: 'tenor' },
+      { tipo: 'estrutura', musica: 'teste', acao: 'por_compassos', compasso: 4, ate: 4, quantos: 1, valor: '', parte: 'todas', descricao: 'um compasso a mais no fim' },
+      { tipo: 'estrutura', musica: 'teste', acao: 'ensaio', compasso: 2, ate: 2, quantos: 0, valor: 'A', parte: 'todas', descricao: 'letra A' },
+      { tipo: 'corrigir_notas', musica: 'teste', parte: 'trumpet', compasso: 5, notas: 'mf C5:4@', descricao: 'final' }]);
     window.fetch = f0;
     const Q = new Partitura(xmlSalvo);
     return { r, partes: salvo?.partitura?.partes?.map(x => x.key), versao: salvo?.partitura?.versao, origem: salvo?.partitura?.origem || '', semPdf: (salvo?.partitura?.partesSemPdf || []).join(),
-      alto: Q.tokens(1, 2), tenor: Q.tokens(2, 2) };
+      alto: Q.tokens(1, 2), tenor: Q.tokens(2, 2), c5: Q.tokens(0, 5), ens: (Q.barInfo(3, 2) || {}).ensaio, n: Q.measures(4).length };
   });
-  confere('Aplicar: cria a parte e escreve as notas dela', ap.r.feitas === 3 && !ap.r.erros.length && ap.alto === 'E5:2 D5:2', JSON.stringify(ap));
+  confere('Aplicar: cria a parte e escreve as notas dela', ap.r.feitas === 6 && !ap.r.erros.length && ap.alto === 'E5:2 D5:2', JSON.stringify(ap));
   confere('Aplicar: as outras partes seguem com a chave certa', ap.tenor === 'B4:4', ap.tenor);
+  confere('Aplicar: estrutura antes das notas (compasso novo já recebe notas)', ap.c5 === 'mf C5:4@' && ap.ens === 'A' && ap.n === 5, JSON.stringify(ap));
   confere('Aplicar: nova versão com a lista de instrumentos atualizada', ap.versao === 2 && JSON.stringify(ap.partes) === JSON.stringify(['trumpet', 'sax-alto', 'tenor-sax', 'trombone', 'base']) && !ap.origem && ap.semPdf === 'sax-alto', JSON.stringify(ap));
   console.log('Player: combinação de instrumentos');
   const mx = await p.evaluate(async () => {

@@ -309,7 +309,7 @@
 
   // transpose a stretch (bars a..b, one part or all) by semitones, re-spelled in the key
   P.transpose = function (semis, a, b, pi) {
-    const parts = pi == null ? this.parts().map(p => p.i) : [pi];
+    const parts = (pi == null ? this.parts().map(p => p.i) : [pi]).filter(p => !this.isChart(p));   // the Base's slashes don't move
     for (const p of parts) for (const m of this.measures(p)) {
       const num = parseInt(m.getAttribute('number')); if (num < a || num > b || this.voices(p, num) > 1) continue;
       const { fifths } = this.context(p, num);
@@ -559,6 +559,207 @@
       }
     }
     return { pi, id, copiados, pulados };
+  };
+
+  /* ---------- the song's structure (every part at once, so the score stays aligned) ---------- */
+  const ATTR_ORDER = ['footnote', 'level', 'divisions', 'key', 'time', 'staves', 'part-symbol', 'instruments', 'clef', 'staff-details', 'transpose', 'directive', 'measure-style'];
+  P._mk = function (tag, text, attrs) { const e = this.doc.createElement(tag); if (text != null) e.textContent = String(text); for (const k in (attrs || {})) e.setAttribute(k, attrs[k]); return e; };
+  // put one child in a bar's <attributes> (created if needed), replacing the old one, in MusicXML order
+  P._setAttr = function (m, el) {
+    let at = kids(m, 'attributes')[0];
+    if (!at) { at = this._mk('attributes'); const first = [...m.children].find(c => c.tagName !== 'print'); m.insertBefore(at, first || null); }
+    for (const old of kids(at, el.tagName)) old.remove();
+    const rank = ATTR_ORDER.indexOf(el.tagName);
+    const after = [...at.children].find(c => ATTR_ORDER.indexOf(c.tagName) > rank);
+    at.insertBefore(el, after || null);
+  };
+  P._firstNonAttr = function (m) { return [...m.children].find(c => !['attributes', 'print'].includes(c.tagName) && !(c.tagName === 'barline' && c.getAttribute('location') === 'left')) || null; };
+  P._needBar = function (num) { if (!this.measure(0, num)) throw new Error(`não achei o compasso ${num}`); };
+
+  // time signature from bar num on ("3/4", "6/8")
+  P.setTime = function (num, formula) {
+    const m = /^(\d+)\/(1|2|4|8|16|32)$/.exec(String(formula).trim()); if (!m) throw new Error(`fórmula "${formula}" não existe (ex.: 3/4, 6/8)`);
+    this._needBar(num);
+    for (const p of this.parts()) {
+      const t = this._mk('time'); t.append(this._mk('beats', m[1]), this._mk('beat-type', m[2])); this._setAttr(this.measure(p.i, num), t);
+      // bars with nothing written (rests, or the Base's slashes) take the new size by themselves, up to the next time change
+      for (const mm of this.measures(p.i).filter(x => +x.getAttribute('number') >= +num)) {
+        if (mm !== this.measure(p.i, num) && kids(mm, 'attributes').some(at => kid(at, 'time'))) break;
+        this._refit(p.i, mm);
+      }
+    }
+    return this;
+  };
+  // an empty bar (only rests, or only the Base's slashes) rebuilt to the length of its time signature
+  P._refit = function (pi, m) {
+    const num = m.getAttribute('number'), { len } = this.context(pi, num), full = Math.round(len * DIV);
+    const notes = kids(m, 'note'); if (!notes.length || this.voices(pi, num) > 1) return;
+    const chart = this.isChart(pi), rests = notes.every(n => kid(n, 'rest'));
+    if (!rests && !chart) return;
+    const have = notes.filter(n => !kid(n, 'chord')).reduce((t, n) => t + (parseInt(txt(n, 'duration', '0')) || 0), 0);
+    if (have === full) return;
+    const anchor = notes[0], out = [];
+    if (rests) { const r = this._mk('note'); r.append(this._mk('rest', null, { measure: 'yes' }), this._mk('duration', full), this._mk('voice', '1')); out.push(r); }
+    else {
+      const model = notes.find(n => !kid(n, 'rest')) || notes[0];
+      for (let left = full; left > 0; left -= DIV) {
+        const c = model.cloneNode(true), d = Math.min(DIV, left);
+        kid(c, 'duration').textContent = String(d);
+        for (const t of ['tie', 'dot', 'time-modification', 'notations', 'lyric']) for (const y of kids(c, t)) y.remove();
+        const ty = kid(c, 'type'); if (ty) ty.textContent = d === DIV ? 'quarter' : d === DIV / 2 ? 'eighth' : '16th';
+        out.push(c);
+      }
+    }
+    out.forEach(n => m.insertBefore(n, anchor));
+    notes.forEach(n => n.remove());
+  };
+  // key from bar num on, given as the concert key ("Bb", "F#m", "Eb"); each part gets its written key
+  const KEYS = { C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, 'C#': 7, F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6, Cb: -7 };
+  Partitura.fifthsOf = name => {
+    const m = /^([A-G](?:#|b)?)(m)?$/.exec(String(name).trim().replace('♭', 'b').replace('♯', '#')); if (!m) return null;
+    const minorRel = { A: 'C', E: 'G', B: 'D', 'F#': 'A', 'C#': 'E', 'G#': 'B', 'D#': 'F#', 'A#': 'C#', D: 'F', G: 'Bb', C: 'Eb', F: 'Ab', Bb: 'Db', Eb: 'Gb', Ab: 'Cb' };
+    const maj = m[2] ? minorRel[m[1]] : m[1]; return maj in KEYS ? KEYS[maj] : null;
+  };
+  P.setKey = function (num, name) {
+    const f = Partitura.fifthsOf(name); if (f == null) throw new Error(`tom "${name}" não existe (ex.: C, Bb, F#m)`);
+    this._needBar(num);
+    for (const p of this.parts()) {
+      const k = this._mk('key'); k.append(this._mk('fifths', normKey(f - 7 * this.transposeOf(p.i))));
+      if (/m$/.test(String(name).trim())) k.append(this._mk('mode', 'minor'));
+      this._setAttr(this.measure(p.i, num), k);
+    }
+    return this;
+  };
+  // tempo mark (quarter = bpm) at the start of bar num, on the top part (the one the audio reads); 0 removes it
+  P.setTempo = function (num, bpm, texto) {
+    this._needBar(num); const m = this.measure(0, num);
+    for (const d of kids(m, 'direction')) if (d.getElementsByTagName('metronome').length || (kid(d, 'sound') && kid(d, 'sound').getAttribute('tempo'))) d.remove();
+    bpm = Math.round(+bpm); if (!bpm) return this;
+    if (!(bpm >= 20 && bpm <= 400)) throw new Error('andamento fora do normal (20 a 400)');
+    const d = this._mk('direction', null, { placement: 'above' });
+    if (texto) { const dt = this._mk('direction-type'); dt.append(this._mk('words', texto, { 'font-weight': 'bold' })); d.append(dt); }
+    const dt = this._mk('direction-type'), mt = this._mk('metronome'); mt.append(this._mk('beat-unit', 'quarter'), this._mk('per-minute', bpm)); dt.append(mt); d.append(dt);
+    d.append(this._mk('sound', null, { tempo: String(bpm) }));
+    m.insertBefore(d, this._firstNonAttr(m));
+    return this;
+  };
+  // rehearsal letter ("A", "Refrão") at bar num in every part; empty removes it
+  P.setRehearsal = function (num, texto) {
+    this._needBar(num);
+    for (const p of this.parts()) {
+      const m = this.measure(p.i, num);
+      for (const d of kids(m, 'direction')) if (d.getElementsByTagName('rehearsal').length) d.remove();
+      if (!texto) continue;
+      const d = this._mk('direction', null, { placement: 'above' }), dt = this._mk('direction-type');
+      dt.append(this._mk('rehearsal', texto, { enclosure: 'square' })); d.append(dt);
+      m.insertBefore(d, this._firstNonAttr(m));
+    }
+    return this;
+  };
+  // text over the staff ("solo", "só na 2ª vez") at bar num, in one part (pi) or all (pi null); empty removes the bar's texts
+  P.setText = function (pi, num, texto) {
+    this._needBar(num);
+    for (const p of pi == null ? this.parts() : [this.parts()[pi]]) {
+      const m = this.measure(p.i, num);
+      for (const d of kids(m, 'direction')) {
+        const types = kids(d, 'direction-type');
+        if (types.length && types.every(t => [...t.children].every(c => c.tagName === 'words')) && !d.getElementsByTagName('metronome').length && !(kid(d, 'sound') && kid(d, 'sound').getAttribute('tempo'))) d.remove();
+      }
+      if (!texto) continue;
+      const d = this._mk('direction', null, { placement: 'above' }), dt = this._mk('direction-type');
+      dt.append(this._mk('words', texto)); d.append(dt);
+      m.insertBefore(d, this._firstNonAttr(m));
+    }
+    return this;
+  };
+  // barlines in every part. tipo: inicio (start of a repeat), fim (go back to the start of the repeat), dupla, final,
+  // casa1 / casa2 (1st / 2nd ending over bars num..ate), nada (plain barlines, removes repeats and endings there)
+  P.setBarline = function (num, tipo, ate) {
+    this._needBar(num); ate = ate || num; this._needBar(ate);
+    const TIPOS = ['inicio', 'fim', 'dupla', 'final', 'casa1', 'casa2', 'nada'];
+    if (!TIPOS.includes(tipo)) throw new Error(`barra "${tipo}" não existe (${TIPOS.join(', ')})`);
+    const barOf = (m, loc) => {
+      let b = kids(m, 'barline').find(x => (x.getAttribute('location') || 'right') === loc);
+      if (!b) { b = this._mk('barline', null, { location: loc }); if (loc === 'left') m.insertBefore(b, [...m.children].find(c => !['attributes', 'print'].includes(c.tagName)) || null); else m.append(b); }
+      return b;
+    };
+    const style = (b, s) => { for (const x of kids(b, 'bar-style')) x.remove(); if (s) b.insertBefore(this._mk('bar-style', s), b.firstElementChild); };
+    const clean = b => { if (!b.children.length) b.remove(); };
+    for (const p of this.parts()) {
+      const m = this.measure(p.i, num), last = this.measure(p.i, ate);
+      if (tipo === 'nada') { for (const mm of this.measures(p.i).filter(x => +x.getAttribute('number') >= +num && +x.getAttribute('number') <= +ate)) for (const b of kids(mm, 'barline')) b.remove(); continue; }
+      if (tipo === 'inicio') { const b = barOf(m, 'left'); for (const x of kids(b, 'repeat')) x.remove(); style(b, 'heavy-light'); b.append(this._mk('repeat', null, { direction: 'forward' })); }
+      if (tipo === 'fim') { const b = barOf(last, 'right'); for (const x of kids(b, 'repeat')) x.remove(); style(b, 'light-heavy'); b.append(this._mk('repeat', null, { direction: 'backward' })); }
+      if (tipo === 'dupla' || tipo === 'final') { const b = barOf(last, 'right'); for (const x of kids(b, 'repeat')) x.remove(); style(b, tipo === 'dupla' ? 'light-light' : 'light-heavy'); }
+      if (tipo === 'casa1' || tipo === 'casa2') {
+        const n = tipo === 'casa1' ? '1' : '2';
+        const bl = barOf(m, 'left'); for (const x of kids(bl, 'ending')) x.remove(); bl.append(this._mk('ending', n + '.', { number: n, type: 'start' }));
+        const br = barOf(last, 'right'); for (const x of kids(br, 'ending')) x.remove();
+        const e = this._mk('ending', null, { number: n, type: n === '1' ? 'stop' : 'discontinue' });
+        const rep = kid(br, 'repeat'); rep ? br.insertBefore(e, rep) : br.append(e);
+        if (n === '1' && !rep) { style(br, 'light-heavy'); br.append(this._mk('repeat', null, { direction: 'backward' })); }
+      }
+      for (const b of kids(m, 'barline').concat(kids(last, 'barline'))) clean(b);
+    }
+    return this;
+  };
+  // insert n empty bars after bar num, in every part (the Base keeps its slashes); later bars are renumbered
+  P.insertBars = function (num, n) {
+    n = n | 0; if (!(n >= 1 && n <= 64)) throw new Error('dá para pôr de 1 a 64 compassos por vez');
+    this._needBar(num);
+    for (const p of this.parts()) {
+      const ref = this.measure(p.i, num), { len } = this.context(p.i, num), chart = this.isChart(p.i);
+      const later = this.measures(p.i).filter(m => +m.getAttribute('number') > +num);
+      for (const m of later) if (/^\d+$/.test(m.getAttribute('number'))) m.setAttribute('number', String(+m.getAttribute('number') + n));
+      let at = ref.nextElementSibling;
+      for (let k = 1; k <= n; k++) {
+        const m = this._mk('measure', null, { number: String(+num + k) });
+        if (chart) for (const x of kids(ref, 'note')) { const c = x.cloneNode(true); for (const t of ['lyric', 'tie']) for (const y of kids(c, t)) y.remove(); const no = kid(c, 'notations'); if (no) no.remove(); m.append(c); }
+        else { const r = this._mk('note'); r.append(this._mk('rest', null, { measure: 'yes' }), this._mk('duration', Math.round(len * DIV)), this._mk('voice', '1')); m.append(r); }
+        p.el.insertBefore(m, at);
+      }
+    }
+    return this;
+  };
+  // remove bars a..b in every part; what was in force (time, key, clef) carries to the next bar; later bars renumbered
+  P.deleteBars = function (a, b) {
+    b = b || a; this._needBar(a); this._needBar(b);
+    if (+b < +a) throw new Error('o primeiro compasso vem antes do último');
+    const total = this.measures(0).length, n = +b - +a + 1;
+    if (n >= total) throw new Error('não dá para apagar todos os compassos');
+    for (const p of this.parts()) {
+      const gone = this.measures(p.i).filter(m => +m.getAttribute('number') >= +a && +m.getAttribute('number') <= +b);
+      const next = gone[gone.length - 1].nextElementSibling;
+      if (next && next.tagName === 'measure') {   // carry the attributes that the next bar would lose
+        const carry = {};
+        for (const m of gone) for (const at of kids(m, 'attributes')) for (const c of at.children) carry[c.tagName] = c;
+        const has = new Set(kids(next, 'attributes').flatMap(at => [...at.children].map(c => c.tagName)));
+        for (const [tag, el] of Object.entries(carry)) if (!has.has(tag) && tag !== 'measure-style') this._setAttr(next, el.cloneNode(true));
+      }
+      gone.forEach(m => m.remove());
+      for (const m of this.measures(p.i)) if (+m.getAttribute('number') > +b && /^\d+$/.test(m.getAttribute('number'))) m.setAttribute('number', String(+m.getAttribute('number') - n));
+    }
+    return this;
+  };
+
+  // one structure change as Caio proposes it: {acao, compasso, ate, quantos, valor, parte (index or null)}
+  P.applyStructure = function (c, pi) {
+    const v = String(c.valor == null ? '' : c.valor).trim();
+    switch (c.acao) {
+      case 'formula': return this.setTime(c.compasso, v);
+      case 'tom': return this.setKey(c.compasso, v);
+      case 'andamento': { const m = /^(\d+)\s*(.*)$/.exec(v); return this.setTempo(c.compasso, m ? +m[1] : 0, m ? m[2] : ''); }
+      case 'ensaio': return this.setRehearsal(c.compasso, v);
+      case 'texto': return this.setText(pi, c.compasso, v);
+      case 'barra': return this.setBarline(c.compasso, v, c.ate || c.compasso);
+      case 'por_compassos': return this.insertBars(c.compasso, c.quantos);
+      case 'tirar_compassos': return this.deleteBars(c.compasso, c.ate || c.compasso);
+      case 'transpor': {
+        const semis = parseInt(v); if (!semis || Math.abs(semis) > 24) throw new Error('diga quantos semitons (ex.: 2, -3)');
+        return this.transpose(semis, +c.compasso, +(c.ate || c.compasso), pi == null ? null : pi);
+      }
+      default: throw new Error(`ação "${c.acao}" desconhecida`);
+    }
   };
 
   /* copy voice 1 of a bar note by note (keeps triplets, sextuplets, beams), transposed by semis and spelled in the

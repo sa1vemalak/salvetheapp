@@ -1420,6 +1420,7 @@ const Caio = (() => {
       const ins = (window.Partitura?.INSTRUMENTOS || []).find(x => x.key === m.instrumento)?.nome || m.instrumento;
       return `${t(m.musica)}: nova parte de ${ins}${m.descricao ? ' (' + m.descricao + ')' : ''}`;
     }
+    if (m.tipo === 'estrutura') return `${t(m.musica)} · compasso ${m.compasso}${m.ate && m.ate !== m.compasso ? ' a ' + m.ate : ''}: ${m.descricao || m.acao + ' ' + (m.valor || '')}`;
     if (m.tipo === 'renomear_musica') return `${t(m.musica)} passa a se chamar “${m.titulo}”${m.rotulo ? ' (' + m.rotulo + ')' : ''}`;
     return m.descricao || m.tipo;
   };
@@ -1442,7 +1443,7 @@ const Caio = (() => {
         const chosen = p.mudancas.filter((_, k) => checks[k].checked); if (!chosen.length) return;
         ok.disabled = true; ok.textContent = 'Aplicando…';
         const r = await apply(chosen, p.resumo);
-        const notas = chosen.some(x => ['corrigir_notas', 'cifras', 'nova_parte'].includes(x.tipo));
+        const notas = chosen.some(x => ['corrigir_notas', 'cifras', 'nova_parte', 'estrutura'].includes(x.tipo));
         conversa[i].feito = r.erros.length ? `Apliquei ${r.ok} de ${chosen.length}. Não deu: ${r.erros.join('; ')}` : `Aplicado (${r.ok}). As músicas alteradas têm a versão anterior guardada em Versões.${notas ? ' O Malak está gerando o áudio corrigido (1 a 2 minutos).' : ''}`;
         keep(); paint(); toast(r.erros.length ? 'Algumas mudanças não foram aplicadas.' : 'Mudanças aplicadas.');
       };
@@ -1454,7 +1455,7 @@ const Caio = (() => {
 
   async function apply(list, resumo) {
     let ok = 0; const erros = [];
-    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas', 'cifras', 'nova_parte'].includes(m.tipo)).map(m => m.musica))];
+    const songsTouched = [...new Set(list.filter(m => ['nota_musica', 'renomear_musica', 'corrigir_notas', 'cifras', 'nova_parte', 'estrutura'].includes(m.tipo)).map(m => m.musica))];
     const rerender = new Set(); const porPartitura = {};
     for (const id of songsTouched) { try { await Versions.snapshot(id, 'Antes das mudanças do Caio: ' + (resumo || '')); } catch {} }
     for (const m of list) {
@@ -1481,6 +1482,10 @@ const Caio = (() => {
         } else if (m.tipo === 'nota_musica') {
           await S.db.collection('songs').doc(m.musica).update({ notes: m.texto });
         } else if (m.tipo === 'nova_parte') {
+          const song = (await S.db.collection('songs').doc(m.musica).get()).data();
+          if (!song?.partitura?.xml) throw new Error('esta música ainda não tem partitura editável');
+          (porPartitura[m.musica] = porPartitura[m.musica] || []).push(m); continue;
+        } else if (m.tipo === 'estrutura') {
           const song = (await S.db.collection('songs').doc(m.musica).get()).data();
           if (!song?.partitura?.xml) throw new Error('esta música ainda não tem partitura editável');
           (porPartitura[m.musica] = porPartitura[m.musica] || []).push(m); continue;

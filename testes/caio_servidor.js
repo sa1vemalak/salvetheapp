@@ -67,6 +67,21 @@ const srv = require(path.join(FN, 'index.js'));
     { tipo: 'nova_parte', musica: 'm1', instrumento: 'sax-alto', copiar_de: 'sax-tenor', oitava: 0, descricao: 'x' },
     { tipo: 'corrigir_notas', musica: 'm1', parte: 'sax-alto', compasso: 2, notas: 'mf A4:4', descricao: 'x' }] });
   confere('parte nova e as notas dela na mesma proposta', nova.ok === true, JSON.stringify(nova));
+  console.log('Estrutura');
+  const est = await run('propor_mudancas', { resumo: 'x', mudancas: [
+    { tipo: 'estrutura', musica: 'm1', acao: 'por_compassos', compasso: 2, ate: 2, quantos: 2, valor: '', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'formula', compasso: 3, ate: 3, quantos: 0, valor: '3/4', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'ensaio', compasso: 3, ate: 3, quantos: 0, valor: 'B', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'barra', compasso: 3, ate: 4, quantos: 0, valor: 'casa1', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'transpor', compasso: 1, ate: 1, quantos: 0, valor: '2', parte: 'trompete', descricao: 'x' },
+    { tipo: 'corrigir_notas', musica: 'm1', parte: 'trompete', compasso: 3, notas: 'f G5:3', descricao: 'x' }] });
+  confere('pôr compassos, fórmula, ensaio, casa 1, transpor e notas no compasso novo', est.ok === true, JSON.stringify(est));
+  ctx.proposta = null;
+  const est2 = await run('propor_mudancas', { resumo: 'x', mudancas: [
+    { tipo: 'estrutura', musica: 'm1', acao: 'formula', compasso: 2, ate: 2, quantos: 0, valor: '7/5', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'tom', compasso: 1, ate: 1, quantos: 0, valor: 'H', parte: 'todas', descricao: 'x' },
+    { tipo: 'estrutura', musica: 'm1', acao: 'tirar_compassos', compasso: 1, ate: 6, quantos: 0, valor: '', parte: 'todas', descricao: 'x' }] });
+  confere('fórmula, tom e apagar tudo inválidos voltam para o Caio', est2.erro && /7\/5/.test(est2.erro) && /"H"/.test(est2.erro) && /todos os compassos/.test(est2.erro), JSON.stringify(est2));
   console.log(`\n${ok} ok, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
