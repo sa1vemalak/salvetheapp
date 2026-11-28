@@ -123,6 +123,14 @@ async function newCode(limite, nota) {
 }
 const setCodeActive = (c, ativo) => updateDoc(doc(fs, 'codigos', c), { ativo });
 const setSignupOpen = open => setDoc(doc(fs, 'config', 'app'), { cadastroAberto: !!open });
+// admin panel icon on the home screen: is there someone who signed up after the owner last opened the panel?
+async function novosCadastros() {
+  const a = await getDoc(doc(fs, 'admins', CTX.user.uid)).catch(() => null);
+  if (!a || !a.exists()) return null;
+  const visto = Number(a.data().painelVistoEm) || 0;
+  const s = await getDocs(query(collection(fs, 'cadastros'), where('em', '>', visto))).catch(() => null);
+  return { admin: true, novos: s ? s.docs.filter(d => d.id !== CTX.user.uid).length : 0 };
+}
 // the app team (admins + partners such as the band's arranger): suggestions, the AI arranger's rules and lessons
 async function teamState() {
   const [adm, eq] = await Promise.all([getDoc(doc(fs, 'admins', CTX.user.uid)).catch(() => null), getDoc(doc(fs, 'equipe', CTX.user.uid)).catch(() => null)]);
@@ -221,6 +229,14 @@ async function acceptInvite(band, c) {
   await noteBand(band, bandName || band, r);
   return band;
 }
+// one count per day the person opens the app (users/{uid}.acessos['AAAA-MM-DD'], Brazil time): only they write it,
+// only the admin panel's server reads it, to show how often each person uses the app
+let acessoMarcado = '';
+function marcarAcesso() {
+  const dia = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  if (acessoMarcado === dia || !CTX.user) return; acessoMarcado = dia;
+  setDoc(doc(fs, 'users', CTX.user.uid), { acessos: { [dia]: increment(1) }, ultimoAcesso: Date.now() }, { merge: true }).catch(() => {});
+}
 async function open(band, show) {
   const b = await getDoc(doc(fs, 'bands', band));
   const m = await getDoc(doc(fs, 'bands', band, 'members', CTX.user.uid));
@@ -230,6 +246,7 @@ async function open(band, show) {
   const sh = shows.find(s => s.id === show) || shows[0];
   CTX.show = sh ? sh.id : null; CTX.showName = sh ? sh.name : ''; CTX.order = sh ? (sh.order || []) : [];
   remember();
+  marcarAcesso();
   // keep the song list in step with the show (songs added, removed or reordered)
   if (CTX.show) onSnapshot(doc(fs, 'bands', band, 'shows', CTX.show), s => {
     if (!s.exists()) return;
@@ -416,7 +433,7 @@ window.SALVE = {
   token: () => auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null),
   listShows, createShow: name => createShow(CTX.band, name), saveShow, deleteShow, library,
   makeInvite, members, setRole, removeMember, myBands,
-  signupState, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile, teamState, team, sugerir,
+  signupState, novosCadastros, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile, teamState, team, sugerir,
   switchTo: (band, show) => { CTX.band = band; CTX.show = show; remember(); location.reload(); },
   switchBand: () => { try { localStorage.removeItem(LS); sessionStorage.setItem('salve:pick', '1'); } catch {} location.reload(); },
 };
