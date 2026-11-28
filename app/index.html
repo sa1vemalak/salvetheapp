@@ -1743,6 +1743,10 @@ const Band = (() => {
   const escH = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   let m = null, scrim = null;
   const close = () => { scrim?.remove(); m?.remove(); m = scrim = null; };
+  /* mensagens prontas que vão junto com o link ou o código quando o dono copia o convite */
+  const quemConvida = () => { const u = SALVE.ctx().user || {}; return String(u.displayName || (u.email || '').split('@')[0] || '').trim(); };
+  const msgConvite = (banda, quem, tipo, link) => `Olá! Você foi convidado para a banda ${banda || 'no salvetheapp'}${quem ? ` por ${quem}` : ''}${tipo === 'editor' ? ', como editor' : ''}.\nEntre por este link (vale 7 dias): ${link}`;
+  const msgCodigo = (quem, codigo, site) => `Olá! Você foi convidado${quem ? ` por ${quem}` : ''} para testar o salvetheapp, o app que salva músicos.\nSeu código de acesso: ${codigo}\nEntre em ${site}, crie sua conta e use o código para criar a sua banda.`;
   async function open() {
     if (!window.SALVE) return;
     const c = SALVE.ctx(), editor = c.role === 'dono' || c.role === 'editor', owner = c.role === 'dono';
@@ -1754,13 +1758,13 @@ const Band = (() => {
       <div class="bsec"><b>Shows</b><div class="hint">Cada show é uma lista de músicas na ordem do palco, com os seus marcadores da DAW.</div>
         <div class="blist">${shows.map(s => `<div class="bitem${s.id === c.show ? ' cur' : ''}"><button class="linkish" data-open="${s.id}" type="button"><b>${escH(s.name)}</b> <small>${(s.order || []).length} músicas</small></button>${editor ? `<button class="btn" data-edit="${s.id}" type="button">Editar</button>` : ''}</div>`).join('') || '<div class="hint">Nenhum show ainda.</div>'}</div>
         ${editor ? '<button class="btn" id="bNewShow" type="button">+ Novo show</button>' : ''}</div>
-      ${editor ? `<div class="bsec"><b>Convidar</b><div class="hint">Mande o link pelo WhatsApp. A pessoa entra com Google ou e-mail e já cai na banda.</div>
+      ${editor ? `<div class="bsec"><b>Convidar</b><div class="hint">O botão copia uma mensagem pronta com o link. Cole no WhatsApp da pessoa. Ela entra com Google ou e-mail e já cai na banda.</div>
         <div class="brow"><button class="btn" data-inv="musico" type="button">Link para músico</button><button class="btn" data-inv="editor" type="button">Link para editor</button></div>
         <input id="bInvLink" readonly placeholder="o link aparece aqui" style="width:100%"></div>` : ''}
       ${editor ? `<div class="bsec" id="bUso"><b>Robôs neste mês</b><div class="hint" id="bUsoTxt">carregando…</div></div>` : ''}
       ${editor ? `<div class="bsec"><b>Modo local (sem internet)</b><div class="hint">Baixa os dados deste show para o programa do modo local. Coloque o arquivo <b>dados.json</b> na pasta do modo local, no lugar do antigo, e abra o "Atualizar salvetheapp".</div><div class="brow" style="justify-content:flex-start"><button class="btn" id="bExport" type="button">Baixar dados deste show</button><button class="btn" id="bGuiaRede" type="button">Como tocar sem internet</button></div></div>` : ''}
       <div class="bsec"><b>Pessoas da banda</b><div class="blist" id="bMembers"><div class="hint">carregando…</div></div></div>
-      <div class="bsec" id="bAdmin" hidden><b>Administração do salvetheapp</b><div class="hint">Só você vê isto. Enquanto o cadastro estiver fechado, criar banda nova exige um código de acesso. Entrar numa banda por convite continua livre.</div>
+      <div class="bsec" id="bAdmin" hidden><b>Administração do salvetheapp</b><div class="hint">Só você vê isto. Enquanto o cadastro estiver fechado, criar banda nova exige um código de acesso. Entrar numa banda por convite continua livre. Para alguém testar o app com a própria banda (fora da sua), crie um código e toque em "Copiar convite".</div>
         <label class="brow" style="justify-content:flex-start"><input type="checkbox" id="bOpen"> Cadastro aberto para todos (qualquer pessoa cria banda, sem código)</label>
         <div class="brow" style="justify-content:flex-start"><input id="bCodeLim" type="number" min="1" max="10000" value="1" style="width:80px" aria-label="Quantas bandas o código pode criar"><input id="bCodeNote" placeholder="Para quem é (ex.: Banda do Zé)" style="flex:1;min-width:140px"><button class="btn" id="bCodeNew" type="button">Criar código</button></div>
         <div class="blist" id="bCodes"></div></div>
@@ -1771,7 +1775,7 @@ const Band = (() => {
     m.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editShow(shows.find(s => s.id === b.dataset.edit)));
     const ns = m.querySelector('#bNewShow'); if (ns) ns.onclick = async () => { const n = prompt('Nome do show:'); if (!n) return; const id = await SALVE.createShow(n.trim()); editShow({ id, name: n.trim(), order: [] }); };
     m.querySelectorAll('[data-inv]').forEach(b => b.onclick = async () => {
-      try { const link = await SALVE.makeInvite(b.dataset.inv); const i = m.querySelector('#bInvLink'); i.value = link; i.select(); try { await navigator.clipboard.writeText(link); toast('Link copiado. Mande para a pessoa (vale 7 dias).'); } catch { toast('Copie o link e mande para a pessoa (vale 7 dias).'); } }
+      try { const link = await SALVE.makeInvite(b.dataset.inv); const i = m.querySelector('#bInvLink'); i.value = link; i.select(); const t = msgConvite(c.bandName, quemConvida(), b.dataset.inv, link); try { await navigator.clipboard.writeText(t); toast('Convite copiado com a mensagem. Cole no WhatsApp da pessoa (vale 7 dias).'); } catch { prompt('Copie e mande:', t); } }
       catch { toast('Não consegui criar o convite.'); }
     });
     const ex = m.querySelector('#bExport'); if (ex) ex.onclick = async () => {
@@ -1801,8 +1805,8 @@ const Band = (() => {
         const box = m?.querySelector('#bCodes'); if (!box) return;
         const list = await SALVE.listCodes();
         box.innerHTML = list.length ? list.map(k => `<div class="bitem"><span><b style="font-family:var(--f-mono);letter-spacing:.08em">${escH(k.id)}</b> <small>${escH(k.nota || '')} · usado ${k.usados} de ${k.limite}${k.ativo ? '' : ' · desativado'}</small></span>
-          <span class="brow"><button class="btn" data-copy="${escH(k.id)}" type="button">Copiar</button><button class="btn" data-tog="${escH(k.id)}" data-on="${k.ativo ? 1 : 0}" type="button">${k.ativo ? 'Desativar' : 'Reativar'}</button></span></div>`).join('') : '<div class="hint">Nenhum código ainda.</div>';
-        box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { const t = `Seu código de acesso ao salvetheapp: ${b.dataset.copy}\nEntre em ${location.origin}, crie sua conta e use o código para criar a banda.`; try { await navigator.clipboard.writeText(t); toast('Copiado. Mande para a pessoa.'); } catch { prompt('Copie e mande:', t); } });
+          <span class="brow"><button class="btn" data-copy="${escH(k.id)}" type="button">Copiar convite</button><button class="btn" data-tog="${escH(k.id)}" data-on="${k.ativo ? 1 : 0}" type="button">${k.ativo ? 'Desativar' : 'Reativar'}</button></span></div>`).join('') : '<div class="hint">Nenhum código ainda.</div>';
+        box.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => { const t = msgCodigo(quemConvida(), b.dataset.copy, location.origin); try { await navigator.clipboard.writeText(t); toast('Copiado. Mande para a pessoa.'); } catch { prompt('Copie e mande:', t); } });
         box.querySelectorAll('[data-tog]').forEach(b => b.onclick = () => SALVE.setCodeActive(b.dataset.tog, b.dataset.on !== '1').then(paintCodes, () => toast('Não consegui mudar.')));
       };
       m.querySelector('#bCodeNew').onclick = async () => {
