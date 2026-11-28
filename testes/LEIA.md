@@ -9,6 +9,8 @@
   (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
 - `node testes/convite.js`: "Link para músico/editor" copia a mensagem pronta (banda, quem convidou, link) e o código de acesso
   copia o convite para testar o app que salva músicos.
+- `node testes/instalar.js`: no celular e no tablet (iPhone, iPad, Android) aparece "Instalar o app" com o passo a passo para pôr
+  o ícone na tela de início; no computador e quando já abriu pelo ícone, não aparece. `FOTOS=pasta` salva os prints.
 - `python3 testes/malak_base.py` (precisa do music21): a pauta da base sem nome na grade não vira trompete; os nomes param no 2º sistema.
 - `python3 testes/malak_links.py`: o Malak abre os PDFs da turnê salvos como caminho do site ("scores/...").
 - `python3 testes/malak_leitura.py` (precisa de pymupdf e music21): o Malak lê do PDF as pausas, notas agudas com linhas

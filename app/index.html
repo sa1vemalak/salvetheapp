@@ -11,6 +11,8 @@
 <script>/* tema claro ou escuro: escolhido no botão do canto de baixo e lembrado neste aparelho (o escuro é o padrão) */
 try { if (JSON.parse(localStorage.getItem('estante:tema')) === 'claro') { document.documentElement.dataset.theme = 'light'; document.documentElement.style.colorScheme = 'light';
   document.querySelector('meta[name=theme-color]').content = '#ffffff'; } } catch {}</script>
+<script>/* Android: o Chrome oferece "instalar"; guardamos para o botão "Instalar agora" do app */
+window.__instalar = null; addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__instalar = e; dispatchEvent(new Event('salve:instalar')); });</script>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Caveat:wght@600&display=swap">
@@ -888,6 +890,23 @@ body.reading .center { grid-column: 1 !important; grid-row: 1; }
 body.at-home .temabtn, body:has(.gate:not([hidden])) .temabtn { display: inline-flex; }
 .temabtn svg, #temaSide svg { width: 18px; height: 18px; }
 :root[data-theme="light"] .tema-sol, :root:not([data-theme="light"]) .tema-lua { display: none; }
+
+/* ===== instalar na tela de início (só celular e tablet, e só quando ainda está no navegador) ===== */
+.instbtn { position: fixed; z-index: 61; right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: none; align-items: center; gap: 8px; min-height: 40px; padding: 0 15px 0 12px; border-radius: 999px; border: 1px solid var(--fg);
+  background: var(--fg); color: var(--bg); font: 600 13.5px var(--f-body); box-shadow: var(--shadow); }
+.instbtn svg, #instalarSide svg { width: 18px; height: 18px; }
+body.pode-instalar.at-home:not(.inst-adiado) .instbtn, body.pode-instalar:not(.inst-adiado):has(.gate:not([hidden])) .instbtn { display: inline-flex; }
+#instalarSide { display: none; }
+body.pode-instalar #instalarSide { display: flex; }
+.scrim.inst { z-index: 70; }
+.modal.guia.inst { z-index: 71; }
+.inst-agora { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 14px; border: 1px solid var(--line2, var(--line)); background: rgba(255,255,255,.03); }
+.inst-agora p { margin: 0; font-size: 14px; line-height: 1.5; }
+.inst-agora .btn { align-self: flex-start; padding: 12px 22px; font-size: 15px; font-weight: 700; }
+.gsteps .simb { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 4px; margin: 0 2px; border-radius: 7px; border: 1px solid var(--line2, var(--line)); background: var(--chrome); vertical-align: -7px; }
+.gsteps .simb svg { width: 16px; height: 16px; }
+:root[data-theme="light"] .inst-agora { background: rgba(0,0,0,.02); }
 /* no celular o fim da tela inicial e do login rola para cima do botão, nada fica escondido atrás dele */
 @media (max-width: 700px) { .home-in, .gate-in { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important; } }
 
@@ -976,6 +995,7 @@ body.at-home .temabtn, body:has(.gate:not([hidden])) .temabtn { display: inline-
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda, shows e convites</span></button>
         <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
+        <button class="iconbtn" id="instalarSide" type="button" title="Pôr o app na tela de início do celular"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/></svg><span class="lbl">Instalar o app</span></button>
         <button class="iconbtn" id="temaSide" type="button" title="Trocar entre tema claro e escuro"><svg class="tema-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="tema-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="lbl tema-txt">Tema claro</span></button>
       </div>
     </div>
@@ -1097,6 +1117,7 @@ body.at-home .temabtn, body:has(.gate:not([hidden])) .temabtn { display: inline-
 </section>
 
 <button class="temabtn" id="temaBtn" type="button" title="Trocar entre tema claro e escuro"><svg class="tema-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="tema-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="tema-txt">Tema claro</span></button>
+<button class="instbtn" id="instalarBtn" type="button" title="Pôr o app na tela de início do celular"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/></svg><span>Instalar o app</span></button>
 <button class="readexit" id="readExit" hidden aria-label="Sair da tela cheia" title="Sair da tela cheia">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v5H4M15 4v5h5M15 20v-5h5M9 20v-5H4"/></svg></button>
 <nav class="palette closed" id="palette" aria-label="Anotações">
@@ -3436,6 +3457,99 @@ const Tema = (() => {
   $('#temaBtn').onclick = troca; $('#temaSide').onclick = troca;
   aplica(ls.get('tema', 'escuro'));
   return { aplica, troca };
+})();
+
+/* ---------- instalar o app na tela de início (celular e tablet; no computador fica só o navegador) ---------- */
+const Instalar = (() => {
+  const ua = navigator.userAgent;
+  const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);   // o iPad se passa por Mac
+  const iphone = /iPhone|iPod/.test(ua);
+  const android = /Android/.test(ua);
+  const movel = iphone || ipad || android || !!navigator.userAgentData?.mobile;
+  const instalado = () => matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+  const dentroDeApp = /FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|TikTok|musical_ly|Snapchat|; wv\)/.test(ua);   // navegador de dentro do Instagram, Facebook etc.
+  const nav = () => /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua) ? 'outro' : /SamsungBrowser/.test(ua) ? 'samsung' : /Firefox/.test(ua) ? 'firefox' : 'padrao';
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ADIADO = 14 * 864e5;   // "Agora não" esconde o botão flutuante por 14 dias (o item do menu continua)
+  const ic = {
+    share: '<span class="simb" aria-label="Compartilhar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M6 11H5v10h14V11h-1"/></svg></span>',
+    pontos: '<span class="simb" aria-label="três pontinhos"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></span>',
+    pontosH: '<span class="simb" aria-label="três pontinhos"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></span>',
+    menu: '<span class="simb" aria-label="menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></span>',
+  };
+  const fim = ios => ({ t: 'Abra pelo ícone', d: 'O ícone <b>S</b> do salvetheapp aparece junto dos outros apps. Abrindo por ele, o app ocupa a tela toda, sem a barra do navegador.'
+    + (ios ? '</p><p>Na primeira vez, entre de novo com seu e-mail e senha (o ícone não leva o login do Safari).' : ''),
+    ok: 'o app abre sem a barra de endereço em cima.' });
+
+  function guia(sis, n) {
+    if (dentroDeApp && sis === sistema()) return { titulo: 'Abra no navegador primeiro', intro: 'Você abriu o link de dentro de outro app (Instagram, Facebook…). Daqui não dá para instalar.',
+      passos: [{ t: 'Abra no ' + (sis === 'android' ? 'Chrome' : 'Safari'), d: 'Toque nos ' + ic.pontosH + ' ou no ' + ic.share + ' deste app e escolha <b>Abrir no navegador</b> (ou <b>Abrir no ' + (sis === 'android' ? 'Chrome' : 'Safari') + '</b>). Ou copie o link abaixo e cole lá.' },
+        { t: 'Lá, toque em Instalar o app', d: 'O passo a passo aparece de novo, já certo para o seu aparelho.' }], copiar: true };
+    if (sis === 'android') {
+      if (n === 'samsung') return { titulo: 'Pôr na tela inicial (Samsung)', intro: 'Leva uns 10 segundos e o salvetheapp vira um app no seu celular.',
+        passos: [{ t: 'Toque no menu ' + ic.menu, d: 'Fica na barra de baixo, à direita.' },
+          { t: 'Toque em Adicionar página a', d: 'Depois escolha <b>Tela inicial</b>. Em algumas versões o nome é <b>Adicionar à tela inicial</b>.' },
+          { t: 'Toque em Adicionar', d: 'O nome já vem como salvetheapp.' }, fim(false)] };
+      return { titulo: 'Instalar no Android', intro: 'Leva uns 10 segundos e o salvetheapp vira um app no seu celular ou tablet.',
+        passos: [{ t: 'Toque nos três pontinhos ' + ic.pontos, d: 'Ficam no alto, à direita, ao lado do endereço.' },
+          { t: 'Toque em Instalar app', d: 'Em alguns aparelhos o nome é <b>Adicionar à tela inicial</b>' + (n === 'firefox' ? ' ou <b>Instalar</b>' : '') + '.' },
+          { t: 'Confirme em Instalar', d: 'O nome já vem como salvetheapp.' }, fim(false)] };
+    }
+    const onde = sis === 'ipad' ? 'no alto, à direita, ao lado do endereço' : (n === 'outro' ? 'na barra do endereço' : 'na barra de baixo');
+    return { titulo: 'Pôr na Tela de Início do ' + (sis === 'ipad' ? 'iPad' : 'iPhone'), intro: 'Leva uns 10 segundos e o salvetheapp vira um app no seu ' + (sis === 'ipad' ? 'iPad' : 'iPhone') + '.',
+      passos: [{ t: 'Toque em Compartilhar ' + ic.share, d: 'É o quadrado com a seta para cima, ' + onde + '. Se não aparecer, toque antes nos ' + ic.pontosH + '.' },
+        { t: 'Toque em Adicionar à Tela de Início', d: 'Role a lista para baixo se precisar. Se não estiver lá, toque em <b>Mais</b> ou <b>Editar Ações</b>.' },
+        { t: 'Toque em Adicionar', d: 'No alto, à direita. Se aparecer <b>Abrir como App Web</b>, deixe ligado. O nome já vem como salvetheapp.' }, fim(true)],
+      nota: n === 'outro' ? 'Se não achar a opção, abra salvetheapp.web.app no Safari e faça por lá.' : '' };
+  }
+  const sistema = () => android ? 'android' : ipad ? 'ipad' : 'iphone';
+
+  let aberto = null;
+  function show() {
+    if (aberto) aberto.close();
+    let sis = sistema(), n = nav();
+    const scrim = el('div', 'scrim inst'), m = el('div', 'modal guia inst'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    const close = () => { scrim.remove(); m.remove(); document.removeEventListener('keydown', onKey); removeEventListener('salve:instalar', render); aberto = null; };
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey); scrim.onclick = close;
+    function render() {
+      const g = guia(sis, n), agora = sis === 'android' && sis === sistema() && window.__instalar;
+      m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Instalar o app</div><h3>${esc(g.titulo)}</h3><p>${g.intro}</p></div><button class="guia-x" type="button" aria-label="Fechar">✕</button></div>
+        <div class="guia-pick"><div class="row"><span class="lab" style="margin-right:4px">Aparelho</span><div class="seg" id="iSis">${[['iphone', 'iPhone'], ['ipad', 'iPad'], ['android', 'Android']].map(([k, t]) => `<button type="button" data-k="${k}" aria-pressed="${k === sis}">${t}</button>`).join('')}</div></div></div>
+        ${agora ? `<div class="inst-agora"><p>Seu aparelho deixa instalar com um toque.</p><button class="btn primary" id="iAgora" type="button">Instalar agora</button></div><h4 class="gsec" style="margin:6px 0 -4px">Ou pelo menu</h4>` : ''}
+        <ol class="gsteps">${g.passos.map(st => `<li><div><h5>${st.t}</h5><p>${st.d}</p>${st.ok ? `<div class="gok">✓ <b>Pronto quando</b> ${st.ok}</div>` : ''}</div></li>`).join('')}</ol>
+        ${g.nota ? `<div class="hint">${esc(g.nota)}</div>` : ''}
+        <div class="hint">No computador não precisa instalar: é só usar pelo navegador.</div>
+        <div class="gfoot"><div style="display:flex;gap:8px;flex-wrap:wrap">${g.copiar ? '<button class="btn" id="iCopia" type="button">Copiar o link</button>' : ''}<button class="btn" id="iDepois" type="button">Agora não</button></div>
+          <button class="btn primary" id="iOk" type="button">Entendi</button></div>`;
+      m.querySelector('.guia-x').onclick = close;
+      m.querySelector('#iOk').onclick = close;
+      m.querySelector('#iDepois').onclick = () => { ls.set('instalar:adiado', Date.now()); document.body.classList.add('inst-adiado'); close(); };
+      m.querySelectorAll('#iSis button').forEach(b => b.onclick = () => { sis = b.dataset.k; n = sis === sistema() ? nav() : 'padrao'; render(); });
+      const c = m.querySelector('#iCopia'); if (c) c.onclick = async () => { const link = location.origin + '/'; try { await navigator.clipboard.writeText(link); toast('Link copiado. Cole no navegador.'); } catch { prompt('Copie o link:', link); } };
+      const a = m.querySelector('#iAgora'); if (a) a.onclick = async () => {
+        const e = window.__instalar; window.__instalar = null;
+        try { await e.prompt(); const r = await e.userChoice; if (r && r.outcome === 'accepted') { close(); toast('Pronto. O ícone do salvetheapp está na tela do celular.'); } else render(); } catch { render(); }
+      };
+    }
+    addEventListener('salve:instalar', render);
+    render();
+    document.body.append(scrim, m);
+    aberto = { close, m };
+    return aberto;
+  }
+
+  function atualiza() {
+    const pode = movel && !instalado();
+    document.body.classList.toggle('pode-instalar', pode);
+    document.body.classList.toggle('inst-adiado', Date.now() - (+ls.get('instalar:adiado', 0) || 0) < ADIADO);
+    if (!pode && aberto) aberto.close();
+  }
+  $('#instalarBtn').onclick = show; $('#instalarSide').onclick = show;
+  addEventListener('appinstalled', () => { window.__instalar = null; if (aberto) aberto.close(); });
+  try { matchMedia('(display-mode: standalone)').addEventListener('change', atualiza); } catch {}
+  atualiza();
+  return { show, guia, atualiza, movel, instalado };
 })();
 
 /* ---------- reading mode: just the score, full screen ---------- */
