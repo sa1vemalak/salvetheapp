@@ -500,6 +500,74 @@ body.editing-score .palette, body.editing-score .moremenu { display: none; }
 .emptypart { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 460px; margin: 40px auto; text-align: center; }
 .addblank { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
 .addblank input { margin-top: 3px; }
+
+/* Enviar várias partituras de uma vez */
+.addlote { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line2, var(--line)); background: var(--chrome); color: var(--fg); }
+.addlote b { font-family: var(--f-display); font-size: 15px; }
+.modal.guia.lote { width: min(860px, calc(100% - 24px)); z-index: 71; }
+.scrim.lote { z-index: 70; }
+/* com uma janela aberta, o botão flutuante "Instalar o app" não fica por cima dos botões dela */
+body:has(.modal) .instbtn { display: none !important; }
+.lote-drop { display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; text-align: center; min-height: 150px; padding: 18px; border-radius: 16px;
+  border: 1.5px dashed var(--line2, var(--line)); background: var(--chrome); cursor: pointer; transition: border-color .25s, background-color .25s; }
+.lote-drop b { font-family: var(--f-display); font-size: 18px; padding: 10px 22px; border-radius: 999px; background: var(--fg); color: var(--accent-ink); }
+.lote-drop span { color: var(--muted); font-size: 13.5px; line-height: 1.45; max-width: 440px; }
+.lote-drop.on, .lote-drop:hover { border-color: var(--fg); }
+.lote-pasta { align-self: center; }
+.lote-como { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.lote-como li { font-size: 13.5px; line-height: 1.5; color: var(--muted); padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.lote-como b { color: var(--fg); }
+.lote-barra { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; margin-bottom: 22px; }
+.lote-barra i { display: block; height: 100%; width: 0; background: var(--fg); transition: width .2s; }
+.lote-grupos { display: flex; flex-direction: column; gap: 12px; }
+.lote-g { border: 1px solid var(--line2, var(--line)); border-radius: 14px; overflow: hidden; }
+.lote-g header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.lote-g header small { color: var(--muted); font-size: 12px; margin-left: auto; }
+.lote-tit { flex: 1 1 220px; min-width: 0; font-family: var(--f-display); font-size: 16px; font-weight: 700; padding: 7px 10px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--fg); }
+.lote-tit:hover, .lote-tit:focus { border-color: var(--line2, var(--line)); background: var(--bg); }
+.lote-chip { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line2, var(--line)); }
+.lote-g.sem header { background: color-mix(in srgb, var(--fg) 7%, var(--chrome)); }
+.lote-g.sem .lote-chip { color: var(--fg); border-color: var(--fg); }
+.lote-g ul { list-style: none; margin: 0; padding: 0; }
+.lote-i { display: grid; grid-template-columns: 26px minmax(0, 1fr) 190px 150px; gap: 6px 10px; align-items: center; padding: 9px 12px; border-top: 1px solid var(--line); }
+.lote-i:first-child { border-top: 0; }
+.lote-i.off .lote-arq, .lote-i.off .lote-parte, .lote-i.off .lote-orig { opacity: .45; }
+.lote-ok input { width: 20px; height: 20px; accent-color: var(--fg); }
+.lote-arq { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lote-arq b { font-weight: 500; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lote-arq small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.lote-porque { font-size: 11.5px !important; opacity: .8; }
+.lote-parte { padding: 8px 10px; border-radius: 9px; border: 1px solid var(--line2, var(--line)); background: var(--chrome); color: var(--fg); min-width: 0; font-weight: 600; }
+.lote-orig { font-size: 12.5px; color: var(--muted); }
+.lote-mover { min-width: 0; padding: 7px 8px; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--muted); font-size: 12.5px; }
+.lote-conf { grid-column: 2 / -1; justify-self: start; display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--fg); color: var(--fg); }
+.lote-falta { margin: 0; font-size: 13.5px; font-weight: 600; }
+.lote-conf small { font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.lote-conf-n { color: var(--fg); }
+.lote-fora { font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+.lote-fora summary { cursor: pointer; padding: 8px 0; }
+.lote-fora ul { margin: 0 0 8px; padding-left: 18px; line-height: 1.6; }
+.lote-fora span { color: var(--fg); }
+.lote-malak small { font-size: 12.5px; }
+.lote .gfoot { align-items: center; }
+.lote-acoes { display: flex; gap: 8px; margin-left: auto; }
+.lote-mais { display: flex; }
+.lote-lendo { margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.lote-arrasta::after { content: "Solte os arquivos para enviar várias partituras de uma vez"; position: fixed; inset: 12px; z-index: 80; display: grid; place-items: center;
+  border: 2px dashed var(--fg); border-radius: 20px; background: color-mix(in srgb, var(--bg) 82%, transparent); color: var(--fg); font-family: var(--f-display); font-size: 22px; pointer-events: none; }
+@media (max-width: 700px) {
+  .lote-i { grid-template-columns: 26px minmax(0, 1fr); align-items: start; }
+  .lote-ok { grid-row: 1 / span 3; padding-top: 2px; }
+  .lote-arq, .lote-parte, .lote-mover, .lote-orig, .lote-conf { grid-column: 2; }
+  .lote-parte, .lote-mover { font-size: 16px; }
+  .lote-ok { padding: 6px 6px 6px 0; }
+  .lote-g header { padding: 8px 10px; gap: 4px 8px; }
+  .lote-tit { flex-basis: 100%; padding: 6px 8px; }
+  .lote-g header small { display: none; }
+  .lote-acoes { flex: 1 1 100%; }
+  .lote-acoes .btn { flex: 1; }
+}
 .ed-new fieldset { border: 1px solid var(--line); border-radius: 12px; margin: 0; padding: 10px 12px; }
 .ed-new legend { font-weight: 500; font-size: 14px; padding: 0 4px; }
 .ed-ins { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; }
@@ -1182,6 +1250,7 @@ body.pode-instalar #instalarSide { display: flex; }
 
 <script src="lib/pdf.min.js"></script>
 <script src="partitura.js"></script>
+<script src="lote.js"></script>
 <script src="fb.js"></script>
 <script>
 /* keep the app up to date: when a newer version is published, reload (only when not playing) */
@@ -2590,6 +2659,7 @@ function openAdd() {
   const scrim = el('div', 'scrim'); const m = el('div', 'modal'); m.setAttribute('role', 'dialog');
   const song = currentSong();
   m.innerHTML = `<h3>Adicionar música</h3>
+    <button type="button" class="addlote" id="addLote"><b>Enviar várias partituras de uma vez</b><span class="hint">De várias músicas juntas: o app descobre a música e o instrumento de cada arquivo, e você confere antes de salvar.</span></button>
     <div class="field"><label for="newTitle">Música</label><input type="text" id="newTitle" list="songList" placeholder="Nome da música"></div>
     <datalist id="songList"></datalist>
     <label class="addblank"><input type="checkbox" id="newBlank"> <span><b>Criar a partitura aqui no app</b><br><span class="hint">Começa em branco: você escolhe os instrumentos e escreve tocando nas notas ou pedindo ao Caio.</span></span></label>
@@ -2603,6 +2673,7 @@ function openAdd() {
     <div class="noteedit-row" style="display:flex;gap:8px;justify-content:flex-end"><button class="btn" id="cancelAdd">Cancelar</button><button class="btn primary" id="doAdd">Adicionar</button></div>`;
   document.body.append(scrim, m);
   S.songs.forEach(s => { const o = document.createElement('option'); o.value = s.title; $('#songList', m).append(o); });
+  $('#addLote', m).onclick = () => { scrim.remove(); m.remove(); Lote2.abrir(); };
   const files = [];
   $('#newFiles', m).onchange = e => {
     files.length = 0; const list = $('#fileList', m); list.replaceChildren();
@@ -2626,44 +2697,15 @@ function openAdd() {
     const blank = $('#newBlank', m).checked;
     if (!files.length && !srcs.length && !guiaFile && !blank) { toast('Escolha pelo menos um PDF ou a gravação, ou marque “Criar a partitura aqui no app”.'); return; }
     const btn = $('#doAdd', m); btn.disabled = true;
-    const existing = S.songs.find(s => slug(s.title) === slug(title));
-    const id = existing ? existing.id : slug(title);
-    let parts = existing ? [...(existing.parts || [])] : [];
-    let fontes = existing ? [...(existing.fontes || [])] : [];
-    const total = files.length + srcs.length + (guiaFile ? 1 : 0);
-    let guia = existing?.guia || null;
     try {
-      if (guiaFile) {
-        const res = await S.assets.upload(guiaFile, { onProgress: x => { btn.textContent = `Enviando a gravação · ${Math.round(x * 100)}%`; } });
-        guia = { name: guiaFile.name, src: res.url, path: res.id, at: Date.now() };
-      }
-      for (let k = 0; k < srcs.length; k++) {
-        const f = srcs[k];
-        const res = await S.assets.upload(f, { onProgress: x => { btn.textContent = `Enviando ${k + 1}/${total} · ${Math.round(x * 100)}%`; } });
-        fontes = fontes.filter(x => x.name !== f.name);
-        fontes.push({ name: f.name, src: res.url, path: res.id, at: Date.now(), status: 'aguardando diagramação' });
-      }
-      for (let k = 0; k < files.length; k++) {
-        const { f, inp } = files[k];
-        const name = inp.value.trim() || 'Parte';
-        const res = await S.assets.upload(f, { type: 'application/pdf', onProgress: x => { btn.textContent = `Enviando ${srcs.length + k + 1}/${total} · ${Math.round(x * 100)}%`; } });
-        const key = slug(name);
-        parts = parts.filter(p => p.key !== key);
-        parts.push({ key, name, src: res.url, assetId: res.id });
-      }
-      const order = existing ? existing.order : Math.max(0, ...S.songs.map(s => s.order || 0)) + 1;
-      if (existing) { try { await Versions.snapshot(id, 'Antes de adicionar partes'); } catch {} }
-      const { id: _i, order: _o, ...keep } = existing || {};
-      const doc = { ...keep, title, tag: existing?.tag || '', parts, fontes, notes: existing?.notes || '' };
-      if (guia) doc.guia = guia;
-      await S.db.collection('songs').doc(id).set(doc);
-      if (window.SALVE) { const c = SALVE.ctx(); if (!(c.order || []).includes(id)) await SALVE.saveShow(c.show, { order: [...(c.order || []), id] }); }
-      if (window.SALVE && (files.length || srcs.length)) Robo.start(id, null, 'pdf');
-      else if (window.SALVE && guiaFile) Robo.arranjo(id);
-      S.songId = id; ls.set('song', id);
-      toast(existing ? 'Partes adicionadas.' : 'Música adicionada.');
+      const pdfs = files.map(({ f, inp }) => { const name = inp.value.trim() || 'Parte'; return { f, name, key: slug(name) }; });
+      const r = await gravarMusica({ title, pdfs, srcs, guiaFile, onProgress: t => { btn.textContent = t; } });
+      if (window.SALVE && (files.length || srcs.length)) Robo.start(r.id, null, 'pdf');
+      else if (window.SALVE && guiaFile) Robo.arranjo(r.id);
+      S.songId = r.id; ls.set('song', r.id);
+      toast(r.existing ? 'Partes adicionadas.' : 'Música adicionada.');
       shut();
-      if (blank && !(existing?.partitura?.xml)) Editor.criar({ ...doc, id });
+      if (blank && !(r.existing?.partitura?.xml)) Editor.criar({ ...r.doc, id: r.id });
     } catch (e) {
       btn.disabled = false; btn.textContent = 'Adicionar';
       toast(e?.code === 'too_large' ? 'Um dos arquivos passa de 200 MB.' : 'Não consegui enviar. Confira a internet e tente de novo.');
@@ -2671,6 +2713,282 @@ function openAdd() {
     }
   };
 }
+/* saves one song: sends the PDFs (one per part), the original files and the recording, keeps the old version in the
+   history when the song already exists, and puts a new song at the end of the setlist. Used by "Adicionar música" and by
+   "Enviar várias partituras" (one call per song). pdfs: [{ f, name, key }] */
+async function gravarMusica({ title, pdfs = [], srcs = [], guiaFile = null, songId = null, onProgress = () => {}, contador = null, setlist = true }) {
+  let existing = (songId && S.songs.find(s => s.id === songId)) || S.songs.find(s => slug(s.title) === slug(title));
+  let id = existing ? existing.id : slug(title).slice(0, 80).replace(/-$/, '');
+  if (!existing) {
+    // a song may already exist in the band's library under this id (another show, or renamed): never write over it
+    if (!id || id === 'parte') id = 'musica-' + Date.now().toString(36);
+    const base = id;
+    for (let k = 2; k < 50; k++) {
+      const snap = await S.db.collection('songs').doc(id).get();  // sem conseguir conferir, para (melhor que gravar por cima)
+      if (!snap.exists) break;
+      const d = snap.data() || {};
+      if (slug(d.title || '') === slug(title)) { existing = { id, ...d }; break; }  // same song, other show: the parts go into it
+      id = base + '-' + k;
+    }
+  }
+  let parts = existing ? [...(existing.parts || [])] : [];
+  let fontes = existing ? [...(existing.fontes || [])] : [];
+  const total = pdfs.length + srcs.length + (guiaFile ? 1 : 0);
+  const n = contador || { k: 0, total };
+  const rot = (x, k = 0) => `Enviando ${n.k + k + 1}/${n.total} · ${Math.round(x * 100)}%`;
+  let guia = existing?.guia || null;
+  if (guiaFile) {
+    const res = await S.assets.upload(guiaFile, { onProgress: x => onProgress(`Enviando a gravação · ${Math.round(x * 100)}%`) });
+    guia = { name: guiaFile.name, src: res.url, path: res.id, at: Date.now() };
+  }
+  for (let k = 0; k < srcs.length; k++) {
+    const f = srcs[k];
+    const res = await S.assets.upload(f, { onProgress: x => onProgress(rot(x, k)) });
+    fontes = fontes.filter(x => x.name !== f.name);
+    fontes.push({ name: f.name, src: res.url, path: res.id, at: Date.now(), status: 'aguardando diagramação' });
+  }
+  n.k += srcs.length;
+  for (let k = 0; k < pdfs.length; k++) {
+    const { f, name, key } = pdfs[k];
+    const res = await S.assets.upload(f, { type: 'application/pdf', onProgress: x => onProgress(rot(x, k)) });
+    parts = parts.filter(p => p.key !== key);
+    parts.push({ key, name, src: res.url, assetId: res.id });
+  }
+  n.k += pdfs.length;
+  if (existing) { try { await Versions.snapshot(id, 'Antes de adicionar partes'); } catch {} }
+  const { id: _i, order: _o, ...keep } = existing || {};
+  const doc = { ...keep, title: existing && songId ? existing.title || title : title, tag: existing?.tag || '', parts, fontes, notes: existing?.notes || '' };
+  if (guia) doc.guia = guia;
+  await S.db.collection('songs').doc(id).set(doc);
+  if (setlist && window.SALVE) { const c = SALVE.ctx(); if (!(c.order || []).includes(id)) await SALVE.saveShow(c.show, { order: [...(c.order || []), id] }); }
+  return { id, doc, existing };
+}
+
+/* ---------- enviar várias partituras de uma vez (a leitura fica em lote.js) ---------- */
+const Lote2 = (() => {
+  const escL = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const ACEITA = '.pdf,.zip,.musicxml,.mxl,.xml,.mscz,.mscx,.musx,.mus,.sib,.dorico,.mid,.midi,.gp,.gpx,.gp5,application/pdf,application/zip';
+  const NOMES_PARTE = ['Grade', 'Trompete (B♭)', 'Trompete 2 (B♭)', 'Alto Sax', 'Tenor Sax', 'Sax Barítono', 'Trombone', 'Trombone 2', 'Base', 'Baixo', 'Guitarra', 'Bateria', 'Voz', 'Flauta', 'Clarinete', 'Trompa', 'Tuba', 'Violino', 'Cordas'];
+  let aberto = null;
+  function pode() {
+    if (!S.db || !S.assets) { toast('Para adicionar músicas, entre no app conectado à internet.'); return false; }
+    if (!S.canWrite) { toast('Só o dono ou um editor da banda pode adicionar músicas.'); return false; }
+    return true;
+  }
+  function abrir(arquivos) {
+    if (!pode()) return;
+    if (aberto) aberto.close();
+    const scrim = el('div', 'scrim lote'), m = el('div', 'modal guia lote'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true'); m.setAttribute('aria-labelledby', 'loteT');
+    let itens = [], grupos = [], fase = 'escolher', enviando = false, cancelado = false;
+    const problemas = [];
+    const close = () => { if (enviando) return; cancelado = true; scrim.remove(); m.remove(); document.removeEventListener('keydown', onKey); aberto = null; };
+    // Esc fecha, menos quando está escolhendo um nome na lista (aí o Esc só fecha a lista) ou já há arquivos lidos
+    const onKey = e => { if (e.key !== 'Escape') return; if (itens.length && (e.target.matches?.('input[list]') || fase !== 'escolher')) { if (fase === 'resumo' && !e.target.matches?.('input')) m.querySelector('.guia-x')?.focus(); return; } close(); };
+    document.addEventListener('keydown', onKey); scrim.onclick = close;
+    document.body.append(scrim, m);
+    /* os botões de escolher arquivo são rótulos de um campo escondido: também abrem pelo teclado (Enter ou espaço) */
+    const teclado = () => m.querySelectorAll('label[for]').forEach(l => {
+      const alvo = m.querySelector('#' + l.htmlFor); if (!alvo || alvo.type !== 'file') return;
+      l.tabIndex = 0; l.setAttribute('role', 'button');
+      l.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alvo.click(); } };
+    });
+    aberto = { close, m, soltar: l => { if (fase === 'escolher' || fase === 'resumo') ler(l); } };
+    const pasta = 'webkitdirectory' in document.createElement('input') && !matchMedia('(pointer: coarse)').matches;
+    const segura = e => { e.preventDefault(); e.returnValue = ''; };  // fechar a aba no meio do envio pergunta antes
+    function telaEscolher() {
+      fase = 'escolher';
+      m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Partituras</div><h3 id="loteT">Enviar várias partituras de uma vez</h3>
+          <p>Escolha todos os arquivos juntos, de várias músicas. O app descobre de que música é cada um, qual é o instrumento e se é uma versão nova. Antes de salvar, você confere.</p></div><button class="guia-x" type="button" aria-label="Fechar">✕</button></div>
+        <label class="lote-drop" for="loteArq"><b>Escolher os arquivos</b><span>PDFs das partes e da grade, arquivos do MuseScore, MusicXML, Finale ou Sibelius, ou uma pasta compactada (.zip)</span></label>
+        <input type="file" id="loteArq" accept="${ACEITA}" multiple hidden>
+        ${pasta ? '<input type="file" id="lotePasta" webkitdirectory multiple hidden><label class="btn lote-pasta" for="lotePasta">Escolher uma pasta inteira</label>' : ''}
+        <ul class="lote-como"><li><b>Música</b> pelo título escrito na partitura e pelo nome do arquivo. Se já está na estante, as partes entram nela.</li>
+          <li><b>Instrumento</b> pelo nome no alto da parte (Trumpet in B♭, Sax Tenor, Base…). Com vários instrumentos na página, é a grade.</li>
+          <li><b>Versão</b>: se a parte já existe, a nova entra e a que já está no app fica guardada no histórico. Se mandar duas versões da mesma parte, fica a mais nova (pelo nome: v2, final ou data).</li></ul>
+        <div class="gfoot"><button class="btn" id="loteFecha" type="button">Cancelar</button></div>`;
+      m.querySelector('.guia-x').onclick = close; m.querySelector('#loteFecha').onclick = close;
+      m.querySelector('#loteArq').onchange = e => ler([...e.target.files]);
+      const lp = m.querySelector('#lotePasta'); if (lp) lp.onchange = e => ler([...e.target.files]);
+      const drop = m.querySelector('.lote-drop');
+      drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('on'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('on'));
+      drop.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); drop.classList.remove('on'); ler(await doArraste(e.dataTransfer)); });
+      teclado(); m.querySelector('.lote-drop').focus();
+    }
+    async function ler(lista) {
+      if (!lista.length) return;
+      fase = 'lendo';
+      m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Partituras</div><h3 id="loteT">Lendo as partituras…</h3><p class="lote-lendo loading">Abrindo os arquivos</p></div></div><div class="lote-barra"><i></i></div>`;
+      const msg = m.querySelector('.lote-lendo'), barra = m.querySelector('.lote-barra i');
+      const todos = await Lote.desembrulha(lista, f => problemas.push(f.name));
+      const vistos = new Set(itens.map(i => i.nome + '|' + i.f.size));
+      for (let i = 0; i < todos.length; i++) {
+        if (cancelado) return;
+        const f = todos[i];
+        if (vistos.has(f.name + '|' + f.size)) continue;
+        vistos.add(f.name + '|' + f.size);
+        msg.textContent = `${i + 1} de ${todos.length}: ${f.name}`; barra.style.width = Math.round((i + 1) / todos.length * 100) + '%';
+        if (!f.pasta && f.webkitRelativePath) Object.defineProperty(f, 'pasta', { value: f.webkitRelativePath.split('/').slice(-2, -1)[0] || '' });
+        const r = await Lote.ler(f, S.songs);
+        itens.push({ id: itens.length, f, nome: f.name, tipo: r.tipo, palpite: r.palpite, modificado: f.lastModified, de: f.doZip || '' });
+      }
+      if (cancelado) return;
+      grupos = Lote.organiza(itens, S.songs);
+      telaResumo();
+    }
+    const qtd = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+    function telaResumo() {
+      fase = 'resumo';
+      const rolagem = m.scrollTop, fa = document.activeElement;
+      const foco = fa && m.contains(fa) && fa.closest('.lote-i') ? [fa.closest('.lote-i').dataset.id, fa.className.split(' ')[0]] : null;
+      grupos = Lote.organiza(itens, S.songs);
+      const fora = itens.filter(i => !['pdf', 'original'].includes(i.tipo));
+      const vao = grupos.flatMap(g => g.itens.filter(i => i.marcado && g.titulo));
+      const semNome = grupos.find(g => !g.titulo);
+      const novas = grupos.filter(g => g.titulo && !g.existente && g.itens.some(i => i.marcado)).length;
+      const velhas = grupos.filter(g => g.titulo && g.existente && g.itens.some(i => i.marcado)).length;
+      const conferir = vao.filter(i => (i.palpite.confira || []).length && !i.conferido).length;
+      const opts = [...new Set([...S.songs.map(s => s.title), ...grupos.map(g => g.titulo).filter(Boolean)])];
+      const resumo = [novas ? qtd(novas, 'música nova', 'músicas novas') : '', velhas ? qtd(velhas, 'já está na estante', 'já estão na estante') : '', conferir ? `<b class="lote-conf-n">${qtd(conferir, 'para conferir', 'para conferir')}</b>` : ''].filter(Boolean).join(' · ');
+      const pendente = semNome && semNome.itens.some(i => i.marcado);
+      m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Confira antes de salvar</div><h3 id="loteT">${vao.length || pendente ? `${qtd(vao.length + (pendente ? semNome.itens.filter(i => i.marcado).length : 0), 'arquivo', 'arquivos')} em ${qtd(novas + velhas + (pendente ? 1 : 0), 'música', 'músicas')}` : 'Nenhuma partitura para salvar'}</h3>
+          <p>${vao.length || pendente ? (resumo ? resumo + '. ' : '') + 'Toque no nome da música ou da parte para corrigir.' : 'Abra a lista abaixo para ver por que cada arquivo ficou de fora, ou toque em “+ Juntar mais arquivos”.'}</p></div><button class="guia-x" type="button" aria-label="Fechar">✕</button></div>
+        <datalist id="loteMus">${opts.map(t => `<option value="${escL(t)}">`).join('')}</datalist>
+        <datalist id="loteParte">${NOMES_PARTE.map(t => `<option value="${escL(t)}">`).join('')}</datalist>
+        <div class="lote-grupos"></div>
+        ${fora.length ? `<details class="lote-fora"><summary>${qtd(fora.length, 'arquivo fica de fora', 'arquivos ficam de fora')}</summary><ul>${fora.map(i => `<li><span>${escL(i.nome)}</span> <small>${i.tipo === 'audio' ? 'gravação: use “Só tenho a gravação” em Adicionar música' : i.tipo === 'foto' ? 'foto: escaneie ou salve em PDF e junte de novo' : 'não é partitura'}</small></li>`).join('')}</ul></details>` : ''}
+        ${problemas.length ? `<p class="hint">Não consegui abrir: ${problemas.map(escL).join(', ')}. Mande os PDFs soltos (fora do .zip) ou atualize o navegador.</p>` : ''}
+        <label class="lgrow lote-malak"${novas + velhas ? '' : ' hidden'}><input type="checkbox" id="loteMalak" ${ls.get('loteMalak', true) ? 'checked' : ''}><span>Pedir ao Malak o áudio de estudo e o mapa de compassos de cada música<br><small>Ele lê uma vez cada música: ${qtd(novas + velhas, 'pedido', 'pedidos')}, cerca de R$ ${((novas + velhas) * 0.3).toFixed(2).replace('.', ',')} dos R$ 20 do mês da banda${novas + velhas > 60 ? ' (passa do limite de 60 por dia: o que passar disso não é feito hoje; amanhã, peça na própria música)' : ''}.</small></span></label>
+        ${pendente ? '<p class="lote-falta">Para salvar, escreva o nome da música dos arquivos “Sem nome” (ou desmarque esses arquivos).</p>' : ''}
+        <div class="lote-mais"><label class="btn" for="loteMaisArq">+ Juntar mais arquivos</label><input type="file" id="loteMaisArq" accept="${ACEITA}" multiple hidden></div>
+        <div class="gfoot"><div class="lote-acoes"><button class="btn" id="loteFecha" type="button">Cancelar</button><button class="btn primary" id="loteSalva" type="button" ${vao.length && !pendente ? '' : 'disabled'}>${vao.length ? 'Salvar ' + qtd(vao.length, 'arquivo', 'arquivos') : 'Salvar'}</button></div></div>`;
+      const box = m.querySelector('.lote-grupos');
+      grupos.forEach((g, gi) => box.append(cartao(g, gi)));
+      m.querySelector('.guia-x').onclick = close; m.querySelector('#loteFecha').onclick = close;
+      m.querySelector('#loteMaisArq').onchange = e => ler([...e.target.files]);
+      m.querySelector('#loteMalak').onchange = e => ls.set('loteMalak', e.target.checked);
+      m.querySelector('#loteSalva').onclick = salvar;
+      teclado();
+      m.scrollTop = rolagem;  // corrigir uma linha não joga a lista de volta para o começo
+      if (foco) m.querySelector(`.lote-i[data-id="${foco[0]}"] ${foco[1] ? '.' + foco[1] : 'input[type=checkbox]'}`)?.focus({ preventScroll: true });  // nem tira o cursor do campo seguinte
+    }
+    function cartao(g, gi) {
+      const c = el('section', 'lote-g' + (g.titulo ? '' : ' sem'));
+      const marcados = g.itens.filter(i => i.marcado).length;
+      c.innerHTML = `<header><input type="text" class="lote-tit" list="loteMus" value="${escL(g.titulo)}" placeholder="Nome da música" aria-label="Nome da música">
+        <span class="lote-chip">${!g.titulo ? 'Sem nome: escreva o nome da música' : g.existente ? 'Já está na estante' : 'Música nova'}</span><small>${qtd(marcados, 'arquivo', 'arquivos')}</small></header>`;
+      const tit = c.querySelector('.lote-tit');
+      tit.onchange = () => { const v = tit.value.trim(); g.itens.forEach(i => { i.titulo = v; i.conferido = true; }); setTimeout(telaResumo); };  // depois do Tab: o foco já está no campo seguinte
+      const ul = el('ul');
+      for (const it of g.itens) ul.append(linha(it, g));
+      c.append(ul);
+      return c;
+    }
+    function linha(it, g) {
+      const li = el('li', 'lote-i' + (it.marcado ? '' : ' off')); li.dataset.id = it.id;
+      const avisos = (it.palpite.confira || []).filter(() => !it.conferido);
+      const origem = it.tipo === 'original' ? Lote.ORIGINAL[(it.nome.match(/\.([a-z0-9]+)$/i) || [, ''])[1].toLowerCase()] || 'Original' : '';
+      const v = it.palpite.versao?.rotulo;
+      li.innerHTML = `<label class="lote-ok"><input type="checkbox" ${it.marcado ? 'checked' : ''} aria-label="Salvar ${escL(it.nome)}"></label>
+        <div class="lote-arq"><b title="${escL(it.nome)}">${escL(it.nome)}</b><small>${escL(it.situacao || '')}${v ? ' · ' + escL(v) : ''}${it.de ? ' · veio de ' + escL(it.de) : ''}</small>
+          <small class="lote-porque">${it.tipo === 'pdf' ? 'Instrumento: ' + (it.parteManual ? 'você escreveu' : escL(it.palpite.partePorque || 'não achei')) + ' · ' : ''}Música: ${it.titulo ? 'você escolheu' : escL(it.palpite.deOnde || 'não achei')}</small></div>
+        ${it.tipo === 'pdf' ? `<input type="text" class="lote-parte" list="loteParte" value="${escL(it.parte?.inventada ? '' : it.parte?.name || '')}" placeholder="${escL(it.parte?.name || 'Instrumento')}" aria-label="Instrumento de ${escL(it.nome)}">`
+          : `<span class="lote-orig">${escL(origem)}${it.palpite.parte ? ' · ' + escL(it.palpite.parte.name) : ''}</span>`}
+        <select class="lote-mover" aria-label="Mudar a música de ${escL(it.nome)}"><option value="">Mudar de música…</option>${grupos.filter(x => x !== g && x.titulo).map(x => `<option>${escL(x.titulo)}</option>`).join('')}<option value="__nova">Outra música (escrever o nome)</option></select>
+        ${avisos.length ? `<span class="lote-conf" title="${escL(avisos.join('; '))}">Confira<small>${escL(avisos.join(' · '))}</small></span>` : ''}`;
+      li.querySelector('.lote-ok input').onchange = e => {
+        it.marcado = e.target.checked; it.conferido = true;
+        if (it.marcado && it.tipo === 'pdf') g.itens.forEach(o => { if (o !== it && o.tipo === 'pdf' && o.marcado && o.parte?.key === it.parte?.key) o.marcado = false; });  // a mesma parte: fica só uma
+        telaResumo();
+      };
+      const pi = li.querySelector('.lote-parte');
+      if (pi) pi.onchange = () => {
+        const nome = pi.value.trim(); it.conferido = true; it.parteManual = !!nome;
+        if (!nome) { it.parte = null; telaResumo(); return; }
+        const inst = Lote.instrumento(nome);
+        it.parte = inst && inst.name.toLowerCase() === nome.toLowerCase() ? inst : { key: inst ? inst.key : slug(nome), name: nome, base: inst ? inst.base : slug(nome) };
+        g.itens.forEach(o => { if (o !== it && o.tipo === 'pdf' && o.marcado && o.parte?.key === it.parte.key) o.marcado = false; });
+        it.marcado = true; setTimeout(telaResumo);
+      };
+      const mv = li.querySelector('.lote-mover');
+      mv.onchange = () => {
+        if (mv.value === '__nova') { it.titulo = ''; it.conferido = false; it.palpite = { ...it.palpite, confira: ['escreva o nome da música'] }; }
+        else if (mv.value) { it.titulo = mv.value; it.conferido = true; }
+        it.parte = it.parte?.inventada ? null : it.parte; it.marcado = true;
+        telaResumo();
+      };
+      return li;
+    }
+    async function salvar() {
+      const lista = grupos.filter(g => g.titulo).map(g => ({ g, sel: g.itens.filter(i => i.marcado) })).filter(x => x.sel.length);
+      if (!lista.length) return;
+      enviando = true; window.addEventListener('beforeunload', segura);
+      const btn = m.querySelector('#loteSalva'); btn.disabled = true; m.querySelectorAll('input,select,button.btn:not(#loteSalva)').forEach(x => x.disabled = true);
+      const malak = m.querySelector('#loteMalak').checked;
+      const contador = { k: 0, total: lista.reduce((a, x) => a + x.sel.length, 0) };
+      const feitas = [], novasIds = [];
+      let erro = null;
+      for (const { g, sel } of lista) {
+        try {
+          const pdfs = sel.filter(i => i.tipo === 'pdf').map(i => ({ f: i.f, name: i.parte?.name || 'Parte', key: i.parte?.key || slug(i.parte?.name || 'parte') }));
+          const srcs = sel.filter(i => i.tipo === 'original').map(i => i.f);
+          const r = await gravarMusica({ title: g.titulo, songId: g.existente?.id || null, pdfs, srcs, contador, setlist: false, onProgress: t => { btn.textContent = `${t} · ${g.titulo}`; } });
+          feitas.push({ id: r.id, title: g.titulo, n: sel.length, nova: !r.existing });
+          if (!S.songs.some(x => x.id === r.id)) { novasIds.push(r.id); S.songs.push({ id: r.id, ...r.doc }); }  // nova, ou de outro show: entra neste
+        } catch (e) { erro = { e, g }; console.error(e); break; }
+      }
+      try {
+        if (novasIds.length && window.SALVE) { const c = SALVE.ctx(); const fora = novasIds.filter(id => !(c.order || []).includes(id)); if (fora.length) await SALVE.saveShow(c.show, { order: [...(c.order || []), ...fora] }); }
+      } catch (e) { console.error(e); }
+      if (malak && window.SALVE) for (const f of feitas) { try { await Robo.start(f.id, null, 'pdf', true); } catch (e) { console.error(e); } }
+      enviando = false; window.removeEventListener('beforeunload', segura);
+      if (erro) {
+        const salvas = new Set(feitas.map(f => f.title));
+        grupos.forEach(g => { if (salvas.has(g.titulo)) g.itens.forEach(i => { i.marcado = false; i.situacao = 'Salvo'; }); });
+        itens = itens.filter(i => !salvas.has(grupos.find(g => g.itens.includes(i))?.titulo));
+        toast(erro.e?.code === 'too_large' ? `Um arquivo de “${erro.g.titulo}” passa de 200 MB.` : `${feitas.length ? qtd(feitas.length, 'música salva', 'músicas salvas') + '. ' : ''}Parou em “${erro.g.titulo}”: confira a internet e toque em Salvar de novo.`);
+        telaResumo();
+        return;
+      }
+      const n = feitas.reduce((a, f) => a + f.n, 0);
+      toast(`${qtd(n, 'arquivo salvo', 'arquivos salvos')} em ${qtd(feitas.length, 'música', 'músicas')}.${malak && window.SALVE ? ' O Malak começou a ler; pode continuar usando o app.' : ''}`);
+      if (feitas[0]) { S.songId = feitas[0].id; ls.set('song', feitas[0].id); }
+      close();
+    }
+    if (arquivos && arquivos.length) ler(arquivos); else telaEscolher();
+  }
+  /* arrastar arquivos para a janela (computador) abre o envio de várias */
+  let arrastando = 0;
+  const temArquivo = e => [...(e.dataTransfer?.types || [])].includes('Files');
+  /* pastas arrastadas do Finder ou do Explorer: abre cada uma e guarda o nome da pasta (é o nome da música) */
+  async function doArraste(dt) {
+    const entradas = [...(dt?.items || [])].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+    if (!entradas.some(x => x.isDirectory)) return [...(dt?.files || [])];
+    const out = [];
+    const anda = async (ent, pai) => {
+      if (out.length > 500) return;
+      if (ent.isFile) { const f = await new Promise((ok, bad) => ent.file(ok, bad)).catch(() => null); if (f) { if (pai) Object.defineProperty(f, 'pasta', { value: pai }); out.push(f); } return; }
+      const leitor = ent.createReader(); let lote;
+      do { lote = await new Promise((ok, bad) => leitor.readEntries(ok, bad)).catch(() => []); for (const x of lote) await anda(x, ent.name); } while (lote.length);
+    };
+    for (const e of entradas) await anda(e, '');
+    return out;
+  }
+  window.addEventListener('dragenter', e => { if (!temArquivo(e) || !S.canWrite || aberto || document.querySelector('.modal,.drawer:not([hidden]),.noteedit')) return; arrastando++; document.body.classList.add('lote-arrasta'); });
+  window.addEventListener('dragleave', e => { if (!temArquivo(e)) return; arrastando = Math.max(0, arrastando - 1); if (!arrastando) document.body.classList.remove('lote-arrasta'); });
+  window.addEventListener('dragover', e => { if (temArquivo(e) && !e.target.matches?.('input[type=file]')) e.preventDefault(); });  // nunca deixar o navegador sair do app para abrir o arquivo
+  window.addEventListener('drop', e => {
+    arrastando = 0; document.body.classList.remove('lote-arrasta');
+    if (!temArquivo(e) || e.target.matches?.('input[type=file]')) return;  // soltar no campo de arquivo (Adicionar música) continua como antes
+    e.preventDefault();
+    if (!S.canWrite) return;
+    const dt = e.dataTransfer;
+    if (aberto) { doArraste(dt).then(l => aberto && aberto.soltar(l)); return; }  // com o envio aberto, os arquivos entram nele
+    if (e.target.closest?.('.modal,.drawer,.noteedit') || document.querySelector('.modal')) return;
+    doArraste(dt).then(l => abrir(l));
+  });
+  return { abrir };
+})();
 
 /* ---------- keep the screen on during rehearsal ---------- */
 let wake = null;
@@ -3573,7 +3891,7 @@ const Instalar = (() => {
     addEventListener('salve:instalar', render);
     render();
     document.body.append(scrim, m);
-    aberto = { close, m };
+    aberto = { close, m, soltar: l => { if (fase === 'escolher' || fase === 'resumo') ler(l); } };
     return aberto;
   }
 
@@ -3668,7 +3986,7 @@ const Sugerir = (() => {
     render();
     document.body.append(scrim, m);
     setTimeout(() => txt.focus(), 50);
-    aberto = { close, m };
+    aberto = { close, m, soltar: l => { if (fase === 'escolher' || fase === 'resumo') ler(l); } };
     return aberto;
   }
   $('#sugerirSide').onclick = () => show();
