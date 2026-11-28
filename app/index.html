@@ -705,90 +705,221 @@ body:not(.at-home) .setwrap::before { animation: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ===== Laterais (Nov 2026): menu à esquerda, ferramentas à direita, partitura livre no centro =====
+   Na tela larga as laterais ficam ao lado da partitura; na estreita viram gavetas por cima. Só se mexem no toque. */
+.app { display: grid; grid-template-columns: var(--sl) minmax(0, 1fr) var(--sr); transition: grid-template-columns .42s var(--ease); }
+body { --sl: 268px; --sr: 312px; } body.semL { --sl: 0px; } body.semR { --sr: 0px; }
+/* a paleta de anotar fica no meio da partitura, não no meio da tela */
+@media (min-width: 1000px) { .palette { left: calc(var(--sl) + (100vw - var(--sl) - var(--sr)) / 2); transition: left .42s var(--ease); } }
+/* com as ferramentas abertas, o "Anotar" está lá; a pílula flutuante só aparece com elas fechadas */
+@media (min-width: 1000px) { body:not(.semR) .palette.closed { display: none; } }
+.center { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.side { min-width: 0; min-height: 0; overflow: hidden; background: var(--chrome); }
+.sideL { border-right: 1px solid var(--line); } .sideR { border-left: 1px solid var(--line); }
+body.semL .sideL, body.semR .sideR { border: 0; }
+.side-in { box-sizing: border-box; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 2px;
+  padding: max(8px, env(safe-area-inset-top, 0px)) 10px max(14px, env(safe-area-inset-bottom, 0px)); }
+.sideL .side-in { width: 267px; padding-left: max(10px, env(safe-area-inset-left, 0px)); }
+.sideR .side-in { width: 311px; gap: 10px; padding-right: max(12px, env(safe-area-inset-right, 0px)); padding-left: 12px; }
+.side-head { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 0 4px 8px; }
+.side-head .brand, .top .side-head .brand { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.side-title { flex: 1; font-family: var(--f-display); font-size: 16px; }
+.side .iconbtn { width: 100%; justify-content: flex-start; border: 0; border-radius: 10px; min-height: 42px; padding: 0 10px; gap: 12px; font-size: 15px; background: none; color: var(--fg); }
+.side .iconbtn:hover { background: rgba(255,255,255,.06); }
+.side .iconbtn[aria-pressed="true"] { background: var(--fg); color: var(--accent-ink); }
+.side .lbl { display: inline !important; }
+.side .sidex { width: 40px; min-width: 40px; flex: none; justify-content: center; padding: 0; color: var(--muted); }
+.side-h { margin: 14px 10px 4px; font: 500 10.5px var(--f-mono); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.side-songs { display: grid; gap: 1px; }
+.side-song { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 0 10px; border: 0; border-radius: 10px; background: none; text-align: left; font-size: 15px; color: var(--fg); }
+.side-song:hover { background: rgba(255,255,255,.06); }
+.side-song .n { flex: none; width: 2ch; font: 12px var(--f-mono); color: var(--muted); }
+.side-song .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-song .w { flex: none; font: 11px var(--f-mono); color: var(--muted); }
+.side-song[aria-current="true"] { background: rgba(255,255,255,.1); font-weight: 600; }
+.side-parts { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 0 4px; overflow: visible; }
+.side-parts .chip { min-height: 40px; border-radius: 10px; text-align: center; white-space: normal; }
+.side-parts .minha-chip { grid-column: 1 / -1; }
+.side-foot { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.pane.chips-na-lateral .panehead .chips { display: none; }
+.pane.chips-na-lateral .panehead { justify-content: flex-end; border-bottom: 0; background: transparent; padding-block: 4px; }
+
+/* topo da partitura: só o botão do menu, a música e o botão das ferramentas */
+.top { gap: 6px; }
+.top .sidebtn { flex: none; min-width: 42px; padding: 0; border: 0; color: var(--muted); background: none; }
+.top .sidebtn:hover { color: var(--fg); background: rgba(255,255,255,.06); }
+.top .sidebtn svg { width: 21px; height: 21px; }
+.top .sidebtn.live::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #2fb36b; margin-left: -6px; margin-top: -16px; }
+
+/* ferramentas: quatro botões grandes, o player, o Ensaio com os avisos e o "Mais" */
+.sideR .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-wrap: wrap; }
+.sideR .tiles .iconbtn, .sideR .tiles #playerBtn { flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 10px; min-height: 76px; padding: 12px;
+  border: 1px solid var(--line2); border-radius: 14px; background: var(--raise); color: var(--fg); font-weight: 500; font-size: 14px; white-space: normal; text-align: left; line-height: 1.2; }
+.sideR .tiles .iconbtn svg { width: 20px; height: 20px; }
+.sideR .tiles .iconbtn[aria-pressed="true"], .sideR .tiles #playerBtn[aria-pressed="true"] { background: var(--fg); color: var(--accent-ink); border-color: var(--fg); }
+.sideR .player { border: 1px solid var(--line2); border-radius: 14px; background: var(--raise); padding: 12px; max-height: none; overflow: visible; flex: none; }
+.sideR .player .pseek { flex-basis: 100%; order: 3; }
+.sideR .player .iconbtn { width: auto; border: 1px solid var(--line2); min-height: 36px; font-size: 13.5px; }
+.sideR .player .mixer { flex-wrap: wrap; }
+.sideR .moremenu { position: static; width: auto; display: grid; gap: 2px; padding: 0; margin: 0; border: 0; background: none !important; box-shadow: none !important; animation: none !important; }
+.sideR .moremenu .mm-h { margin: 8px 10px 2px; }
+.avisos { display: grid; gap: 8px; }
+.avisos .side-h { margin: 6px 4px 0; }
+.avisos-list { display: grid; gap: 8px; }
+.ensaio { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 58px; padding: 0 14px; border-radius: 14px; border: 1px solid var(--line2); background: var(--raise);
+  color: var(--fg); text-align: left; transition: background .3s, color .3s, transform .35s var(--spring); }
+.ensaio:active { transform: scale(.97); transition-duration: .08s; }
+.ensaio svg { width: 20px; height: 20px; flex: none; }
+.ensaio .t { flex: 1; min-width: 0; } .ensaio b { display: block; font-size: 15px; } .ensaio small { font-size: 12.5px; color: var(--muted); }
+.ensaio[aria-pressed="true"] { background: var(--fg); color: var(--accent-ink); box-shadow: 0 0 22px rgba(255,255,255,.12); }
+.ensaio[aria-pressed="true"] small { color: #55555c; }
+.ens-badge { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px; display: grid; place-items: center; font: 12px var(--f-mono); background: var(--accent-ink); color: var(--fg); }
+.aviso { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 11px; border-radius: 14px; background: #1b1b1f; border: 1px solid var(--line2); }
+.aviso.vai { cursor: pointer; }
+.aviso .av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 700 13px var(--f-display); color: var(--accent-ink); background: #f3f3f4; }
+.aviso .av.malak { background: #7c7c85; color: #fff; } .aviso .av.mestrinho { background: #b8b8bf; }
+.aviso .tx b { display: block; font-size: 14px; } .aviso .tx span { display: block; font-size: 13px; color: #c3c3ca; line-height: 1.3; overflow-wrap: anywhere; }
+.aviso .ok { min-width: 46px; height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line2); background: rgba(255,255,255,.06); color: var(--fg); font-weight: 600; }
+.aviso .ok:active { background: rgba(255,255,255,.14); }
+
+body.reading .side, body.reading .side-scrim { display: none !important; }
+body.reading .app { grid-template-columns: 0 minmax(0, 1fr) 0; }
+.side-scrim { display: none; }
+
+/* tela estreita: as laterais viram gavetas */
+@media (max-width: 999px) {
+  .app, body.semL .app, body.semR .app { grid-template-columns: minmax(0, 1fr); }
+  .center { grid-column: 1; grid-row: 1; }
+  .side { position: fixed; top: 0; bottom: 0; z-index: 28; width: min(86vw, 330px); border: 0 !important; transition: transform .38s var(--ease), visibility 0s linear .38s;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 0 50px rgba(0,0,0,.7); visibility: hidden; }
+  .sideL .side-in, .sideR .side-in { width: 100%; }
+  .sideL { left: 0; transform: translateX(-102%); } .sideR { right: 0; transform: translateX(102%); }
+  body.abreL .sideL, body.abreR .sideR { transform: none; visibility: visible; transition: transform .38s var(--ease), visibility 0s; }
+  .side-scrim { display: block; position: fixed; inset: 0; z-index: 27; background: rgba(0,0,0,.55); opacity: 0; pointer-events: none; transition: opacity .3s; }
+  body.abreL .side-scrim, body.abreR .side-scrim { opacity: 1; pointer-events: auto; }
+  .center > .player { border-bottom: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) { .app, .side, .side-scrim, .ensaio { transition: none !important; } }
 </style>
 
 <div class="app">
+  <!-- Laterais (Nov 2026): à esquerda navegar (setlist, sua parte, banda), à direita as ferramentas da música
+       (ouvir, anotar, editar, player, ensaio e avisos), e no centro só a partitura. No celular viram gavetas. -->
+  <aside class="side sideL" id="sideL" aria-label="Menu">
+    <div class="side-in">
+      <div class="side-head">
+        <div class="brand">salvetheapp<small id="brandShow"></small></div>
+        <button class="iconbtn sidex" id="sideLClose" type="button" title="Esconder o menu" aria-label="Esconder o menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
+      </div>
+      <button class="iconbtn" id="homeBtn" title="Voltar para a tela inicial" aria-label="Tela inicial">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 11l8-7 8 7v9H4z"/><path d="M10 20v-5h4v5"/></svg><span class="lbl">Tela inicial</span></button>
+      <button class="iconbtn" id="addBtn" title="Adicionar música ou parte">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar música ou parte</span></button>
+      <p class="side-h">Setlist</p>
+      <div class="side-songs" id="sideSongs"></div>
+      <p class="side-h" id="sidePartsH">Minha parte</p>
+      <div class="chips side-parts" id="sideParts"></div>
+      <div class="side-foot">
+        <button class="iconbtn" id="bandBtn" title="Banda, shows e convites">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda, shows e convites</span></button>
+        <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
+      </div>
+    </div>
+  </aside>
+  <div class="center">
   <header class="top">
-    <button class="iconbtn" id="homeBtn" title="Voltar para a setlist" aria-label="Setlist">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h2M9 6h11M4 12h2M9 12h11M4 18h2M9 18h11"/></svg><span class="lbl">Setlist</span></button>
-    <div class="brand">salvetheapp<small id="brandShow"></small></div>
+    <button class="iconbtn sidebtn" id="sideLBtn" type="button" title="Menu: setlist, sua parte e banda" aria-label="Menu" aria-controls="sideL" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
     <div class="songpick">
       <select id="song" aria-label="Música"></select>
     </div>
-    <div class="actions">
-      <button class="iconbtn" id="editScoreBtn" title="Editar a partitura (notas, articulações, dinâmicas)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M3 4h7M3 8h5"/></svg><span class="lbl">Editar</span></button>
-      <button class="iconbtn" id="editCaioBtn" title="Editar com o Caio: diga com suas palavras o que quer mudar" aria-label="Editar com o Caio">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M14.5 7.5l2 2-4.5 4.5-2.5.5.5-2.5z"/></svg><span class="lbl">Editar com o Caio</span></button>
-      <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a música (player)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Ouvir</span></button>
-      <button class="iconbtn" id="moreBtn" aria-haspopup="true" aria-expanded="false" aria-controls="moreMenu" title="Mais opções">
-        <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg><span class="lbl">Mais</span></button>
-    </div>
-    <div class="moremenu" id="moreMenu" role="menu" aria-label="Mais opções" hidden>
-      <p class="mm-h">Ver</p>
-      <button class="iconbtn" id="splitBtn" aria-pressed="false" title="Ver duas partes lado a lado">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="lbl">Lado a lado</span></button>
-      <button class="iconbtn" id="readBtn" title="Só a partitura, em tela cheia">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span class="lbl">Tela cheia</span></button>
-      <p class="mm-h">Música</p>
-      <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
-      <button class="iconbtn" id="logicBtn" aria-pressed="false" hidden title="A partitura segue a DAW">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9M11 15v-4M15 15V8M19 15v-2"/></svg><span class="lbl">Seguir a DAW</span></button>
-      <button class="iconbtn" id="notesBtn" title="Notas do ensaio">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
-      <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
-      <button class="iconbtn" id="regenBtn" hidden title="Gerar de novo o áudio de estudo desta música">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span class="lbl">Refazer o áudio de estudo</span></button>
-      <button class="iconbtn" id="addBtn" title="Adicionar música ou parte">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Adicionar música ou parte</span></button>
-      <p class="mm-h">Banda</p>
-      <button class="iconbtn" id="bandBtn" title="Banda, shows e convites">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda, shows e convites</span></button>
-    </div>
     <div class="status" id="status">carregando</div>
+    <button class="iconbtn sidebtn" id="sideRBtn" type="button" title="Ferramentas: ouvir, anotar, editar, ensaio" aria-label="Ferramentas" aria-controls="sideR" aria-expanded="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg></button>
   </header>
-  <section class="player" id="player" hidden aria-label="Player da partitura">
-    <div class="prow">
-      <button class="pplay" id="pPlay" aria-label="Tocar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></button>
-      <div class="pseek"><span class="ptime" id="pCur">0:00</span><input type="range" id="pSeek" min="0" max="1000" value="0" step="1" aria-label="Posição na música"><span class="ptime" id="pDur">0:00</span></div>
-      <div class="pbar" title="Compasso tocando agora"><b id="pBar">–</b><span>compasso</span></div>
-      <button class="iconbtn" id="pFollow" aria-pressed="true" title="A partitura rola sozinha e marca o compasso que está tocando">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><rect x="7" y="9" width="7" height="5" rx="1"/><path d="M12 17v3M10 18.5l2 2 2-2"/></svg><span class="lbl">Seguir partitura</span></button>
-    </div>
-    <div class="prow" id="pControls">
-      <div class="mixer" id="pMix" role="group" aria-label="Instrumentos que tocam">
-        <button class="mixall" data-all aria-pressed="true">Todos</button>
-        <button class="mixch" data-p="trumpet" aria-pressed="true"><i></i>Trompete</button>
-        <button class="mixch" data-p="tenor-sax" aria-pressed="true"><i></i>Sax</button>
-        <button class="mixch" data-p="trombone" aria-pressed="true"><i></i>Trombone</button>
-        <button class="mixch" data-p="base" aria-pressed="true"><i></i>Base</button>
-        <span class="mixsep" aria-hidden="true"></span>
-        <button class="mixdrum" id="pDrums" hidden aria-pressed="false" title="Bateria de acompanhamento gerada pelo app, no andamento da música"><i></i>Bateria</button>
-        <span class="drumopts" id="pDrumOpts" hidden>
-          <select id="pDrumStyle" aria-label="Levada da bateria"><option value="pop">Pop</option><option value="rock">Rock</option><option value="swing">Swing</option><option value="samba">Samba</option><option value="balada">Balada</option></select>
-          <input type="range" id="pDrumVol" min="0" max="1" step="0.05" value="0.8" aria-label="Volume da bateria" title="Volume da bateria">
+  <main class="stage" id="stage"></main>
+  </div>
+  <aside class="side sideR" id="sideR" aria-label="Ferramentas">
+    <div class="side-in">
+      <div class="side-head">
+        <b class="side-title">Ferramentas</b>
+        <button class="iconbtn sidex" id="sideRClose" type="button" title="Esconder as ferramentas" aria-label="Esconder as ferramentas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></svg></button>
+      </div>
+      <div class="actions tiles">
+        <button class="iconbtn" id="playerBtn" aria-pressed="false" title="Ouvir a música (player)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg><span class="lbl">Ouvir</span></button>
+        <button class="iconbtn" id="annotTile" type="button" aria-pressed="false" title="Escrever na partitura (caneta, marca-texto, texto)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l4-1L19 8l-3-3L5 16z"/></svg><span class="lbl">Anotar</span></button>
+        <button class="iconbtn" id="editScoreBtn" title="Editar a partitura (notas, articulações, dinâmicas)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20l4-1L19 8l-3-3L5 16z"/><path d="M3 4h7M3 8h5"/></svg><span class="lbl">Editar</span></button>
+        <button class="iconbtn" id="editCaioBtn" title="Editar com o Caio: diga com suas palavras o que quer mudar" aria-label="Editar com o Caio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M14.5 7.5l2 2-4.5 4.5-2.5.5.5-2.5z"/></svg><span class="lbl">Editar com o Caio</span></button>
+      </div>
+    <section class="player" id="player" hidden aria-label="Player da partitura">
+      <div class="prow">
+        <button class="pplay" id="pPlay" aria-label="Tocar"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5z"/></svg></button>
+        <div class="pseek"><span class="ptime" id="pCur">0:00</span><input type="range" id="pSeek" min="0" max="1000" value="0" step="1" aria-label="Posição na música"><span class="ptime" id="pDur">0:00</span></div>
+        <div class="pbar" title="Compasso tocando agora"><b id="pBar">–</b><span>compasso</span></div>
+        <button class="iconbtn" id="pFollow" aria-pressed="true" title="A partitura rola sozinha e marca o compasso que está tocando">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2"/><rect x="7" y="9" width="7" height="5" rx="1"/><path d="M12 17v3M10 18.5l2 2 2-2"/></svg><span class="lbl">Seguir partitura</span></button>
+      </div>
+      <div class="prow" id="pControls">
+        <div class="mixer" id="pMix" role="group" aria-label="Instrumentos que tocam">
+          <button class="mixall" data-all aria-pressed="true">Todos</button>
+          <button class="mixch" data-p="trumpet" aria-pressed="true"><i></i>Trompete</button>
+          <button class="mixch" data-p="tenor-sax" aria-pressed="true"><i></i>Sax</button>
+          <button class="mixch" data-p="trombone" aria-pressed="true"><i></i>Trombone</button>
+          <button class="mixch" data-p="base" aria-pressed="true"><i></i>Base</button>
+          <span class="mixsep" aria-hidden="true"></span>
+          <button class="mixdrum" id="pDrums" hidden aria-pressed="false" title="Bateria de acompanhamento gerada pelo app, no andamento da música"><i></i>Bateria</button>
+          <span class="drumopts" id="pDrumOpts" hidden>
+            <select id="pDrumStyle" aria-label="Levada da bateria"><option value="pop">Pop</option><option value="rock">Rock</option><option value="swing">Swing</option><option value="samba">Samba</option><option value="balada">Balada</option></select>
+            <input type="range" id="pDrumVol" min="0" max="1" step="0.05" value="0.8" aria-label="Volume da bateria" title="Volume da bateria">
+          </span>
+        </div>
+        <label class="pfield" for="pRate">Velocidade
+          <select id="pRate"><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.75">75%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option></select></label>
+        <span class="pfield">Trecho: c.<input type="number" id="pA" inputmode="numeric" min="1" aria-label="Compasso inicial"> a <input type="number" id="pB" inputmode="numeric" min="1" aria-label="Compasso final"></span>
+        <button class="iconbtn" id="pLoop" aria-pressed="false" title="Repetir o trecho sem parar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg>Repetir</button>
+        <button class="iconbtn" id="pGoA" title="Voltar ao início do trecho">Ir ao início</button>
+        <span class="metro">
+          <button class="iconbtn" id="pMetro" aria-pressed="false" title="Clique de metrônomo junto com a música">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6l4 18H5z"/><path d="M12 15l5-9"/><path d="M8 17h8"/></svg>Metrônomo</button>
+          <input type="range" id="pMetroVol" min="0" max="1" step="0.05" value="0.7" aria-label="Volume do metrônomo" title="Volume do metrônomo">
+          <button class="iconbtn" id="pCount" aria-pressed="false" title="Conta um compasso antes de começar a tocar">Contagem</button>
         </span>
       </div>
-      <label class="pfield" for="pRate">Velocidade
-        <select id="pRate"><option value="0.5">50%</option><option value="0.6">60%</option><option value="0.7">70%</option><option value="0.75">75%</option><option value="0.8">80%</option><option value="0.9">90%</option><option value="1" selected>100%</option></select></label>
-      <span class="pfield">Trecho: c.<input type="number" id="pA" inputmode="numeric" min="1" aria-label="Compasso inicial"> a <input type="number" id="pB" inputmode="numeric" min="1" aria-label="Compasso final"></span>
-      <button class="iconbtn" id="pLoop" aria-pressed="false" title="Repetir o trecho sem parar">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 2l3 3-3 3"/><path d="M4 11V9a4 4 0 0 1 4-4h12"/><path d="M7 22l-3-3 3-3"/><path d="M20 13v2a4 4 0 0 1-4 4H4"/></svg>Repetir</button>
-      <button class="iconbtn" id="pGoA" title="Voltar ao início do trecho">Ir ao início</button>
-      <span class="metro">
-        <button class="iconbtn" id="pMetro" aria-pressed="false" title="Clique de metrônomo junto com a música">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 3h6l4 18H5z"/><path d="M12 15l5-9"/><path d="M8 17h8"/></svg>Metrônomo</button>
-        <input type="range" id="pMetroVol" min="0" max="1" step="0.05" value="0.7" aria-label="Volume do metrônomo" title="Volume do metrônomo">
-        <button class="iconbtn" id="pCount" aria-pressed="false" title="Conta um compasso antes de começar a tocar">Contagem</button>
-      </span>
+      <div class="pmsg" id="pMsg" hidden></div>
+    </section>
+      <div class="avisos" id="avisos">
+        <button class="ensaio" id="ensaioBtn" type="button" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+          <span class="t"><b>Ensaio</b><small id="ensaioSub">Guarda os avisos durante o ensaio</small></span>
+          <span class="ens-badge" id="ensaioBadge" hidden>0</span>
+        </button>
+        <p class="side-h" id="avisosH" hidden>Avisos</p>
+        <div class="avisos-list" id="avisosList"></div>
+      </div>
+      <div class="moremenu" id="moreMenu" aria-label="Mais opções">
+        <p class="mm-h">Mais</p>
+        <button class="iconbtn" id="splitBtn" aria-pressed="false" title="Ver duas partes lado a lado">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="lbl">Lado a lado</span></button>
+        <button class="iconbtn" id="readBtn" title="Só a partitura, em tela cheia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg><span class="lbl">Tela cheia</span></button>
+        <button class="iconbtn" id="logicBtn" aria-pressed="false" hidden title="A partitura segue a DAW">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15V9M11 15v-4M15 15V8M19 15v-2"/></svg><span class="lbl">Seguir a DAW</span></button>
+        <button class="iconbtn" id="notesBtn" title="Notas do ensaio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h4"/></svg><span class="lbl">Notas do ensaio</span></button>
+        <button class="iconbtn" id="versBtn" title="Versões desta música (histórico)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg><span class="lbl">Versões (histórico)</span></button>
+        <button class="iconbtn" id="regenBtn" hidden title="Gerar de novo o áudio de estudo desta música">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/></svg><span class="lbl">Refazer o áudio de estudo</span></button>
+      </div>
     </div>
-    <div class="pmsg" id="pMsg" hidden></div>
-  </section>
-  <main class="stage" id="stage"></main>
+  </aside>
 </div>
+<div class="side-scrim" id="sideScrim"></div>
 
 <section class="home" id="home" aria-label="Abertura">
   <div class="home-in">
@@ -981,7 +1112,7 @@ function subscribeAnn(songId) {
   if (window.SALVE && S.uid) S.unsubAnn.push(S.db.collection('propostas').where('musica', '==', songId).onSnapshot(snap => {
     S.propostas = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => b.criadoEm - a.criadoEm);
     panes.forEach(p => { renderChips(p); if (S.minha[p.i]) statusProposta(p); });
-    Propostas.refresh();
+    Propostas.refresh(); Avisos.refresh();
   }, () => {}));
   if (mineInDb()) S.unsubAnn.push(listen(S.db.collection('data/users/' + S.uid).where('song', '==', songId), 'mine'));
 }
@@ -1203,26 +1334,31 @@ function applyZoom(pane) {
 function currentSong() { return S.songs.find(s => s.id === S.songId); }
 
 function renderChips(pane) {
-  const song = currentSong(); pane.chips.replaceChildren();
+  // com uma parte só na tela, a escolha da parte fica no menu da esquerda ("Minha parte"); lado a lado, cada uma no seu topo
+  const naLateral = pane.i === 0 && !S.split, alvo = naLateral ? $('#sideParts') : pane.chips;
+  const song = currentSong(); pane.chips.replaceChildren(); if (pane.i === 0) $('#sideParts').replaceChildren();
+  $('#sidePartsH').hidden = !(song && song.parts.length && naLateral);
+  pane.root.classList.toggle('chips-na-lateral', naLateral);
   if (!song) return;
+  pane = Object.assign(Object.create(pane), { chips: alvo });
   song.parts.forEach(p => {
     const b = el('button', 'chip', p.name);
     b.setAttribute('aria-pressed', String(p.key === pane.part));
-    b.onclick = () => { if (p.key !== pane.part) { S.paneParts[pane.i] = p.key; ls.set('paneParts', S.paneParts); loadPart(pane); } };
+    b.onclick = () => { if (p.key !== pane.part) { S.paneParts[pane.i] = p.key; ls.set('paneParts', S.paneParts); loadPart(Object.getPrototypeOf(pane)); } Laterais.escolheu(); };
     pane.chips.append(b);
   });
   if (pane.part && S.pessoal.has(song.id + '__' + pane.part)) {
     const b = el('button', 'chip minha-chip', 'Minha versão'); b.type = 'button';
     b.title = 'A sua versão desta parte, com as mudanças que só você vê';
     b.setAttribute('aria-pressed', String(!!S.minha[pane.i]));
-    b.onclick = () => { S.minha[pane.i] = !S.minha[pane.i]; loadPart(pane); };
+    b.onclick = () => { S.minha[pane.i] = !S.minha[pane.i]; loadPart(Object.getPrototypeOf(pane)); Laterais.escolheu(); };
     pane.chips.append(b);
   }
   const abertas = S.propostas.filter(x => x.status === 'aberta');
   if (pane.i === 0 && abertas.length && window.SALVE && SALVE.ctx().role === 'dono') {
     const b = el('button', 'chip minha-chip', `Propostas (${abertas.length})`); b.type = 'button';
     b.title = 'Versões que músicos mandaram para a banda: você aprova ou recusa';
-    b.onclick = () => Propostas.open(song.id);
+    b.onclick = () => { Laterais.escolheu(); Propostas.open(song.id); };
     pane.chips.append(b);
   }
 }
@@ -1346,11 +1482,13 @@ function layoutPanes() {
   const want = S.split ? 2 : 1;
   while (panes.length < want) panes.push(buildPane(panes.length));
   stage.replaceChildren(...panes.slice(0, want).map(p => p.root));
+  if (panes[0]?.part !== undefined) renderChips(panes[0]);
   if (!S.split && panes[1]) { const p = panes[1]; p.views.forEach(v => { unrenderPage(v); S.pageViews.get(v.key)?.delete(v); }); p.views = []; p.loadId++; p.part = null; }
 }
 function showSong() {
   const song = currentSong();
   const sel = $('#song'); if (song) sel.value = song.id;
+  Laterais.musicas();
   S.undo = [];
   subscribeAnn(S.songId);
   layoutPanes();
@@ -1366,6 +1504,7 @@ function renderSongSelect() {
   const sel = $('#song'); sel.replaceChildren();
   S.songs.forEach(s => { const o = el('option', '', `${String(s.order).padStart(2, '0')} · ${s.title}${s.tag ? '  (' + s.tag + ')' : ''}`); o.value = s.id; sel.append(o); });
   if (S.songId) sel.value = S.songId;
+  Laterais.musicas();
 }
 
 /* ---------- songs ---------- */
@@ -1381,6 +1520,7 @@ function setSongs(list) {
   if (Home.isOpen()) Home.render();
   syncNotesDrawer();
   if (S.db) Logic.refresh();
+  Avisos.refresh();
 }
 $('#song').addEventListener('change', e => { S.songId = e.target.value; ls.set('song', S.songId); showSong(); syncNotesDrawer(); if (S.db) Logic.resolve(); });
 
@@ -1403,24 +1543,16 @@ document.querySelectorAll('.tool[data-tool]').forEach(b => b.onclick = () => set
   const pal = $('#palette'), btn = $('#annotBtn'), lab = btn.querySelector('span');
   const set = open => {
     pal.classList.toggle('closed', !open); btn.setAttribute('aria-expanded', String(open)); lab.textContent = open ? 'Fechar' : 'Anotar';
+    $('#annotTile').setAttribute('aria-pressed', String(open));
     if (!open && S.tool !== 'read') setTool('read');
     if (open && S.tool === 'read') setTool('pen');
   };
   btn.onclick = () => set(pal.classList.contains('closed'));
+  $('#annotTile').onclick = () => { set(pal.classList.contains('closed')); Laterais.escolheu(); };
 })();
-/* "Mais": the screen's other actions, with names, in one menu */
+/* "Mais" agora fica sempre aberto na lateral direita (Ferramentas); a ligação com a DAW acende o botão das ferramentas */
 (() => {
-  const btn = $('#moreBtn'), menu = $('#moreMenu');
-  const show = open => {
-    menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); btn.setAttribute('aria-pressed', String(open));
-    if (open) { const r = btn.getBoundingClientRect(); menu.style.top = (r.bottom + 6) + 'px'; menu.querySelector('.iconbtn:not([hidden])')?.focus(); }
-  };
-  btn.onclick = e => { e.stopPropagation(); show(menu.hidden); };
-  menu.addEventListener('click', e => { if (e.target.closest('.iconbtn')) setTimeout(() => show(false), 0); });
-  document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) show(false); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { show(false); btn.focus(); } });
-  // the DAW link is live: show it on the Mais button too
-  new MutationObserver(() => btn.classList.toggle('live', $('#logicBtn').classList.contains('live'))).observe($('#logicBtn'), { attributes: true, attributeFilter: ['class'] });
+  new MutationObserver(() => $('#sideRBtn').classList.toggle('live', $('#logicBtn').classList.contains('live'))).observe($('#logicBtn'), { attributes: true, attributeFilter: ['class'] });
 })();
 function setLayer(l) {
   S.layer = l; ls.set('layer', l);
@@ -2027,6 +2159,7 @@ const Robo = (() => {
       jobs.clear(); snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.criadoEm - b.criadoEm).forEach(j => jobs.set(j.song, j));
       if (lastPaint) paint(...lastPaint);
       if (typeof Home !== 'undefined' && Home.refresh) Home.refresh();
+      Avisos.refresh();
     }, () => {});
   }
   const running = j => j && ['pendente', 'na fila', 'rodando'].includes(j.status) && Date.now() - (j.atualizado || j.criadoEm) < (j.tipo === 'arranjo' ? 90 : 45) * 60e3;
@@ -3132,7 +3265,7 @@ const Home = (() => {
   }
   $('#homeBtn').onclick = show;
   document.body.classList.add('at-home');
-  return { render, show, hide, setRole, isOpen: () => !home.hidden, refresh: () => { if (!home.hidden) render(); } };
+  return { render, show, hide, setRole, bpmOf, isOpen: () => !home.hidden, refresh: () => { if (!home.hidden) render(); } };
 })();
 
 /* ---------- reading mode: just the score, full screen ---------- */
@@ -3843,6 +3976,130 @@ const Logic = (() => {
 })();
 
 /* ---------- boot ---------- */
+/* ---------- laterais: menu à esquerda, ferramentas à direita, partitura livre no centro ----------
+   Tela larga: as duas ficam abertas ao lado da partitura e cada uma fecha no seu botão (o app lembra).
+   Tela estreita (celular, iPad em pé): viram gavetas que abrem por cima e fecham ao tocar fora. */
+const Laterais = (() => {
+  const estreita = matchMedia('(max-width: 999px)');
+  let L = ls.get('sideL', true), R = ls.get('sideR', true);
+  const body = document.body, player = $('#player');
+  function relayout() { setTimeout(() => { panes.forEach(p => applyZoom(p)); if (typeof Player !== 'undefined') Player.refollow(); }, 480); }
+  function aplica() {
+    const m = estreita.matches;
+    body.classList.toggle('semL', !m && !L); body.classList.toggle('semR', !m && !R);
+    if (!m) body.classList.remove('abreL', 'abreR');
+    $('#sideLBtn').setAttribute('aria-expanded', String(m ? body.classList.contains('abreL') : L));
+    $('#sideRBtn').setAttribute('aria-expanded', String(m ? body.classList.contains('abreR') : R));
+    // no celular o player fica em cima da partitura (dá para pausar sem abrir a gaveta); na tela larga, nas ferramentas
+    const lugar = m ? $('.center') : $('#sideR .tiles');
+    if (m && player.parentElement !== lugar) $('.center').insertBefore(player, $('#stage'));
+    if (!m && player.previousElementSibling !== lugar) lugar.after(player);
+  }
+  function fecha() { if (!body.classList.contains('abreL') && !body.classList.contains('abreR')) return; body.classList.remove('abreL', 'abreR'); aplica(); }
+  function abre(lado) { body.classList.remove('abreL', 'abreR'); body.classList.add('abre' + lado); aplica(); $('#side' + lado + ' .side-in').scrollTop = 0; }
+  $('#sideLBtn').onclick = () => { if (estreita.matches) abre('L'); else { L = !L; ls.set('sideL', L); aplica(); relayout(); } };
+  $('#sideRBtn').onclick = () => { if (estreita.matches) abre('R'); else { R = !R; ls.set('sideR', R); aplica(); relayout(); } };
+  $('#sideLClose').onclick = () => { if (estreita.matches) fecha(); else { L = false; ls.set('sideL', L); aplica(); relayout(); } };
+  $('#sideRClose').onclick = () => { if (estreita.matches) fecha(); else { R = false; ls.set('sideR', R); aplica(); relayout(); } };
+  $('#sideScrim').onclick = fecha;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') fecha(); });
+  // tocar num botão de ação dentro da gaveta fecha a gaveta (o que abre fica por cima da partitura)
+  ['#homeBtn', '#addBtn', '#bandBtn', '#caioBtn', '#editScoreBtn', '#editCaioBtn', '#splitBtn', '#readBtn', '#logicBtn', '#notesBtn', '#versBtn', '#regenBtn']
+    .forEach(id => $(id).addEventListener('click', () => fecha()));
+  $('#playerBtn').addEventListener('click', () => { if (estreita.matches) fecha(); });
+  estreita.addEventListener('change', () => { aplica(); relayout(); });
+  aplica();
+  function musicas() {
+    const box = $('#sideSongs');
+    box.replaceChildren(...S.songs.map(s => {
+      const b = el('button', 'side-song'); b.type = 'button';
+      b.setAttribute('aria-current', String(s.id === S.songId));
+      const rj = typeof Robo !== 'undefined' && Robo.job(s.id), bpm = Home.bpmOf(s.player);
+      b.append(el('span', 'n', String(s.order ?? '').padStart(2, '0')), el('span', 'tt', s.title),
+        el('span', 'w', rj && Robo.running(rj) ? (rj.progresso || 0) + '%' : bpm ? String(bpm) : ''));
+      b.onclick = () => { if (s.id !== S.songId) { const sel = $('#song'); sel.value = s.id; sel.dispatchEvent(new Event('change')); } fecha(); };
+      return b;
+    }));
+  }
+  return { musicas, escolheu: () => { if (estreita.matches) fecha(); }, fecha };
+})();
+
+/* ---------- avisos dos robôs (Malak, Mestrinho) e das propostas, e o botão Ensaio que guarda os avisos ----------
+   Cada aviso some no "Ok" (o app lembra neste aparelho). Com o Ensaio ligado os avisos ficam guardados no botão, só com
+   o número, até desligar. O movimento só acontece no toque: 650 ms, 70 ms entre um cartão e outro, curva com pico em 75%. */
+const Avisos = (() => {
+  const list = $('#avisosList'), H = $('#avisosH'), btn = $('#ensaioBtn'), badge = $('#ensaioBadge'), sub = $('#ensaioSub');
+  let ensaio = ls.get('ensaio', false), ocupado = false;
+  const vistos = new Set(ls.get('avisosVistos', []));
+  const DOIS_DIAS = 48 * 3600e3, DUR = 650, PASSO = 70;
+  const curva = t => t <= .75 ? 1.045 * (1 - Math.pow(1 - t / .75, 3)) : 1 + .045 * (1 + Math.cos(Math.PI * (t - .75) / .25)) / 2;
+  const EASE = CSS.supports('animation-timing-function', 'linear(0, 1)')
+    ? 'linear(' + Array.from({ length: 41 }, (_, i) => curva(i / 40).toFixed(4)).join(',') + ')' : 'cubic-bezier(.34,1.56,.64,1)';
+  const calmo = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function itens() {
+    const out = [], agora = Date.now();
+    if (typeof Robo !== 'undefined') S.songs.forEach(s => {
+      const j = Robo.job(s.id); if (!j) return;
+      const quem = j.tipo === 'arranjo' ? 'Mestrinho' : 'Malak', quando = j.atualizado || j.criadoEm || 0, id = 'job:' + j.id + ':' + j.status;
+      if (Robo.running(j)) out.push({ id, quem, song: s.id, txt: `${j.tipo === 'arranjo' ? 'Escrevendo o arranjo de' : 'Trabalhando em'} ${s.title}${j.progresso ? ' · ' + j.progresso + '%' : ''}` });
+      else if (agora - quando > DOIS_DIAS) return;
+      else if (j.status === 'pronto') out.push({ id, quem, song: s.id, txt: j.tipo === 'arranjo' ? `O arranjo de ${s.title} está pronto.` : `O áudio de estudo de ${s.title} está pronto.` });
+      else if (j.status === 'erro') out.push({ id, quem, song: s.id, txt: `Não consegui terminar ${s.title}${j.msg ? ': ' + String(j.msg).slice(0, 120) : ''}.` });
+    });
+    const song = currentSong(), props = S.propostas || [];
+    const abertas = props.filter(x => x.status === 'aberta');
+    if (song && abertas.length && window.SALVE && SALVE.ctx().role === 'dono')
+      out.push({ id: 'prop:' + abertas.map(x => x.id).sort().join(','), quem: 'Caio', txt: `${abertas.length > 1 ? abertas.length + ' propostas de músicos esperam' : 'Uma proposta de músico espera'} o seu OK em ${song.title}.`,
+        acao: ['Ver', () => Propostas.open(song.id)] });
+    props.filter(x => x.autor === S.uid && x.decididoEm && agora - x.decididoEm < DOIS_DIAS && x.status !== 'aberta').forEach(x =>
+      out.push({ id: 'resp:' + x.id + ':' + x.status, quem: 'Banda', txt: `O dono ${x.status === 'aprovada' ? 'aprovou' : 'não aprovou'} a sua versão de ${song ? song.title : 'esta música'}.` }));
+    return out.filter(a => !vistos.has(a.id));
+  }
+  function cartao(a) {
+    const c = el('div', 'aviso'); c.dataset.id = a.id;
+    const av = el('span', 'av ' + a.quem.toLowerCase(), a.quem === 'Mestrinho' ? 'M' : a.quem === 'Malak' ? 'MK' : a.quem[0]);
+    const tx = el('span', 'tx'); tx.append(el('b', '', a.quem), el('span', '', a.txt));
+    const ok = el('button', 'ok', 'Ok'); ok.type = 'button'; ok.title = 'Tirar este aviso';
+    ok.onclick = e => { e.stopPropagation(); some(c, a); };
+    c.append(av, tx);
+    if (a.acao) { const v = el('button', 'ok', a.acao[0]); v.type = 'button'; v.onclick = e => { e.stopPropagation(); Laterais.escolheu(); a.acao[1](); }; c.append(v); }
+    c.append(ok);
+    if (a.song) { c.classList.add('vai'); c.title = 'Abrir a música'; c.onclick = () => { if (a.song !== S.songId) { const sel = $('#song'); sel.value = a.song; sel.dispatchEvent(new Event('change')); } Laterais.escolheu(); }; }
+    return c;
+  }
+  function some(c, a) {
+    vistos.add(a.id); ls.set('avisosVistos', [...vistos].slice(-200));
+    const fim = () => refresh();
+    if (calmo()) return fim();
+    c.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateX(70px)', opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' }).finished.then(fim, fim);
+  }
+  function pinta() {
+    const xs = itens();
+    btn.setAttribute('aria-pressed', String(ensaio));
+    sub.textContent = ensaio ? 'Avisos guardados até desligar' : 'Guarda os avisos durante o ensaio';
+    badge.hidden = !ensaio; badge.textContent = xs.length;
+    H.hidden = ensaio || !xs.length;
+    if (ensaio) list.replaceChildren(); else list.replaceChildren(...xs.map(cartao));
+  }
+  function voa(cards, paraDentro) {
+    const bb = badge.getBoundingClientRect();
+    return Promise.all(cards.map((c, i) => {
+      const r = c.getBoundingClientRect(), dx = bb.left + bb.width / 2 - (r.left + r.width / 2), dy = bb.top + bb.height / 2 - (r.top + r.height / 2);
+      const k = [{ transform: 'none', opacity: 1 }, { transform: `translate(${dx}px, ${dy}px) scale(.08)`, opacity: 0 }];
+      return c.animate(paraDentro ? k : k.reverse(), { duration: DUR, delay: i * PASSO, easing: paraDentro ? 'cubic-bezier(.4,0,.2,1)' : EASE, fill: 'both' }).finished.catch(() => {});
+    }));
+  }
+  btn.onclick = async () => {
+    if (ocupado) return; ocupado = true;
+    ensaio = !ensaio; ls.set('ensaio', ensaio);
+    if (ensaio) { const cards = [...list.children].reverse(); badge.hidden = false; badge.textContent = cards.length; if (!calmo() && cards.length) await voa(cards, true); pinta(); }
+    else { pinta(); if (!calmo()) await voa([...list.children], false); [...list.children].forEach(c => c.getAnimations().forEach(x => x.cancel())); }
+    ocupado = false;
+  };
+  function refresh() { if (typeof Robo !== 'undefined' && S.db) Robo.watch(); if (!ocupado) pinta(); }
+  pinta();
+  return { refresh, ensaio: () => ensaio };
+})();
 async function boot() {
   setTool('read');
   if (!window.pdfjsLib) { $('#stage').replaceChildren(el('div', 'loading', 'O leitor de PDF não carregou. Confira a internet e recarregue.')); return; }
