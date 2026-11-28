@@ -8,8 +8,8 @@ const { chromium, devices } = require('playwright');
   await p.waitForTimeout(9000); const t = await p.$('.gate-item'); if (t) { await t.click(); await p.waitForTimeout(8000); }
   await p.screenshot({ path: 'ltest/visual/celular-2-home.png' });
   await p.locator('text=Capricorniana (só áudio)').locator('visible=true').first().click(); await p.waitForTimeout(5000);
-  await p.click('#moreBtn'); await p.waitForTimeout(500); await p.screenshot({ path: 'ltest/visual/celular-4-mais.png' });
-  await p.click('#notesBtn'); await p.waitForTimeout(800); console.log('menu fechou depois de escolher:', await p.$eval('#moreMenu', m => m.hidden));
+  await p.click('#sideRBtn'); await p.waitForTimeout(500); await p.screenshot({ path: 'ltest/visual/celular-4-ferramentas.png' });
+  await p.click('#notesBtn'); await p.waitForTimeout(800); console.log('gaveta fechou depois de escolher:', !(await p.evaluate(() => document.body.classList.contains('abreR'))));
   await p.screenshot({ path: 'ltest/visual/celular-4b-notas.png' });
   await p.evaluate(() => { document.querySelectorAll('.drawer, .scrim').forEach(x => x.remove()); });
   await p.click('#annotBtn'); await p.waitForTimeout(400); await p.screenshot({ path: 'ltest/visual/celular-5-anotar.png' });

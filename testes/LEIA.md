@@ -3,6 +3,8 @@
 **Rápido (o de todo dia, segundos):** roda sempre, antes de cada pedido no GitHub e de cada publicação.
 - `node testes/rapido.js`: abre o app daqui num navegador e confere botões, "Editar com o Caio" (com o servidor
   simulado), "Refazer o áudio" e erros de JavaScript. Não precisa de conta nem internet do Firebase.
+- `node testes/laterais.js`: o menu à esquerda, as ferramentas à direita e a partitura no meio, no iPad e no celular
+  (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
 - `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
 - `node testes/caio_servidor.js` (depois de `cd server/functions && npm ci`): o Caio lê a partitura com o mesmo código do app
   (tercinas, dinâmicas, ligaduras), acha compassos com tempo errado, vê os avisos do Malak e tem a proposta testada antes de chegar ao usuário.
