@@ -232,6 +232,7 @@ def read(pdf, boxes, nstaves, meta=None):
     quarters from the printed time signature (None until one is seen)."""
     R = Reader(pdf)
     clef = {}; key = {}; tsig = {}  # per staff index: clef name, key (fifths), bar length (quarters)
+    carry = {}  # per staff index: {(step, octave): alter} of the notes tied into the next bar
     out = []
     lens = []
     for bi, b in enumerate(boxes):
@@ -239,11 +240,26 @@ def read(pdf, boxes, nstaves, meta=None):
         P = R.page(pg); W, H = P['W'], P['H']
         X0, X1, Y0, Y1 = x0 * W, x1 * W, y0 * H, y1 * H
         sv = [s for s in P['staves'] if Y0 - 3 <= s[0] and s[0] + 4 * s[1] <= Y1 + 3 and s[2] <= (X0 + X1) / 2 <= s[3]]
-        if len(sv) != nstaves or mf != ml:
-            out.append([None] * nstaves); continue
+        if len(sv) != nstaves:
+            out.append([None] * nstaves); lens.append(next((tsig[i] for i in sorted(tsig)), None)); continue
         first_in_line = bi == 0 or boxes[bi - 1][2] != pg or abs(boxes[bi - 1][4] - y0) > 1e-3
         inbar = [gl for gl in P['g'] if X0 - 0.5 <= gl['x'] < X1 - 0.5]
         owner = staff_owner([g for g in inbar if g['c'] != 'tuplet'], sv, P['ledgers'], P['stems'])
+        if mf != ml:
+            # a multi-bar rest has no notes, but a part often opens with one: its clef, key and time signature
+            # still count for the bars after it
+            for si, (top, sp, sx0, sx1) in enumerate(sv):
+                gs = [gl for gl in inbar if gl['c'] != 'tuplet' and owner[id(gl)] == si and abs(gl['y'] - top - 2 * sp) < 9 * sp]
+                t = _time_sig(gs, sp)
+                if t:
+                    tsig[si] = t
+                try:
+                    _bar(gs, P, top, sp, si, clef, key, first_in_line, X1)
+                except Exception:  # noqa
+                    pass
+            out.append([None] * nstaves)
+            lens.append(next((tsig[i] for i in range(len(sv)) if i in tsig), None))
+            continue
         tuplets = [g for g in inbar if g['c'] == 'tuplet']
         row = []
         for si, (top, sp, sx0, sx1) in enumerate(sv):
@@ -254,9 +270,17 @@ def read(pdf, boxes, nstaves, meta=None):
                 tsig[si] = t
             near_t = [g for g in tuplets if top - 7 * sp < g['y'] < top + 11 * sp]
             try:
-                row.append(_bar(gs, P, top, sp, si, clef, key, first_in_line, X1, near_t, tsig.get(si)))
+                evs = _bar(gs, P, top, sp, si, clef, key, first_in_line, X1, near_t, tsig.get(si))
             except Exception as e:  # noqa
-                row.append(None)
+                evs = None
+            # a note tied over the barline keeps its accidental in the new bar
+            notes = [e for e in evs or [] if not e['rest']]
+            if notes and carry.get(si):
+                ex = notes[0].get('acc') or [False] * len(notes[0]['pitches'])
+                notes[0]['pitches'] = [(stp, alt if x else carry[si].get((stp, octv), alt), octv)
+                                       for (stp, alt, octv), x in zip(notes[0]['pitches'], ex)]
+            carry[si] = {(stp, octv): alt for e in notes[-1:] for (stp, alt, octv), t in zip(e['pitches'], e['tie']) if t}
+            row.append(evs)
         out.append(row)
         lens.append(next((tsig[i] for i in range(len(sv)) if i in tsig), None))
     if meta is not None:
@@ -272,6 +296,10 @@ def _time_sig(gs, sp):
         if g['c'] == 0xE08B:
             return F(2)
     dig = [g for g in gs if g['c'] in TIMESIG]
+    # only the digits stacked at the left: MuseScore prints the count of a multi-bar rest with the same digits
+    if dig:
+        x0 = min(g['x'] for g in dig)
+        dig = [g for g in dig if g['x'] - x0 < 2.5 * sp]
     if len(dig) < 2:
         return None
     ys = sorted({round(g['y'] / sp) for g in dig})
@@ -295,27 +323,31 @@ def _apply_tuplets(events, tuplets, sp, want):
     for t in tuplets:
         n = t['n']; m = TUPLET_RATIO.get(n)
         tx = (t['x'] + t['x1']) / 2
-        best = None
-        for i in range(0, len(events) - n + 1):
-            grp = events[i:i + n]
-            a, b = grp[0]['x'], max(grp[-1].get('x1', grp[-1]['x']), grp[-1]['x'])
-            if not (a - 1.0 * sp <= tx <= b + 1.5 * sp) or n > 1 and not (a < tx):
-                continue
-            d = abs((a + b) / 2 - tx)
-            if best is None or d < best[0]:
-                best = (d, i)
-        if best is not None and m:
-            cands.append((best[1], n, m))
+        # n notes under the number, or fewer when some are longer (a quarter + an eighth under a "3")
+        for L in range(n, 1, -1) if n > 1 else (n,):
+            best = None
+            for i in range(0, len(events) - L + 1):
+                grp = events[i:i + L]
+                a, b = grp[0]['x'], max(grp[-1].get('x1', grp[-1]['x']), grp[-1]['x'])
+                if not (a - 1.0 * sp <= tx <= b + 1.5 * sp) or L > 1 and not (a < tx):
+                    continue
+                if L < n and sum(e['dur'] for e in grp) != n * min(e['dur'] for e in grp):
+                    continue
+                d = abs((a + b) / 2 - tx)
+                if best is None or d < best[0]:
+                    best = (d, i)
+            if best is not None and m:
+                cands.append((best[1], L, F(m, n)))
     cands = list(dict.fromkeys(cands))[:8]
     for k in range(1, len(cands) + 1):
         for combo in itertools.combinations(cands, k):
-            idx = [i for i, n, m in combo for i in range(i, i + n)]
+            idx = [i for i, L, f in combo for i in range(i, i + L)]
             if len(idx) != len(set(idx)):
                 continue
             scale = {}
-            for i, n, m in combo:
-                for j in range(i, i + n):
-                    scale[j] = F(m, n)
+            for i, L, f in combo:
+                for j in range(i, i + L):
+                    scale[j] = f
             if sum(e['dur'] * scale.get(j, 1) for j, e in enumerate(events)) == want:
                 for j, f in scale.items():
                     events[j]['dur'] = events[j]['dur'] * f
@@ -413,9 +445,11 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1, tuplets=(), want=None
             c['stem_up'] = up
         dur = dur * (2 - F(1, 2 ** ndots[('c', chords.index(c))]))
         pitches = []
+        expl = []
         for h in sorted(c['heads'], key=lambda h: -h['y']):
             stp, octv = pitch_of(h['y'])
             acc = [g for g in gs if g['c'] in ACC and 0 < h['x'] - g['x'] < 2.6 * sp and abs(g['y'] - h['y']) < 0.6 * sp]
+            expl.append(bool(acc) or (stp, octv) in barmem)
             if acc:
                 barmem[(stp, octv)] = ACC[acc[-1]['c']]
             alt = barmem.get((stp, octv), keyalt.get(stp, 0))
@@ -423,7 +457,7 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1, tuplets=(), want=None
         near = lambda code, r=3.5: any(g['c'] == code and abs(g['x'] - c['x']) < 1.2 * sp and abs(g['y'] - sum(ys) / len(ys)) < r * sp for g in gs)
         events.append({'x': c['x'], 'x1': c['x1'], 'ys': ys, 'dur': dur, 'rest': False, 'pitches': pitches,
                        'staccato': near(STACC) or near(STACC2) or chords.index(c) in stacc_dot, 'accent': near(ACCENT) or near(ACCENT2),
-                       'fermata': near(FERMATA, 6) or near(FERMATA2, 6), 'tie': [False] * len(pitches),
+                       'fermata': near(FERMATA, 6) or near(FERMATA2, 6), 'tie': [False] * len(pitches), 'acc': expl,
                        'slur_start': False, 'slur_stop': False, 'measure_rest': False})
     for ri, r in enumerate(rests):
         dur = F(REST[r['c']]) * (2 - F(1, 2 ** ndots[('r', ri)]))
