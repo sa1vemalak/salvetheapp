@@ -353,6 +353,7 @@ def repeat_plan(root):
 
 
 LAST_PLAN = None
+LAST_VETOR = None  # (bars read from the PDF's symbols, bars left as the image reader read them)
 
 
 def sanitize_musicxml(path, boxes=None, voltas=None, pdf=None):
@@ -401,8 +402,11 @@ def sanitize_musicxml(path, boxes=None, voltas=None, pdf=None):
     if pdf and boxes:  # PDFs exported from notation programs: read the notes from the vector symbols, bar by bar
         try:
             nst = len(list(root.iter('part')))
-            ev = vetor.read(pdf, boxes, nst)
-            done, kept = vetor.patch_musicxml(root, ev, nst)
+            meta = {}
+            ev = vetor.read(pdf, boxes, nst, meta)
+            done, kept = vetor.patch_musicxml(root, ev, nst, meta.get('bar_len'))
+            global LAST_VETOR
+            LAST_VETOR = (done, kept)
             print(f'leitura vetorial do PDF: {done} compassos lidos dos símbolos, {kept} ficaram da leitura por imagem', flush=True)
         except Exception as e:
             print('leitura vetorial do PDF não deu:', e, flush=True)
@@ -1114,6 +1118,73 @@ def engrave_parts(xml_path, title, partes, tmp, dest, so=None):
     return out
 
 
+# Change this when the reading or the sound changes, so songs made by an older robot are made again when asked.
+ROBO_VERSAO = '2026-11-28-leitura-vetorial-2'
+PRECO_MALAK = 0.3  # reais the server counts for each Malak run (server/functions/gasto.js POR_TRABALHO.malak)
+
+
+def entrada_do_trabalho(song, data):
+    """What this run reads, so a request that changes nothing can be skipped: the robot version, the tempo asked for
+    and where the notes come from (the PDFs, the original file or the edited score). A run 'from the read score'
+    with no corrections reads the same thing the last run read."""
+    fonte = data.get('fonte') or 'pdf'
+    prev = (song.get('player') or {}).get('entrada') or {}
+    pm = song.get('partitura') or {}
+    if fonte == 'partitura' and pm.get('xml'):
+        base = {'partitura': pm.get('xml'), 'versao': pm.get('versao')}
+    elif fonte == 'lido' and (song.get('player') or {}).get('lido'):
+        base = prev.get('base') or {'lido': song['player']['lido']}
+    else:
+        base = {'pdfs': sorted(p.get('src') for p in song.get('parts', []) if p.get('src')),
+                'fontes': sorted(f.get('src') for f in song.get('fontes', []) if f.get('src'))}
+    bpm = data.get('bpm')
+    return {'v': ROBO_VERSAO, 'base': base, 'bpm': float(bpm) if bpm else None}
+
+
+def nada_mudou(song, data):
+    """True when the song already has audio made from exactly this input by this robot version"""
+    if data.get('forcar'):
+        return False
+    player = song.get('player') or {}
+    prev = player.get('entrada')
+    if not prev or not player.get('mixes'):
+        return False
+    if song.get('correcoes'):  # corrections waiting: they are new work
+        return False
+    pm = song.get('partitura') or {}
+    if pm.get('partesSemPdf') or pm.get('redesenhar'):  # PDFs to draw
+        return False
+    agora = entrada_do_trabalho(song, data)
+    return agora == {k: prev.get(k) for k in agora}
+
+
+def devolver_gasto(band):
+    """the server counted this run in the band's monthly budget; a run that did nothing gives it back"""
+    try:
+        mes = time.strftime('%Y-%m', time.gmtime(time.time() - 3 * 3600))  # same month as gasto.js (Brasília)
+        db.document(f'bands/{band}/uso/{mes}').set({'reais': firestore.Increment(-PRECO_MALAK), 'malak': firestore.Increment(-PRECO_MALAK),
+                                                    'atualizado': int(time.time() * 1000)}, merge=True)
+    except Exception as e:
+        print('não devolvi o gasto:', e, flush=True)
+
+
+def compassos_errados(score):
+    """Bars whose notes don't add up to the time signature, per part, as read (before repeats are written out).
+    Listed for the band (and Caio) to fix: the audio still keeps every part together (align_bars)."""
+    out = {}
+    for pt in score.parts:
+        ruins = []
+        for i, m in enumerate(pt.getElementsByClass('Measure')):
+            if not m.barDuration or i == 0:  # the first bar may be a pickup
+                continue
+            got, want = float(m.duration.quarterLength), float(m.barDuration.quarterLength)
+            if abs(got - want) > 1e-3:
+                ruins.append(int(m.number) if m.number else i + 1)
+        if ruins:
+            out[pt.partName or '?'] = ruins
+    return out
+
+
 def run(job):
     band = job.ref.parent.parent.id
     song_id = job.data['song']
@@ -1123,6 +1194,15 @@ def run(job):
     if not song:
         raise RuntimeError('A música não existe mais.')
     parts = [p for p in song.get('parts', []) if p.get('src')]
+    entrada = entrada_do_trabalho(song, job.data)
+    if nada_mudou(song, job.data):  # same score, same tempo, same robot: the audio would come out the same
+        devolver_gasto(band)
+        job.ref.update({'status': 'pronto', 'progresso': 100, 'atualizado': int(time.time() * 1000), 'semMudanca': True,
+                        'msg': 'Nada mudou desde o último áudio (mesma partitura, mesmo andamento): mantive o áudio de antes, sem gastar.'})
+        print('nada mudou: não gerei de novo', flush=True)
+        return
+    global LAST_VETOR
+    LAST_VETOR = None
     with tempfile.TemporaryDirectory() as tmp:
         # --- source: original file first, else the PDFs ---
         src_files, how = [], ''
@@ -1279,6 +1359,10 @@ def run(job):
         applied, problems = apply_corrections(score, keys_all, corr) if corr else ([], [])
         if corr:
             print('correções aplicadas:', len(applied), 'problemas:', problems, flush=True)
+        # check before making sound: every bar must add up to its time signature
+        errados = compassos_errados(score)
+        for nm, bars in errados.items():
+            print('compassos com tempo errado na leitura:', nm, bars, flush=True)
         xml_lido = os.path.join(tmp, 'lido.musicxml')
         try:
             for pt, nm in zip(score.parts, names):
@@ -1381,7 +1465,10 @@ def run(job):
             'made': time.strftime('%Y-%m-%d'), 'robo': True, 'conferido': False,
             'source': how, 'bpm': tmap[0][1], 'lido': lido, 'tempoLido': had_tempo and not bpm,
             'sound': 'Som gerado pelo Malak (FluidR3 GM). Confira as notas e o andamento.',
+            'entrada': entrada, 'compassosErrados': errados,
         }
+        if LAST_VETOR:
+            player['lidosDoPdf'] = {'simbolos': LAST_VETOR[0], 'imagem': LAST_VETOR[1]}
         upd = {'player': player, 'status': 'aguardando conferência'}
         if partitura:
             upd['partitura'] = partitura
@@ -1391,6 +1478,9 @@ def run(job):
         elif song.get('correcoesRecusadas'):
             upd['correcoesRecusadas'] = []
         song_ref.update(enc(upd))
+        if errados:
+            lista = '; '.join(f'{nm}: {", ".join(map(str, b[:8]))}{"…" if len(b) > 8 else ""}' for nm, b in errados.items())
+            warns = [f'Compassos com tempo errado na leitura (o áudio segue alinhado, mas confira e peça ao Caio): {lista}'] + warns
         warns = problems + warns if corr else warns
         if corr and problems and not applied:
             msg = f'Nenhuma das {len(corr)} correções entrou: {problems[0]}. Peça ao Caio de novo.'

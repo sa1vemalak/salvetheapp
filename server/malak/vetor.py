@@ -30,16 +30,63 @@ SHARP_ORDER, FLAT_ORDER = 'FCGDAEB', 'BEADGCF'
 BOTTOM = {'G': 4 * 7 + 2, 'G8vb': 3 * 7 + 2, 'F': 2 * 7 + 4, 'C': 3 * 7 + 3, 'perc': 4 * 7 + 2}
 
 
+TIMESIG = {0xE080 + i: i for i in range(10)}
+TUPLET_DIG = {0xE880 + i: i for i in range(10)}
+# n notes in the time of m: the usual meaning of a tuplet number
+TUPLET_RATIO = {2: 3, 3: 2, 4: 3, 5: 4, 6: 4, 7: 4, 9: 8, 10: 8, 11: 8, 12: 8}
+
+
+# Finale's own font (Maestro, and the look-alikes Petrucci/Jazz) has no SMuFL codes: its symbols sit on plain letters,
+# which a PDF printed from Finale shows as 0xF000 + the letter. Same meaning, SMuFL code.
+MAESTRO = {
+    0xF0CF: 0xE0A4, 0xF0FA: 0xE0A3, 0xF077: 0xE0A2, 0xF057: 0xE0A0,                  # noteheads: black, half, whole, breve
+    0xF0B7: 0xE4E3, 0xF0EE: 0xE4E4, 0xF0CE: 0xE4E5, 0xF0E4: 0xE4E6, 0xF0C5: 0xE4E7,  # rests: whole .. 16th
+    0xF0A8: 0xE4E8,                                                                    # 32nd rest
+    0xF06A: 0xE240, 0xF04A: 0xE241, 0xF072: 0xE242, 0xF052: 0xE243,                  # flags 8th/16th up/down
+    0xF078: 0xE244, 0xF058: 0xE245,                                                    # 32nd flags
+    0xF02E: 0xE1E7,                                                                    # dot (augmentation or staccato)
+    0xF03E: 0xE4A0, 0xF055: 0xE4C0, 0xF075: 0xE4C1,                                  # accent, fermata
+    0xF023: 0xE262, 0xF062: 0xE260, 0xF06E: 0xE261, 0xF0DC: 0xE263, 0xF0BA: 0xE264,  # accidentals
+    0xF026: 0xE050, 0xF03F: 0xE062, 0xF042: 0xE05C, 0xF056: 0xE052,                  # clefs
+    0xF063: 0xE08A, 0xF043: 0xE08B,                                                    # common / cut time
+    0xF0D5: 0xE101,                                                                    # rhythm slash
+    **{0xF030 + i: 0xE080 + i for i in range(10)},                                    # time signature digits
+}
+
+
+def _maestro(glyphs):
+    """Finale (Maestro) symbols to SMuFL codes, when the page has no SMuFL noteheads. Small ones (chord-symbol sharps,
+    tempo marks, cue notes) keep their own code, so they are not read as notes or key signatures."""
+    if any(g['c'] in HEAD for g in glyphs):
+        return glyphs
+    sizes = collections.Counter(round(g['size']) for g in glyphs if g['c'] in (0xF0CF, 0xF0FA, 0xF077, 0xF0B7, 0xF0CE, 0xF0D5))
+    if not sizes:
+        return glyphs
+    norm = sizes.most_common(1)[0][0]
+    for g in glyphs:
+        if isinstance(g['c'], int) and g['c'] in MAESTRO and g['size'] >= 0.8 * norm:
+            g['c'] = MAESTRO[g['c']]
+    return glyphs
+
+
 def _glyphs(page):
+    """music-font characters, plus the lone digits printed in a text font (MuseScore writes tuplet numbers that way);
+    those come as {'c': 'tuplet', 'n': digit}"""
     out = []
     for b in page.get_text('rawdict')['blocks']:
         for l in b.get('lines', []):
             for s in l['spans']:
+                txt = ''.join(c['c'] for c in s['chars']).strip()
                 for c in s['chars']:
                     o = ord(c['c'])
                     if 0xE000 <= o <= 0xF8FF:
-                        out.append({'c': o, 'x': c['origin'][0], 'y': c['origin'][1], 'x1': c['bbox'][2], 'size': s['size']})
-    return out
+                        if o in TUPLET_DIG:
+                            out.append({'c': 'tuplet', 'n': TUPLET_DIG[o], 'x': c['origin'][0], 'y': c['origin'][1], 'x1': c['bbox'][2], 'size': s['size']})
+                        else:
+                            out.append({'c': o, 'x': c['origin'][0], 'y': c['origin'][1], 'x1': c['bbox'][2], 'size': s['size']})
+                    elif len(txt) == 1 and txt.isdigit() and c['c'] == txt and int(txt) in TUPLET_RATIO:
+                        out.append({'c': 'tuplet', 'n': int(txt), 'x': c['origin'][0], 'y': c['origin'][1], 'x1': c['bbox'][2], 'size': s['size']})
+    return _maestro(out)
 
 
 def _lines(page):
@@ -54,8 +101,23 @@ def _lines(page):
                 elif abs(a.x - b.x) < 0.2 and abs(a.y - b.y) > 2:
                     vl.append(((a.x + b.x) / 2, min(a.y, b.y), max(a.y, b.y), d.get('width') or 0))
         elif d['type'] == 'f' and items and all(i[0] == 'l' for i in items):
+            # a beam is a thin dark band; the white page background (MuseScore 4 paints one) is not
+            fill = d.get('fill') or (0, 0, 0)
+            if min(fill) > 0.5 or d['rect'].height > 20:
+                continue
             pts = [i[1] for i in items] + [items[-1][2]]
             beams.append(pts)
+        elif d['type'] == 'f' and items and all(i[0] in ('re', 'qu') for i in items):
+            # Finale (printed to PDF) draws flat beams as filled rectangles
+            fill = d.get('fill') or (0, 0, 0)
+            if min(fill) > 0.5:
+                continue
+            for i in items:
+                q = i[1].quad if i[0] == 're' else i[1]
+                pts = [q.ul, q.ur, q.lr, q.ll]
+                ys = [pt.y for pt in pts]; xs = [pt.x for pt in pts]
+                if max(ys) - min(ys) <= 6 and max(xs) - min(xs) > 3:
+                    beams.append(pts)
         elif 'f' in d['type'] and items and items[0][0] == 'c':
             p0 = items[0][1]; p1 = items[0][4]
             curves.append(((p0.x, p0.y), (p1.x, p1.y)) if p0.x <= p1.x else ((p1.x, p1.y), (p0.x, p0.y)))
@@ -102,15 +164,76 @@ class Reader:
             p = self.doc[n - 1]
             g = _glyphs(p); hl, vl, beams, curves = _lines(p)
             self.pages[n] = {'W': p.rect.width, 'H': p.rect.height, 'g': g, 'stems': [v for v in vl if v[3] < 0.7],
-                             'beams': beams, 'curves': curves, 'staves': _staves(hl)}
+                             'beams': beams, 'curves': curves, 'staves': _staves(hl),
+                             'ledgers': [(x0, x1, y) for x0, x1, y, w in hl if x1 - x0 <= 25]}
         return self.pages[n]
 
 
-def read(pdf, boxes, nstaves):
-    """events[bar index][staff index] (None where the bar can't be read)"""
+def _head_staff(g, sv, ledgers):
+    """staff of a notehead: the one it sits on, or, in the gap between two staves, the one its ledger lines lead to
+    (a high sax note with four ledger lines is closer to the trumpet staff above than to its own)"""
+    for i, (top, sp, _, _) in enumerate(sv):
+        if top - 0.75 * sp <= g['y'] <= top + 4.75 * sp:
+            return i
+    cx = (g['x'] + g['x1']) / 2
+    led = [y for x0, x1, y in ledgers if x0 - 1 <= cx <= x1 + 1]
+    best, why = None, None
+    for i, (top, sp, _, _) in enumerate(sv):
+        bot = top + 4 * sp
+        if g['y'] < top:  # above this staff: ledger lines at top - sp, top - 2sp ... down to the note
+            need = [top - k * sp for k in range(1, int((top - g['y']) / sp + 0.25) + 1)]
+        else:
+            need = [bot + k * sp for k in range(1, int((g['y'] - bot) / sp + 0.25) + 1)]
+        ok = all(any(abs(y - n) < 0.3 * sp for y in led) for n in need)
+        dist = min(abs(g['y'] - top), abs(g['y'] - bot))
+        score = (0 if ok else 1, dist)
+        if best is None or score < why:
+            best, why = i, score
+    return best
+
+
+def staff_owner(gs, sv, ledgers, stems=()):
+    """{id(glyph): staff index}. Noteheads follow their ledger lines; everything else (rests, flags, dots, articulations)
+    goes with the nearest notehead when one is close, else with the nearest staff."""
+    own = {}
+    if not sv:
+        return own
+    heads = [g for g in gs if g['c'] in HEAD or g['c'] in SLASH]
+    for g in heads:
+        own[id(g)] = _head_staff(g, sv, ledgers)
+    for g in gs:  # a flag goes with the note at the other end of its stem
+        if g['c'] not in FLAG:
+            continue
+        sp = sv[0][1]
+        for sx, sy0, sy1, _w in stems:
+            if abs(sx - g['x']) < 0.6 * sp and (abs(sy0 - g['y']) < 1.2 * sp or abs(sy1 - g['y']) < 1.2 * sp):
+                far = sy1 if abs(sy0 - g['y']) < abs(sy1 - g['y']) else sy0
+                hs = [h for h in heads if abs(h['y'] - far) < 0.8 * sp and (abs(h['x'] - sx) < 0.5 * sp or abs(h['x1'] - sx) < 0.5 * sp)]
+                if hs:
+                    own[id(g)] = own[id(hs[0])]
+                    break
+    for g in gs:
+        if id(g) in own:
+            continue
+        mids = [abs(g['y'] - (t + 2 * s)) for t, s, _, _ in sv]
+        i = mids.index(min(mids))
+        top, sp = sv[i][0], sv[i][1]
+        if not (top - sp <= g['y'] <= top + 5 * sp) and g['c'] not in REST and g['c'] not in CLEF:
+            near = [(abs(h['x'] - g['x']) + abs(h['y'] - g['y']), own[id(h)]) for h in heads
+                    if abs(h['x'] - g['x']) < 2.5 * sp and abs(h['y'] - g['y']) < 4 * sp]
+            if near:
+                i = min(near)[1]
+        own[id(g)] = i
+    return own
+
+
+def read(pdf, boxes, nstaves, meta=None):
+    """events[bar index][staff index] (None where the bar can't be read). meta['bar_len'] gets each bar's length in
+    quarters from the printed time signature (None until one is seen)."""
     R = Reader(pdf)
-    clef = {}; key = {}  # per staff index: clef name, key (fifths)
+    clef = {}; key = {}; tsig = {}  # per staff index: clef name, key (fifths), bar length (quarters)
     out = []
+    lens = []
     for bi, b in enumerate(boxes):
         mf, ml, pg, x0, y0, x1, y1 = b
         P = R.page(pg); W, H = P['W'], P['H']
@@ -119,23 +242,89 @@ def read(pdf, boxes, nstaves):
         if len(sv) != nstaves or mf != ml:
             out.append([None] * nstaves); continue
         first_in_line = bi == 0 or boxes[bi - 1][2] != pg or abs(boxes[bi - 1][4] - y0) > 1e-3
+        inbar = [gl for gl in P['g'] if X0 - 0.5 <= gl['x'] < X1 - 0.5]
+        owner = staff_owner([g for g in inbar if g['c'] != 'tuplet'], sv, P['ledgers'], P['stems'])
+        tuplets = [g for g in inbar if g['c'] == 'tuplet']
         row = []
         for si, (top, sp, sx0, sx1) in enumerate(sv):
             mid = top + 2 * sp
-            # glyphs of this staff: inside the bar, nearest staff by vertical distance
-            def mine(gl):
-                d = [abs(gl['y'] - (t + 2 * s)) for t, s, _, _ in sv]
-                return d.index(min(d)) == si
-            gs = [gl for gl in P['g'] if X0 - 0.5 <= gl['x'] < X1 - 0.5 and abs(gl['y'] - mid) < 9 * sp and mine(gl)]
+            gs = [gl for gl in inbar if gl['c'] != 'tuplet' and owner[id(gl)] == si and abs(gl['y'] - mid) < 9 * sp]
+            t = _time_sig(gs, sp)
+            if t:
+                tsig[si] = t
+            near_t = [g for g in tuplets if top - 7 * sp < g['y'] < top + 11 * sp]
             try:
-                row.append(_bar(gs, P, top, sp, si, clef, key, first_in_line, X1))
+                row.append(_bar(gs, P, top, sp, si, clef, key, first_in_line, X1, near_t, tsig.get(si)))
             except Exception as e:  # noqa
                 row.append(None)
         out.append(row)
+        lens.append(next((tsig[i] for i in range(len(sv)) if i in tsig), None))
+    if meta is not None:
+        meta['bar_len'] = lens
     return out
 
 
-def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1):
+def _time_sig(gs, sp):
+    """bar length in quarters from time signature digits stacked on the staff (or common / cut time)"""
+    for g in gs:
+        if g['c'] == 0xE08A:
+            return F(4)
+        if g['c'] == 0xE08B:
+            return F(2)
+    dig = [g for g in gs if g['c'] in TIMESIG]
+    if len(dig) < 2:
+        return None
+    ys = sorted({round(g['y'] / sp) for g in dig})
+    if len(ys) < 2:
+        return None
+    num = int(''.join(str(TIMESIG[g['c']]) for g in sorted((g for g in dig if round(g['y'] / sp) == ys[0]), key=lambda g: g['x'])))
+    den = int(''.join(str(TIMESIG[g['c']]) for g in sorted((g for g in dig if round(g['y'] / sp) == ys[-1]), key=lambda g: g['x'])))
+    if num <= 0 or den not in (1, 2, 4, 8, 16, 32):
+        return None
+    return F(num * 4, den)
+
+
+def _apply_tuplets(events, tuplets, sp, want):
+    """A bar that doesn't add up and has tuplet numbers over/under it: scale the n notes under each number (n in the
+    time of m) and keep the choice that makes the bar add up. Nothing changes when no choice does."""
+    import itertools
+    total = sum(e['dur'] for e in events)
+    if want is None or total == want or not tuplets:
+        return events
+    cands = []
+    for t in tuplets:
+        n = t['n']; m = TUPLET_RATIO.get(n)
+        tx = (t['x'] + t['x1']) / 2
+        best = None
+        for i in range(0, len(events) - n + 1):
+            grp = events[i:i + n]
+            a, b = grp[0]['x'], max(grp[-1].get('x1', grp[-1]['x']), grp[-1]['x'])
+            if not (a - 1.0 * sp <= tx <= b + 1.5 * sp) or n > 1 and not (a < tx):
+                continue
+            d = abs((a + b) / 2 - tx)
+            if best is None or d < best[0]:
+                best = (d, i)
+        if best is not None and m:
+            cands.append((best[1], n, m))
+    cands = list(dict.fromkeys(cands))[:8]
+    for k in range(1, len(cands) + 1):
+        for combo in itertools.combinations(cands, k):
+            idx = [i for i, n, m in combo for i in range(i, i + n)]
+            if len(idx) != len(set(idx)):
+                continue
+            scale = {}
+            for i, n, m in combo:
+                for j in range(i, i + n):
+                    scale[j] = F(m, n)
+            if sum(e['dur'] * scale.get(j, 1) for j, e in enumerate(events)) == want:
+                for j, f in scale.items():
+                    events[j]['dur'] = events[j]['dur'] * f
+                    events[j]['tuplet'] = True
+                return events
+    return events
+
+
+def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1, tuplets=(), want=None):
     bottom = top + 4 * sp
     gs = sorted(gs, key=lambda g: g['x'])
     if any(g['c'] in SLASH for g in gs):
@@ -172,6 +361,26 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1):
                 c['heads'].append(h); break
         else:
             chords.append({'x': h['x'], 'val': HEAD[h['c']], 'heads': [h], 'x1': h['x1']})
+    # an augmentation dot belongs to the nearest note or rest on its left (a dotted rest right after a 16th note
+    # must not make the note dotted)
+    # Finale's font uses the same dot for staccato: a dot over or under a head (not right of it) is a staccato.
+    objs = [('c', i, c['x'], max(h['x1'] for h in c['heads']), c['heads']) for i, c in enumerate(chords)] + \
+           [('r', i, r['x'], r['x1'], [r]) for i, r in enumerate(rests)]
+    dot_of = collections.Counter()
+    stacc_dot = set()
+    for d in gs:
+        if d['c'] != DOT:
+            continue
+        cand = [(d['x'] - x, kind, i) for kind, i, x, x1, hs in objs if 0.3 * sp < d['x'] - x < 3.5 * sp and d['x'] >= x1 - 0.15 * sp
+                and min(h['y'] for h in hs) - (1.5 if kind == 'r' else 1) * sp <= d['y'] <= max(h['y'] for h in hs) + (1.5 if kind == 'r' else 1) * sp]
+        if cand:
+            _, kind, i = min(cand)
+            dot_of[(kind, i, round(d['x']))] += 1
+        else:
+            for kind, i, x, x1, hs in objs:
+                if kind == 'c' and x - 0.3 * sp <= d['x'] <= x1 + 0.3 * sp:
+                    stacc_dot.add(i)
+    ndots = collections.Counter(k[:2] for k in dot_of)
     events = []
     barmem = {}
     for c in chords:
@@ -193,14 +402,16 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1):
                 else:
                     for bm in P['beams']:
                         r = _beam_y(bm, s[0])
-                        if r and r[0] - 0.4 * sp <= (s[1] if up else s[2]) <= r[1] + 0.4 * sp + 2.2 * sp and \
-                                (s[1] - 0.4 * sp <= (r[0] + r[1]) / 2 <= s[2] + 0.4 * sp):
+                        if not r:
+                            continue
+                        # beams stack from the stem's tip toward the head: the 2nd/3rd beam of an up stem sits below
+                        # its tip, of a down stem above it
+                        lo, hi = (tip - 0.4 * sp, tip + 2.6 * sp) if up else (tip - 2.6 * sp, tip + 0.4 * sp)
+                        if r[1] >= lo and r[0] <= hi and (s[1] - 0.4 * sp <= (r[0] + r[1]) / 2 <= s[2] + 0.4 * sp):
                             n += 1
             dur = dur / (2 ** n)
             c['stem_up'] = up
-        dots = [g for g in gs if g['c'] == DOT and 0.3 * sp < g['x'] - c['x'] < 3.5 * sp and min(ys) - sp <= g['y'] <= max(ys) + sp]
-        nd = len({round(g['x']) for g in dots})
-        dur = dur * (2 - F(1, 2 ** nd))
+        dur = dur * (2 - F(1, 2 ** ndots[('c', chords.index(c))]))
         pitches = []
         for h in sorted(c['heads'], key=lambda h: -h['y']):
             stp, octv = pitch_of(h['y'])
@@ -211,13 +422,11 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1):
             pitches.append((stp, alt, octv))
         near = lambda code, r=3.5: any(g['c'] == code and abs(g['x'] - c['x']) < 1.2 * sp and abs(g['y'] - sum(ys) / len(ys)) < r * sp for g in gs)
         events.append({'x': c['x'], 'x1': c['x1'], 'ys': ys, 'dur': dur, 'rest': False, 'pitches': pitches,
-                       'staccato': near(STACC) or near(STACC2), 'accent': near(ACCENT) or near(ACCENT2),
+                       'staccato': near(STACC) or near(STACC2) or chords.index(c) in stacc_dot, 'accent': near(ACCENT) or near(ACCENT2),
                        'fermata': near(FERMATA, 6) or near(FERMATA2, 6), 'tie': [False] * len(pitches),
                        'slur_start': False, 'slur_stop': False, 'measure_rest': False})
-    for r in rests:
-        dur = F(REST[r['c']])
-        dots = [g for g in gs if g['c'] == DOT and 0.3 * sp < g['x'] - r['x'] < 3 * sp and abs(g['y'] - r['y']) < 1.5 * sp]
-        dur = dur * (2 - F(1, 2 ** len(dots)))
+    for ri, r in enumerate(rests):
+        dur = F(REST[r['c']]) * (2 - F(1, 2 ** ndots[('r', ri)]))
         events.append({'x': r['x'], 'dur': dur, 'rest': True, 'pitches': [], 'measure_rest': r['c'] == 0xE4E3 and not heads and len(rests) == 1})
     events.sort(key=lambda e: e['x'])
     # ties and slurs: curves between two heads
@@ -237,13 +446,14 @@ def _bar(gs, P, top, sp, si, clef, key, first_in_line, X1):
                     e['tie'][j] = True
             else:
                 e['slur_start'] = True; f['slur_stop'] = True
+    events = _apply_tuplets(events, list(tuplets), sp, want)
     off = F(0)
     for e in events:
         e['off'] = off; off += e['dur']
     return events
 
 
-DIV = 24
+DIV = 960  # divisions per quarter: fits 64ths, triplets, quintuplets and sextuplets
 
 
 def normalize_divisions(part):
@@ -267,16 +477,19 @@ def _bar_len(m, cur):
     return cur
 
 
-def patch_musicxml(root, events, nstaves):
-    """replace each Audiveris bar by the vector reading when it adds up. Returns (bars replaced, bars kept)."""
+def patch_musicxml(root, events, nstaves, bar_len=None):
+    """replace each Audiveris bar by the vector reading when it adds up (to the time signature Audiveris read, or to
+    the one printed in the PDF). Returns (bars replaced, bars kept)."""
     parts = list(root.iter('part'))
     if len(parts) != nstaves:
+        print(f'leitura vetorial: {nstaves} pautas no PDF e {len(parts)} na leitura por imagem', flush=True)
         return 0, 0
     done = kept = 0
     for si, part in enumerate(parts):
         normalize_divisions(part)
         ms = list(part.iter('measure'))
         if len(ms) != len(events):
+            print(f'leitura vetorial: {len(events)} compassos no PDF e {len(ms)} na leitura por imagem', flush=True)
             return 0, 0
         blen = F(4); open_ties = set()
         for bi, m in enumerate(ms):
@@ -287,7 +500,8 @@ def patch_musicxml(root, events, nstaves):
             total = sum(e['dur'] for e in ev)
             if len(ev) == 1 and ev[0].get('measure_rest'):
                 total = blen; ev[0]['dur'] = blen
-            if total != blen or any((e['dur'] * DIV).denominator != 1 for e in ev):
+            vlen = bar_len[bi] if bar_len and bi < len(bar_len) else None
+            if total not in (blen, vlen) or any((e['dur'] * DIV).denominator != 1 for e in ev):
                 kept += 1; open_ties = set(); continue
             old = [el for el in list(m) if el.tag in ('note', 'backup', 'forward')]
             pos = list(m).index(old[0]) if old else len(list(m))

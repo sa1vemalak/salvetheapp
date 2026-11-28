@@ -9,6 +9,9 @@
   (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
 - `python3 testes/malak_base.py` (precisa do music21): a pauta da base sem nome na grade não vira trompete; os nomes param no 2º sistema.
 - `python3 testes/malak_links.py`: o Malak abre os PDFs da turnê salvos como caminho do site ("scores/...").
+- `python3 testes/malak_leitura.py` (precisa de pymupdf e music21): o Malak lê do PDF as pausas, notas agudas com linhas
+  suplementares, semicolcheias, pontos, quiálteras e os PDFs do Finale; confere os compassos antes do áudio; e não gera
+  de novo (nem gasta) quando nada mudou.
 - `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
 - `node testes/caio_servidor.js` (depois de `cd server/functions && npm ci`): o Caio lê a partitura com o mesmo código do app
   (tercinas, dinâmicas, ligaduras), acha compassos com tempo errado, vê os avisos do Malak e tem a proposta testada antes de chegar ao usuário.
