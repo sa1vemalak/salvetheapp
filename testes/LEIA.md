@@ -7,6 +7,9 @@
   do modo local com programa, atalhos e dados). `FOTOS=pasta` salva os prints e os .txt.
 - `node testes/laterais.js`: o menu à esquerda, as ferramentas à direita e a partitura no meio, no iPad e no celular
   (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
+- `node testes/lote.js` (precisa do reportlab no Python): "Enviar várias partituras de uma vez" com 14 arquivos de 8 músicas (PDF com
+  texto, grade, escaneado, MusicXML, MuseScore, .zip com pasta, gravação): acha música, instrumento e versão sozinho, corrige pelo
+  resumo, salva e pede o Malak uma vez por música; o "Adicionar música" de uma só continua igual. iPad e celular. `FOTOS=pasta` salva os prints.
 - `node testes/convite.js`: "Link para músico/editor" copia a mensagem pronta (banda, quem convidou, link) e o código de acesso
   copia o convite para testar o app que salva músicos.
 - `node testes/instalar.js`: no celular e no tablet (iPhone, iPad, Android) aparece "Instalar o app" com o passo a passo para pôr
