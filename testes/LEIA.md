@@ -3,6 +3,8 @@
 **Rápido (o de todo dia, segundos):** roda sempre, antes de cada pedido no GitHub e de cada publicação.
 - `node testes/rapido.js`: abre o app daqui num navegador e confere botões, "Editar com o Caio" (com o servidor
   simulado), "Refazer o áudio" e erros de JavaScript. Não precisa de conta nem internet do Firebase.
+- `node testes/daw.js`: Ferramentas › Seguir a DAW › os guias da DAW (cada DAW, Mac e Windows, o .txt) e da rede local (o .zip
+  do modo local com programa, atalhos e dados). `FOTOS=pasta` salva os prints e os .txt.
 - `node testes/laterais.js`: o menu à esquerda, as ferramentas à direita e a partitura no meio, no iPad e no celular
   (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
 - `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
