@@ -14,6 +14,10 @@
 - `node testes/sugestoes.js`: "Sugerir melhoria" (menu e tela inicial) manda ideia ou problema com a tela, o aparelho, os
   últimos erros e o print opcional; a página da equipe mostra ao dono as sugestões em grupos com o parecer do júri.
   `FOTOS=pasta` salva os prints.
+- `node testes/admin.js`: o ícone pequeno do painel de admin na tela inicial só para o dono (com o número de cadastros novos) e
+  a página admin.html: resumo, cadastros novos, pessoas e frequência, bandas e custo, sugestões, códigos e planilhas. `FOTOS=pasta` salva os prints.
+- `node testes/painel.js` (depois de `cd server/functions && npm ci`): a função `painel` só responde ao admin (401/403 para os outros)
+  e junta cadastros, frequência, custo por banda e sugestões; as ações mexem só no "visto" e no limite.
 - `node testes/juri.js`: o júri das sugestões (três avaliadores, a maioria decide, bug confirmado vai para a correção
   automática, o texto de quem mandou é tratado como dado).
 - `node testes/cadastros.js`: cada conta nova e cada entrada em banda viram um registro em `cadastros/{uid}` (nome, e-mail,

@@ -12,6 +12,7 @@ const bus = require('./llm/bus');
 const gasto = require('./gasto');   // the monthly robot budget per band (R$ 20)
 const juri = require('./juri');     // the jury of the suggestions sent from the app
 const cadastros = require('./cadastros');   // who signed up: only the app owner sees it
+const painel = require('./painel'); // the app owner's admin panel (admin.html)
 const { DOMParser } = require('linkedom');
 const Partitura = require('./partitura');   // the same file as app/partitura.js (ferramentas/atualizar_robos.sh copies it)
 
@@ -612,6 +613,8 @@ async function rotina(req, res) {
   return res.status(400).json({ erro: 'nada para fazer' });
 }
 exports.sugestoesRotina = onRequest({ region: 'southamerica-east1', timeoutSeconds: 60, maxInstances: 2 }, rotina);
+// the admin panel: only an app admin (admins/{uid}) gets the report; checked on the server
+exports.painel = onRequest({ region: 'southamerica-east1', timeoutSeconds: 60, memory: '512MiB', cors: ORIGINS, maxInstances: 2 }, painel.handler(db));
 Object.defineProperty(exports, '__rotina', { value: rotina, enumerable: false });
 exports.__fotosDoPedido = fotosDoPedido;  // tests
 exports.__aplicarPessoal = aplicarPessoal;
