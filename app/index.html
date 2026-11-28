@@ -371,11 +371,6 @@ body.at-home .palette { display: none; }
 .vlist { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow: auto; }
 .vitem { display: flex; gap: 10px; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
 .vitem a { color: var(--accent); }
-.lghow { margin: 4px 0 10px; font-size: 14px; }
-.lghow summary { cursor: pointer; font-weight: 600; color: var(--accent); }
-.lghow .howto { margin: 8px 0 6px; padding-left: 20px; line-height: 1.45; }
-.lghow .howto li { margin-bottom: 6px; }
-.lghow .howh { margin: 14px 0 0; font-size: 14px; }
 /* band screen: song starts in the DAW */
 .mkmodal { width: min(720px, calc(100% - 24px)); }
 .mklist { display: flex; flex-direction: column; gap: 10px; }
@@ -806,6 +801,63 @@ body.reading .center { grid-column: 1 !important; grid-row: 1; }
   .center > .player { border-bottom: 1px solid var(--line); }
 }
 @media (prefers-reduced-motion: reduce) { .app, .side, .side-scrim, .ensaio { transition: none !important; } }
+
+/* ===== Guias (Seguir a DAW e rede local): passo a passo numerado, com arquivo .txt para baixar ===== */
+.gcards { display: flex; flex-direction: column; gap: 8px; }
+.gcard { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px; text-align: left; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--line2, var(--line)); background: var(--chrome); }
+.gcard b { font-family: var(--f-display); font-size: 15px; }
+.gcard small { grid-column: 1; color: var(--muted); font-size: 13px; line-height: 1.4; }
+.gcard .seta { grid-row: 1 / span 2; grid-column: 2; font-size: 22px; color: var(--muted); }
+.modal.guia { width: min(640px, calc(100% - 24px)); max-height: calc(100% - 32px); gap: 16px; padding: 22px 22px 0; }
+.guia-top { display: flex; align-items: flex-start; gap: 12px; }
+.guia-top > div { flex: 1; min-width: 0; }
+.guia-top h3 { margin-top: 4px; }
+.guia-top p { margin: 6px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.guia-x { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line2, var(--line)); background: transparent; font-size: 18px; line-height: 1; }
+.guia-pick { display: flex; flex-direction: column; gap: 8px; }
+.guia-pick .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.guia-pick .lab { font-size: 12px; color: var(--muted); font-family: var(--f-mono); letter-spacing: .06em; text-transform: uppercase; }
+.guia-flow { display: flex; align-items: stretch; gap: 6px; }
+.guia-flow .n { flex: 1; min-width: 0; border: 1px solid var(--line2, var(--line)); border-radius: 12px; padding: 10px 8px; text-align: center; font-size: 12px; color: var(--muted); line-height: 1.35; background: var(--chrome); }
+.guia-flow .n b { display: block; color: var(--fg); font-size: 13.5px; margin-bottom: 2px; }
+.guia-flow .a { align-self: center; color: var(--muted); font-size: 16px; }
+.guia h4.gsec { margin: 6px 0 -4px; font-family: var(--f-mono); font-weight: 500; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.gsteps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; counter-reset: g; }
+.gsteps li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.02); }
+.gsteps li::before { counter-increment: g; content: counter(g); width: 30px; height: 30px; border-radius: 50%; background: var(--fg); color: var(--accent-ink);
+  display: grid; place-items: center; font-family: var(--f-display); font-weight: 700; font-size: 15px; }
+.gsteps li.nota::before { content: "i"; background: transparent; color: var(--fg); border: 1px solid var(--line2, var(--line)); counter-increment: none; }
+.gsteps h5 { margin: 3px 0 6px; font-family: var(--f-display); font-size: 15.5px; line-height: 1.3; }
+.gsteps h5 .tag { margin-left: 6px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line2, var(--line)); font-family: var(--f-mono); font-weight: 500; font-size: 10.5px; color: var(--muted); vertical-align: 2px; text-transform: uppercase; letter-spacing: .06em; }
+.gsteps p { margin: 0; font-size: 14px; line-height: 1.55; }
+.gsteps p + p { margin-top: 6px; }
+.gpath { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 0 0 8px; font-family: var(--f-mono); font-size: 12px; }
+.gpath span { padding: 3px 8px; border-radius: 6px; background: var(--chrome); border: 1px solid var(--line2, var(--line)); }
+.gpath i { color: var(--muted); font-style: normal; }
+.gok { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line2, var(--line)); font-size: 13px; color: var(--muted); line-height: 1.45; }
+.gok b { color: var(--fg); }
+.gcode { display: inline-block; font-family: var(--f-mono); font-size: 13px; padding: 1px 6px; border-radius: 6px; background: var(--chrome); border: 1px solid var(--line2, var(--line)); }
+.gprob { border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; }
+.gprob summary { cursor: pointer; padding: 10px 0; font-weight: 600; }
+.gprob dl { margin: 0 0 12px; font-size: 14px; line-height: 1.5; }
+.gprob dt { font-weight: 600; margin-top: 10px; }
+.gprob dd { margin: 2px 0 0; color: var(--muted); }
+.gfoot { position: sticky; bottom: 0; display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; margin: 0 -22px; padding: 12px 22px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--raise, var(--chrome)); border-top: 1px solid var(--line); }
+.gfoot .btn { min-height: 42px; }
+@media (max-width: 520px) {
+  .modal.guia { padding: 18px 16px 0; }
+  .gfoot { margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  .guia-flow { gap: 3px; }
+  .guia-flow .n { padding: 8px 4px; font-size: 10.5px; border-radius: 10px; }
+  .guia-flow .n b { font-size: 12px; }
+  .guia-flow .a { font-size: 12px; }
+  .gsteps li { grid-template-columns: 26px 1fr; gap: 10px; padding: 12px; }
+  .gsteps li::before { width: 26px; height: 26px; font-size: 13px; }
+  .gfoot .btn { flex: 1; font-size: 13.5px; padding: 8px 10px; }
+  .gfoot > div { flex: 1 1 100%; }
+}
 
 /* nada da lateral encolhe: com o player aberto ela rola, e o "Mais" (Tela cheia...) continua inteiro e tocável */
 .side-in > * { flex-shrink: 0; }
@@ -1706,7 +1758,7 @@ const Band = (() => {
         <div class="brow"><button class="btn" data-inv="musico" type="button">Link para músico</button><button class="btn" data-inv="editor" type="button">Link para editor</button></div>
         <input id="bInvLink" readonly placeholder="o link aparece aqui" style="width:100%"></div>` : ''}
       ${editor ? `<div class="bsec" id="bUso"><b>Robôs neste mês</b><div class="hint" id="bUsoTxt">carregando…</div></div>` : ''}
-      ${editor ? `<div class="bsec"><b>Modo local (sem internet)</b><div class="hint">Baixa os dados deste show para o programa do modo local. Coloque o arquivo <b>dados.json</b> na pasta do modo local, no lugar do antigo, e rode o "Atualizar".</div><button class="btn" id="bExport" type="button">Baixar dados deste show</button></div>` : ''}
+      ${editor ? `<div class="bsec"><b>Modo local (sem internet)</b><div class="hint">Baixa os dados deste show para o programa do modo local. Coloque o arquivo <b>dados.json</b> na pasta do modo local, no lugar do antigo, e abra o "Atualizar salvetheapp".</div><div class="brow" style="justify-content:flex-start"><button class="btn" id="bExport" type="button">Baixar dados deste show</button><button class="btn" id="bGuiaRede" type="button">Como tocar sem internet</button></div></div>` : ''}
       <div class="bsec"><b>Pessoas da banda</b><div class="blist" id="bMembers"><div class="hint">carregando…</div></div></div>
       <div class="bsec" id="bAdmin" hidden><b>Administração do salvetheapp</b><div class="hint">Só você vê isto. Enquanto o cadastro estiver fechado, criar banda nova exige um código de acesso. Entrar numa banda por convite continua livre.</div>
         <label class="brow" style="justify-content:flex-start"><input type="checkbox" id="bOpen"> Cadastro aberto para todos (qualquer pessoa cria banda, sem código)</label>
@@ -1724,16 +1776,11 @@ const Band = (() => {
     });
     const ex = m.querySelector('#bExport'); if (ex) ex.onclick = async () => {
       try {
-        const once = col => new Promise((res, rej) => { const un = S.db.collection(col).onSnapshot(sn => { un && un(); res(sn.docs.map(d => [d.id, d.data()])); }, rej); });
-        const out = { songs: {}, layout: {}, logic: {}, ann: {}, show: { band: c.bandName, name: c.showName } };
-        for (const [id, d] of await once('songs')) out.songs[id] = d;
-        for (const id of Object.keys(out.songs)) { const l = await S.db.collection('layout').doc(id).get(); if (l.exists) out.layout[id] = l.data(); }
-        for (const [id, d] of await once('logic')) if (id !== 'live' && id !== 'debug') out.logic[id] = d;
-        for (const [id, d] of await once('ann')) if (out.songs[d.song]) out.ann[id] = d;
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' })); a.download = 'dados.json'; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(await dadosDoShow())], { type: 'application/json' })); a.download = 'dados.json'; a.click();
         toast('Arquivo dados.json baixado.');
       } catch { toast('Não consegui baixar os dados.'); }
     };
+    const bg = m.querySelector('#bGuiaRede'); if (bg) bg.onclick = () => { close(); Guia.show('rede', { admin: true }); };
     const ob = m.querySelector('#bOther'); if (ob) ob.onclick = () => SALVE.switchBand();
     m.querySelector('#bNewBand').onclick = () => SALVE.switchBand();
     m.querySelector('#bOut').onclick = () => fbAuth.signOut();
@@ -3423,50 +3470,288 @@ const Reading = (() => {
   return { enter, exit, on };
 })();
 
+/* ---------- Guias: ligar a DAW ao app, e tocar sem internet (rede local) ----------
+   Passo a passo numerado, escolhendo a DAW e o sistema (Mac ou Windows). Cada guia baixa como .txt;
+   o da rede local também baixa o programa do modo local (.zip) já com os dados do show. */
+const Guia = (() => {
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const isWin = () => /Windows/i.test(navigator.userAgent);
+  // P = nome da porta virtual como aparece na DAW; mac = true no Mac. Cada passo: t título, path menus, d texto, ok "pronto quando"
+  const DAWS = {
+    logic: { name: 'Logic Pro', mac: true, steps: (P) => [
+      { t: 'No Logic, mande o tempo para o cabo virtual', path: ['Arquivo', 'Ajustes do Projeto', 'Sincronização', 'aba MIDI'],
+        d: `Marque <b>Transmitir MIDI Clock</b> e, em <b>Destino</b>, escolha <b>${P}</b>.<br>Em inglês: File › Project Settings › Synchronization › MIDI › Transmit MIDI Clock.` },
+      { t: 'Mande também a posição da música', path: ['mesma aba MIDI'],
+        d: 'Em <b>Modo do Clock</b>, escolha <b>Song – SPP ao iniciar e ao pular de ciclo</b> e deixe marcado <b>Song Position Pointer</b>. Salve o projeto: esse ajuste fica guardado nele.',
+        ok: 'ao dar play no Logic, nada muda nele. É normal: ele só passa a avisar o app.' }] },
+    ableton: { name: 'Ableton Live', steps: (P, mac) => [
+      { t: 'Abra as configurações de MIDI do Live', path: mac ? ['Live', 'Settings', 'Link, Tempo & MIDI'] : ['Options', 'Preferences', 'Link, Tempo & MIDI'],
+        d: 'Em versões antigas a aba se chama <b>Link/Tempo/MIDI</b> ou só <b>MIDI</b>.' },
+      { t: 'Ligue o Sync na saída do cabo virtual', d: `Na lista <b>MIDI Ports</b>, ache a linha <b>Out: ${P}</b> (a de saída, “Out”, não a de entrada) e ligue a coluna <b>Sync</b>. Se aparecer <b>MIDI Clock Type</b>, deixe em <b>Song</b>.`,
+        ok: 'o quadradinho de Sync dessa linha fica aceso. O Live guarda isso sozinho, para todos os projetos.' }] },
+    protools: { name: 'Pro Tools', steps: (P) => [
+      { t: 'Ligue o MIDI Beat Clock', path: ['Setup', 'MIDI', 'MIDI Beat Clock…'],
+        d: `Marque <b>Enable MIDI Beat Clock</b> e, na lista de destinos, marque <b>${P}</b>. Clique em <b>OK</b>.`, ok: 'a janela fecha sem aviso. Salve a sessão para guardar o ajuste.' }] },
+    cubase: { name: 'Cubase', steps: (P) => [
+      { t: 'Abra a sincronização do projeto', path: ['Transport', 'Project Synchronization Setup…'], d: 'No Cubase 11 ou mais antigo, o caminho começa em <b>Studio</b> em vez de Transport.' },
+      { t: 'Mande o MIDI Clock para o cabo virtual', d: `Em <b>MIDI Clock Destinations</b>, marque <b>${P}</b>. Deixe marcado <b>MIDI Clock Follows Project Position</b>. Clique em <b>OK</b>.`,
+        ok: 'a porta fica marcada na lista. Salve o projeto.' }] },
+    studioone: { name: 'Studio One', steps: (P, mac) => [
+      { t: 'Crie um aparelho de saída no cabo virtual', path: ['Studio One', mac ? 'Settings' : 'Options', 'External Devices', 'Add…'],
+        d: `Escolha <b>New Instrument</b>. Em <b>Receive From</b> deixe <b>None</b> e em <b>Send To</b> escolha <b>${P}</b>.` },
+      { t: 'Mande o clock por esse aparelho', d: 'Na mesma janela, marque <b>Send MIDI Clock</b> e clique em <b>OK</b>.', ok: 'o aparelho novo aparece na lista de External Devices.' }] },
+    reaper: { name: 'Reaper', steps: (P) => [
+      { t: 'Ative a saída do cabo virtual', path: ['Options', 'Preferences', 'Audio', 'MIDI Outputs'],
+        d: `Em versões antigas a página se chama <b>MIDI Devices</b>. Na lista de <b>saídas</b>, clique com o botão direito em <b>${P}</b> e escolha <b>Enable output</b>.` },
+      { t: 'Mande o clock e a posição', d: 'Dê dois cliques na mesma porta e marque <b>Send clock/SPP</b>. Clique em <b>OK</b> e depois em <b>Apply</b>.', ok: 'a porta aparece como <b>enabled</b> na lista.' }] },
+    bitwig: { name: 'Bitwig', steps: (P) => [
+      { t: 'Adicione o cabo virtual como saída de clock', path: ['Settings', 'Synchronization'],
+        d: `Clique em <b>Add Clock Output</b> (ou no <b>+</b>) e escolha <b>${P}</b>. Deixe ligado o envio de <b>clock</b> e de <b>Song Position</b>, se aparecer.` }] },
+    fl: { name: 'FL Studio', steps: (P) => [
+      { t: 'Escolha o cabo virtual na saída', path: ['Options', 'MIDI Settings'],
+        d: `Na lista <b>Output</b>, clique em <b>${P}</b>, dê a ele um número em <b>Port</b> (por exemplo <b>1</b>) e ligue <b>Send master sync</b>.` },
+      { t: 'Atenção: o FL nem sempre manda a posição', d: 'Ele manda o tempo, mas às vezes não diz em que compasso está. Dê play sempre do começo de cada música, ou use o <b>Program Change</b> do passo opcional abaixo.' }] },
+    outra: { name: 'Outra DAW', steps: (P) => [
+      { t: 'Ache a sincronização MIDI da sua DAW', d: 'Procure nas preferências ou nos ajustes do projeto algo como <b>Sync</b>, <b>Synchronization</b> ou <b>MIDI Clock</b>.' },
+      { t: 'Mande o clock para o cabo virtual', d: `Ligue o envio de <b>MIDI Clock</b> (às vezes chamado de MIDI Beat Clock ou Master Sync), junto com <b>Song Position Pointer</b> (SPP), para a porta <b>${P}</b>.` }] },
+  };
+  const portName = mac => mac ? 'Driver IAC Barramento 1' : 'loopMIDI Port';
+  const portStep = mac => mac
+    ? { t: 'Ligue o cabo MIDI virtual do Mac (Driver IAC)', path: ['Configuração de Áudio e MIDI', 'Janela', 'Mostrar Estúdio MIDI'],
+        d: 'Ele já vem no Mac. Abra o programa <b>Configuração de Áudio e MIDI</b> (procure no Spotlight: ⌘ + espaço). No menu <b>Janela</b>, escolha <b>Mostrar Estúdio MIDI</b>. Dê dois cliques em <b>Driver IAC</b>, marque <b>O dispositivo está ligado</b> e clique em <b>Aplicar</b>.',
+        ok: 'aparece <b>Barramento 1</b> (em inglês, Bus 1) na lista de portas. Só precisa fazer isso uma vez neste Mac.' }
+    : { t: 'Instale o cabo MIDI virtual (loopMIDI)', path: ['tobias-erichsen.de', 'loopMIDI'],
+        d: 'O Windows não tem um cabo MIDI virtual. Baixe o <b>loopMIDI</b> (gratuito) no site tobias-erichsen.de, instale e abra. Clique no <b>+</b> embaixo da lista para criar uma porta. Deixe o loopMIDI aberto: ele fica perto do relógio.',
+        ok: 'aparece <b>loopMIDI Port</b> na lista. Abra o loopMIDI sempre <b>antes</b> da DAW e do Chrome.' };
+
+  function dawGuide(key, mac, admin) {
+    const d = DAWS[key] || DAWS.outra, P = portName(mac);
+    const sec = [];
+    const intro = `O app não precisa de plugin. A DAW manda o tempo e a posição da música por um <b>cabo MIDI virtual</b>; o Chrome do computador lê isso e passa para os iPads. Faça os passos uma vez no computador que toca a DAW.`;
+    const steps = [portStep(mac)];
+    if (d.mac && !mac) steps.push({ nota: true, t: `O ${d.name} só existe no Mac`, d: 'Escolha acima a DAW que você usa no Windows.' });
+    else steps.push(...d.steps(P, mac));
+    steps.push(
+      { t: 'Abra o app no Chrome ou no Edge, neste computador', path: ['Ferramentas', 'Seguir a DAW'],
+        d: `No computador da DAW, abra <b>salvetheapp.web.app</b> no <b>Chrome</b> ou no <b>Edge</b> (o Safari não recebe MIDI). Entre na banda, abra <b>Ferramentas › Seguir a DAW</b> e ligue <b>Este computador recebe o MIDI da DAW</b>. Se o navegador perguntar sobre MIDI, clique em <b>Permitir</b>.`,
+        ok: `embaixo dessa opção aparece <b>Entradas MIDI: ${P}</b>. Ligue isso só neste computador.` });
+    if (admin) steps.push({ t: 'Marque onde cada música começa', tag: 'uma vez por show', path: ['Seguir a DAW', 'Marcar os inícios das músicas na DAW'],
+      d: 'Diga em que compasso do projeto da DAW cada música começa. Se a DAW estiver tocando ou parada no começo de uma música, o botão <b>usar</b> ao lado de cada campo já preenche o número.' });
+    steps.push(
+      { t: 'Nos iPads e celulares, ligue Seguir a DAW', path: ['Ferramentas', 'Seguir a DAW', 'Seguir a DAW neste aparelho'],
+        d: 'Em cada aparelho dos músicos, abra o app (pode ser no Safari) e ligue <b>Seguir a DAW neste aparelho</b>. Eles não precisam de cabo nem de MIDI.' },
+      { t: 'Teste: dê play na DAW', d: 'Dê play perto do começo de uma música do show.',
+        ok: 'a partitura troca para a música certa, marca o compasso e vira a página sozinha. Em Seguir a DAW aparece <b>Tocando · compasso…</b>.' },
+      { t: 'Projeto do show inteiro, com muitos compassos?', tag: 'opcional',
+        d: 'O MIDI só conta a posição até o compasso 1024 (em 4/4). Se o projeto passar disso, coloque no começo de cada música um <b>Program Change</b> com o número dela na ordem do show (1 = primeira música). Assim o app nunca confunde as músicas.' });
+    sec.push({ steps });
+    const probs = [
+      ['Não aparece nenhuma entrada MIDI', mac ? 'Confira o passo 1 (Driver IAC ligado) e feche e abra o Chrome de novo.' : 'Abra o loopMIDI antes do Chrome. Depois feche e abra o Chrome de novo.'],
+      ['Aparece que o navegador não deixou usar o MIDI', 'Clique no cadeado ao lado do endereço, ponha MIDI em Permitir e recarregue a página. Dentro do claude.ai, use o botão Abrir ponte MIDI.'],
+      ['A entrada aparece, mas a partitura não anda', `Confira se a DAW manda o clock para ${P} (e não para outra porta) e se a música tem o início marcado.`],
+      ['A partitura anda atrasada ou adiantada num iPad', 'Nesse iPad, use o Ajuste de atraso deste aparelho em Seguir a DAW: para a direita adianta, para a esquerda atrasa.'],
+      ['O app vai para a música errada', 'Marque de novo os inícios das músicas, ou use o Program Change do passo opcional.'],
+    ];
+    return { title: `Ligar ${d.name === 'Outra DAW' ? 'a DAW' : 'o ' + d.name} ao app`, intro, flow: [['DAW', d.name === 'Outra DAW' ? 'manda o tempo' : d.name], ['Cabo virtual', mac ? 'Driver IAC' : 'loopMIDI'], ['Chrome', 'no mesmo computador'], ['iPads', 'seguem sozinhos']], sec, probs,
+      file: `salvetheapp-${(d.name === 'Outra DAW' ? 'outra-daw' : d.name).toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${mac ? 'mac' : 'windows'}.txt` };
+  }
+
+  function redeGuide(mac, admin) {
+    const ext = mac ? '.command' : '.bat';
+    const abrir = `Abrir salvetheapp${ext}`, atual = `Atualizar salvetheapp${ext}`;
+    const aviso = mac
+      ? 'Na primeira vez o Mac pode dizer que não consegue verificar o arquivo. Clique em <b>OK</b>, abra <b>Ajustes do Sistema › Privacidade e Segurança</b>, role até o fim e clique em <b>Abrir Mesmo Assim</b>. (Em Macs mais antigos: botão direito no arquivo › Abrir.)'
+      : 'Se aparecer <b>O Windows protegeu o computador</b>, clique em <b>Mais informações › Executar assim mesmo</b>.';
+    const intro = 'Para tocar onde não tem internet. O computador da DAW vira o “servidor” do app e os iPads se ligam nele por um roteador Wi-Fi comum, sem internet. A partitura segue a DAW do mesmo jeito.';
+    const casa = [
+      { t: 'Instale o Node.js no computador da DAW', path: ['nodejs.org', 'LTS'], d: 'É gratuito e só precisa uma vez. Baixe a versão <b>LTS</b> em nodejs.org e instale com as opções que já vêm marcadas.' },
+      { t: 'Baixe o programa do modo local', path: ['Seguir a DAW', 'Tocar sem internet', 'Baixar o programa (.zip)'],
+        d: `Use o botão <b>Baixar o programa (.zip)</b> aqui embaixo${admin ? ', que já leva os dados deste show' : ''}. ${mac ? 'Dê dois cliques no .zip' : 'Clique com o botão direito no .zip › <b>Extrair tudo</b>'} e guarde a pasta <b>salvetheapp-modo-local</b> num lugar fácil, como Documentos.` },
+      { t: `Abra o ${atual}`, d: `Dentro da pasta, dê dois cliques em <b>${atual}</b>. Uma janela de texto abre e baixa o app, as partituras e os áudios (na primeira vez são uns 700 MB). ${aviso}`,
+        ok: 'aparece <b>Pronto. Agora pode usar sem internet.</b> Pode fechar a janela.' },
+      { t: 'Mudou alguma partitura ou o show?', tag: 'antes de cada show',
+        d: `Com internet, ${admin ? 'baixe de novo só os dados (botão <b>Baixar só os dados</b> aqui embaixo, ou em <b>Banda › Modo local</b>), troque o <b>dados.json</b> da pasta pelo novo e' : 'peça para quem edita a banda baixar os dados novos e'} abra o <b>${atual}</b> de novo. Ele só baixa o que mudou.` },
+    ];
+    const show = [
+      { t: 'Ligue o roteador', d: 'Qualquer roteador Wi-Fi serve e não precisa de cabo de internet. Use a rede <b>principal</b> dele, não a de convidados.' },
+      { t: 'Ponha o computador e os iPads na mesma rede', d: 'Conecte o computador da DAW e todos os iPads e celulares no Wi-Fi desse roteador. O computador pode ir por cabo de rede no roteador: fica ainda mais firme. Se o iPad ou celular tiver chip, desligue os <b>dados móveis</b>.',
+        ok: 'o Wi-Fi mostra <b>sem internet</b>. É normal.' },
+      { t: `No computador, abra o ${abrir}`, d: `Dê dois cliques em <b>${abrir}</b>. Uma janela de texto mostra os endereços e o app abre sozinho no Chrome deste computador. ${mac ? 'Se o Mac perguntar se o <b>node</b> pode aceitar conexões, clique em <b>Permitir</b>.' : 'Se o Windows perguntar sobre o firewall para o <b>Node.js</b>, marque <b>as duas</b> opções (redes privadas e públicas) e clique em <b>Permitir acesso</b>.'}`,
+        ok: 'a janela mostra <b>salvetheapp · modo local ligado</b>. Deixe ela aberta durante todo o show: fechar a janela desliga o modo local.' },
+      { t: 'Nos iPads, abra o endereço da janela', d: 'No Safari de cada iPad, digite o endereço da linha <b>Nos iPads e celulares</b>, por exemplo <span class="gcode">http://192.168.0.10:8080</span>. Digite com <b>http://</b> e com o <b>:8080</b> no fim. Dica: no Safari, Compartilhar › <b>Adicionar à Tela de Início</b>.',
+        ok: 'abre o app com as músicas do show. O endereço da internet (salvetheapp.web.app) não abre nessa rede, e é normal.' },
+      { t: 'Ligue a DAW como sempre', d: 'Do mesmo jeito que com internet: no computador, <b>Este computador recebe o MIDI da DAW</b>; nos iPads, <b>Seguir a DAW neste aparelho</b>.' },
+    ];
+    const probs = [
+      ['O iPad não abre o endereço', 'Confira se ele está no mesmo Wi-Fi do computador (não na rede de convidados) e se a janela do computador continua aberta. Digite o endereço inteiro, com http:// e :8080.'],
+      ['Funcionava e parou depois de religar o roteador', 'O roteador pode dar outro número ao computador. Olhe o endereço novo na janela e abra esse nos iPads.'],
+      ['Nenhum iPad conecta, mesmo na rede certa', `No roteador, desligue o <b>isolamento de clientes</b> (AP isolation ou “isolar dispositivos”). ${mac ? 'No Mac, confira em Ajustes do Sistema › Rede › Firewall se o node está permitido.' : 'No Windows, permita o Node.js no firewall nas redes públicas e privadas.'}`],
+      ['A janela diz “Ainda não há uma cópia do app”', `Com internet, abra o ${atual} primeiro.`],
+      ['Aparece “Falta instalar o Node.js”', 'Instale o Node.js (passo 1) e abra o arquivo de novo.'],
+      ['Mudei uma anotação no modo local e ela sumiu do app da internet', 'O modo local guarda as mudanças só no computador e só o computador da DAW salva mudanças. Faça as mudanças importantes no app com internet.'],
+    ];
+    return { title: 'Tocar sem internet (rede local)', intro, flow: [['Computador da DAW', 'abre o modo local'], ['Roteador Wi-Fi', 'sem internet'], ['iPads e celulares', 'abrem o endereço']],
+      sec: [{ h: 'Em casa, com internet (uma vez)', steps: casa }, { h: 'No dia do show, sem internet', steps: show }], probs,
+      file: `salvetheapp-rede-local-${mac ? 'mac' : 'windows'}.txt`, kit: admin };
+  }
+
+  /* ---- texto (.txt) ---- */
+  const plain = h => String(h).replace(/<br\s*\/?>/g, '\n   ').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  const wrap = (s, ind) => { const out = []; for (const para of s.split('\n')) { let line = ''; for (const w of para.trim().split(/\s+/)) { if ((line + ' ' + w).trim().length > 78 - ind.length && line) { out.push(line); line = w; } else line = (line ? line + ' ' : '') + w; } out.push(line); } return out.map((l, i) => (i ? ind : '') + l).join('\r\n'); };
+  function toTxt(g, sub) {
+    const L = [], line = '='.repeat(72);
+    L.push(line, '  salvetheapp · ' + plain(g.title).toUpperCase(), '  ' + sub, line, '', wrap(plain(g.intro), ''), '', 'Caminho: ' + g.flow.map(f => f[0] + (f[1] ? ' (' + f[1] + ')' : '')).join('  ->  '), '');
+    g.sec.forEach(s => {
+      if (s.h) L.push('', '-- ' + s.h.toUpperCase() + ' ' + '-'.repeat(Math.max(3, 68 - s.h.length)), '');
+      let n = 0;
+      s.steps.forEach(st => {
+        const head = st.nota ? ' * ' : String(++n).padStart(2) + '.';
+        L.push(head + ' ' + plain(st.t) + (st.tag ? ' (' + st.tag + ')' : ''));
+        if (st.path) L.push('    ' + wrap('Onde: ' + st.path.join(' > '), '      '));
+        L.push('    ' + wrap(plain(st.d), '    '));
+        if (st.ok) L.push('    ' + wrap('Pronto quando: ' + plain(st.ok), '    '));
+        L.push('');
+      });
+    });
+    L.push('', '-- SE NÃO FUNCIONAR ' + '-'.repeat(52), '');
+    g.probs.forEach(([q, a]) => L.push('* ' + plain(q), '  ' + wrap(plain(a), '  '), ''));
+    L.push('Os nomes dos menus podem mudar um pouco conforme a versão do programa.', 'salvetheapp.web.app');
+    return '﻿' + L.join('\r\n') + '\r\n';
+  }
+  const save = (name, data, type) => {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+    a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+
+  /* ---- zip simples (sem compressão), para o kit do modo local ---- */
+  const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = b => { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = crcT[(c ^ b[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+  function zip(files) {  // [{ name, data: string|Uint8Array, mode }]
+    const enc = new TextEncoder(), parts = [], cent = []; let off = 0;
+    const d = new Date(), time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+    for (const f of files) {
+      const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+      const h = new DataView(new ArrayBuffer(30));
+      [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [8, 0, 2], [10, time, 2], [12, date, 2], [14, crc, 4], [18, data.length, 4], [22, data.length, 4], [26, name.length, 2], [28, 0, 2]]
+        .forEach(([o, v, s]) => s === 4 ? h.setUint32(o, v, true) : h.setUint16(o, v, true));
+      parts.push(new Uint8Array(h.buffer), name, data);
+      const c = new DataView(new ArrayBuffer(46));
+      [[0, 0x02014b50, 4], [4, 0x031E, 2], [6, 20, 2], [8, 0x0800, 2], [10, 0, 2], [12, time, 2], [14, date, 2], [16, crc, 4], [20, data.length, 4], [24, data.length, 4], [28, name.length, 2],
+        [30, 0, 2], [32, 0, 2], [34, 0, 2], [36, 0, 2], [38, (((f.mode || 0o644) | 0x8000) << 16) >>> 0, 4], [42, off, 4]]
+        .forEach(([o, v, s]) => s === 4 ? c.setUint32(o, v, true) : c.setUint16(o, v, true));
+      cent.push(new Uint8Array(c.buffer), name);
+      off += 30 + name.length + data.length;
+    }
+    const size = cent.reduce((a, b) => a + b.length, 0), e = new DataView(new ArrayBuffer(22));
+    [[0, 0x06054b50, 4], [8, files.length, 2], [10, files.length, 2], [12, size, 4], [16, off, 4]].forEach(([o, v, s]) => s === 4 ? e.setUint32(o, v, true) : e.setUint16(o, v, true));
+    return new Blob([...parts, ...cent, new Uint8Array(e.buffer)], { type: 'application/zip' });
+  }
+  const sh = arg => `#!/bin/bash
+# salvetheapp, modo local. Dê dois cliques neste arquivo.
+cd "$(dirname "$0")"
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+if ! command -v node >/dev/null 2>&1; then
+  echo; echo "  Falta instalar o Node.js: abra https://nodejs.org, baixe a versão LTS, instale e abra este arquivo de novo."; echo
+  read -n 1 -s -r -p "  Aperte uma tecla para fechar."; exit 1
+fi
+node servidor.js ${arg}
+echo; read -n 1 -s -r -p "  Aperte uma tecla para fechar."
+`;
+  const bat = arg => ['@echo off', 'chcp 65001 >nul', 'rem salvetheapp, modo local. De dois cliques neste arquivo.', 'cd /d "%~dp0"', 'where node >nul 2>nul',
+    'if errorlevel 1 (', '  echo.', '  echo   Falta instalar o Node.js: abra https://nodejs.org, baixe a versao LTS, instale e abra este arquivo de novo.', '  echo.', '  pause', '  exit /b 1', ')',
+    `node servidor.js ${arg}`.trim(), 'pause', ''].join('\r\n');
+  async function kit(g, mac) {
+    toast('Montando o programa…');
+    try {
+      const r = await fetch('local/servidor.js', { cache: 'no-store' });
+      if (!r.ok) throw new Error('sem servidor');
+      const srv = await r.text(), dir = 'salvetheapp-modo-local/';
+      const files = [{ name: dir + 'servidor.js', data: srv },
+        { name: dir + 'Atualizar salvetheapp.command', data: sh('atualizar'), mode: 0o755 }, { name: dir + 'Abrir salvetheapp.command', data: sh(''), mode: 0o755 },
+        { name: dir + 'Atualizar salvetheapp.bat', data: bat('atualizar') }, { name: dir + 'Abrir salvetheapp.bat', data: bat('') },
+        { name: dir + 'LEIA-ME.txt', data: toTxt(redeGuide(mac, g.kit), mac ? 'no Mac' : 'no Windows') }];
+      if (g.kit) { try { files.push({ name: dir + 'dados.json', data: JSON.stringify(await dadosDoShow()) }); } catch { toast('O programa vai sem os dados do show. Baixe os dados em Banda › Modo local.'); } }
+      save('salvetheapp-modo-local.zip', zip(files));
+      toast('Programa baixado. Abra o .zip e siga os passos.');
+    } catch { toast(location.hostname.endsWith('web.app') || location.hostname.endsWith('firebaseapp.com') ? 'Não consegui montar o programa. Tente de novo.' : 'Baixe o programa abrindo o app pela internet (salvetheapp.web.app).'); }
+  }
+
+  /* ---- tela ---- */
+  let open = null;
+  function show(kind, opts = {}) {
+    if (open) open.close();
+    const admin = !!opts.admin;
+    let key = opts.daw && DAWS[opts.daw] ? opts.daw : 'logic', mac = !isWin();
+    if (kind === 'daw' && DAWS[key].mac && !mac) key = 'ableton';
+    const scrim = el('div', 'scrim'), m = el('div', 'modal guia'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    const close = () => { scrim.remove(); m.remove(); document.removeEventListener('keydown', onKey); open = null; };
+    const back = () => { close(); opts.back && opts.back(); };
+    const onKey = e => { if (e.key === 'Escape') back(); };
+    document.addEventListener('keydown', onKey);
+    scrim.onclick = back;
+    const guide = () => kind === 'daw' ? dawGuide(key, mac, admin) : redeGuide(mac, admin);
+    function render() {
+      const g = guide(), top = m.scrollTop;
+      const step = st => `<li class="${st.nota ? 'nota' : ''}"><div><h5>${st.t}${st.tag ? `<span class="tag">${esc(st.tag)}</span>` : ''}</h5>
+        ${st.path ? `<div class="gpath">${st.path.map(p => `<span>${esc(p)}</span>`).join('<i>›</i>')}</div>` : ''}<p>${st.d}</p>${st.ok ? `<div class="gok">✓ <b>Pronto quando</b> ${st.ok}</div>` : ''}</div></li>`;
+      m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Passo a passo</div><h3>${esc(g.title)}</h3><p>${g.intro}</p></div><button class="guia-x" type="button" aria-label="Fechar">✕</button></div>
+        <div class="guia-pick">
+          ${kind === 'daw' ? `<div class="lab">Sua DAW</div><div class="row" id="gDaw">${Object.entries(DAWS).map(([k, d]) => `<button class="chip" type="button" data-k="${k}" aria-pressed="${k === key}">${esc(d.name)}</button>`).join('')}</div>` : ''}
+          <div class="row"><span class="lab" style="margin-right:4px">Computador</span><div class="seg" id="gSys"><button type="button" data-m="1" aria-pressed="${mac}">Mac</button><button type="button" data-m="0" aria-pressed="${!mac}">Windows</button></div></div>
+        </div>
+        <div class="guia-flow">${g.flow.map(([a, b]) => `<div class="n"><b>${esc(a)}</b>${esc(b)}</div>`).join('<div class="a">→</div>')}</div>
+        ${g.sec.map(s => `${s.h ? `<h4 class="gsec">${esc(s.h)}</h4>` : ''}<ol class="gsteps">${s.steps.map(step).join('')}</ol>`).join('')}
+        <details class="gprob"><summary>Se não funcionar</summary><dl>${g.probs.map(([q, a]) => `<dt>${q}</dt><dd>${a}</dd>`).join('')}</dl></details>
+        <div class="hint">Os nomes dos menus podem mudar um pouco conforme a versão do programa.</div>
+        <div class="gfoot"><div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${g.kit ? '<button class="btn" id="gKit" type="button">Baixar o programa (.zip)</button><button class="btn" id="gDados" type="button">Baixar só os dados</button>' : ''}
+          <button class="btn" id="gTxt" type="button">Baixar em .txt</button></div>
+          <button class="btn primary" id="gBack" type="button">${opts.back ? 'Voltar' : 'Fechar'}</button></div>`;
+      m.scrollTop = top;
+      m.querySelector('.guia-x').onclick = close;
+      m.querySelector('#gBack').onclick = back;
+      m.querySelectorAll('#gDaw .chip').forEach(b => b.onclick = () => { key = b.dataset.k; render(); });
+      m.querySelectorAll('#gSys button').forEach(b => b.onclick = () => { mac = b.dataset.m === '1'; render(); });
+      m.querySelector('#gTxt').onclick = () => { save(g.file, toTxt(g, mac ? 'no Mac' : 'no Windows'), 'text/plain;charset=utf-8'); toast('Arquivo ' + g.file + ' baixado.'); };
+      const k = m.querySelector('#gKit'); if (k) k.onclick = () => kit(g, mac);
+      const dd = m.querySelector('#gDados'); if (dd) dd.onclick = async () => {
+        try { save('dados.json', JSON.stringify(await dadosDoShow()), 'application/json'); toast('Arquivo dados.json baixado. Troque o da pasta do modo local por ele.'); }
+        catch { toast('Não consegui baixar os dados.'); }
+      };
+    }
+    render();
+    document.body.append(scrim, m);
+    open = { close, m };
+    return open;
+  }
+  return { DAWS, show, toTxt, dawGuide, redeGuide, zip };
+})();
+
+// os dados do show aberto, no formato que o programa do modo local lê (dados.json)
+async function dadosDoShow() {
+  const c = window.SALVE?.ctx ? SALVE.ctx() : {};
+  const once = col => new Promise((res, rej) => { const un = S.db.collection(col).onSnapshot(sn => { un && un(); res(sn.docs.map(d => [d.id, d.data()])); }, rej); });
+  const out = { songs: {}, layout: {}, logic: {}, ann: {}, show: { band: c.bandName, name: c.showName } };
+  for (const [id, d] of await once('songs')) out.songs[id] = d;
+  for (const id of Object.keys(out.songs)) { const l = await S.db.collection('layout').doc(id).get(); if (l.exists) out.layout[id] = l.data(); }
+  for (const [id, d] of await once('logic')) if (id !== 'live' && id !== 'debug') out.logic[id] = d;
+  for (const [id, d] of await once('ann')) if (out.songs[d.song]) out.ann[id] = d;
+  return out;
+}
+
 /* ---------- follow Logic Pro ----------
    The Mac running Logic sends MIDI Clock + Song Position Pointer to the IAC bus. The tab that receives it ("source")
    turns the Logic position into song + score bar and publishes it to logic/live; every other tab (iPads) follows that doc.
    Logic is linear, scores have repeats: the default map walks the score's played bars (repeats unrolled) from the song's
    marker, counting quarter notes; a tap on the right bar while following saves an anchor that re-aligns from there. */
 const Logic = (() => {
-  /* Any DAW works: the app only reads the standard MIDI Clock + Song Position Pointer (and optional Program Change). */
-  const DAWS = {
-    logic: { name: 'Logic', os: 'mac', steps: ['Em Arquivo › Ajustes do Projeto › Sincronização › MIDI, marque <b>Transmitir MIDI Clock</b> e escolha o destino (Driver IAC).', 'Em Modo do Clock, escolha <b>Song – SPP ao iniciar e ao pular de ciclo</b> e marque <b>Song Position Pointer</b>.'] },
-    ableton: { name: 'Ableton Live', steps: ['Em Settings › Link, Tempo &amp; MIDI, na lista de portas de <b>saída</b>, ache a porta virtual (Driver IAC no Mac, loopMIDI no Windows).', 'Ligue a coluna <b>Sync</b> dessa porta. O Live passa a mandar o MIDI Clock e a posição.'] },
-    protools: { name: 'Pro Tools', steps: ['Em Setup › MIDI › <b>MIDI Beat Clock</b>, ligue o envio e marque a porta virtual.'] },
-    cubase: { name: 'Cubase', steps: ['Em Studio › <b>Project Synchronization Setup</b>, em MIDI Clock Destinations, marque a porta virtual.', 'Deixe marcado <b>MIDI Clock Follows Project Position</b>.'] },
-    studioone: { name: 'Studio One', steps: ['Em Settings (Opções) › External Devices, adicione um dispositivo de saída na porta virtual.', 'Nas opções desse dispositivo, marque <b>Send MIDI Clock</b>.'] },
-    reaper: { name: 'Reaper', steps: ['Em Preferences › Audio › MIDI Devices, na lista de saídas, ative a porta virtual.', 'Clique com o botão direito nela e marque <b>Send clock/SPP</b>.'] },
-    bitwig: { name: 'Bitwig', steps: ['Em Settings › Synchronization, adicione a porta virtual e ligue <b>Send clock</b>.'] },
-    fl: { name: 'FL Studio', steps: ['Em Options › MIDI Settings, escolha a porta virtual na saída, dê a ela um número de porta e ligue <b>Send master sync</b>.', 'O FL manda o tempo, mas nem sempre a posição: dê play sempre do começo de cada música, ou use os avisos de Program Change abaixo.'] },
-    outra: { name: 'DAW', steps: ['Procure nas preferências de sincronização a opção de <b>enviar MIDI Clock</b> (às vezes chamada de MIDI Beat Clock ou Master Sync), com <b>Song Position Pointer</b>, para a porta virtual.'] },
-  };
+  /* Any DAW works: the app only reads the standard MIDI Clock + Song Position Pointer (and optional Program Change).
+     The setup steps for each DAW live in Guia (passo a passo + .txt). */
+  const DAWS = Guia.DAWS;
   const dawKey = () => (L.cfg.daw && DAWS[L.cfg.daw]) ? L.cfg.daw : 'logic';
-  const dawName = () => DAWS[dawKey()].name;
   // the interface always says "DAW": each band picks its own (Logic, Ableton…); the name only shows in the setup steps
   const dawO = () => 'a DAW';
   const dawDo = () => 'da DAW';
-  function howTo() {
-    const isWin = /Windows/i.test(navigator.userAgent);
-    const d = DAWS[dawKey()];
-    const port = isWin
-      ? '<li><b>Windows:</b> instale o <b>loopMIDI</b> (gratuito, de Tobias Erichsen), abra e clique em <b>+</b> para criar uma porta. Deixe ele aberto.</li>'
-      : '<li><b>Mac:</b> abra <b>Configuração de Áudio e MIDI</b> › Janela › Mostrar Estúdio MIDI › <b>Driver IAC</b> e marque <b>O dispositivo está ligado</b>.</li>';
-    const other = isWin ? 'No Mac, o cabo virtual é o Driver IAC (já vem no sistema).' : 'No Windows, o cabo virtual é o programa gratuito loopMIDI.';
-    return `<ol class="howto">${port}
-      <li><b>${d.name}:</b> ${d.steps.join(' ')}</li>
-      <li>Abra este app no <b>Chrome</b> ou no <b>Edge</b> (o Safari não recebe MIDI) e marque abaixo <b>"Este computador recebe o MIDI ${dawDo()}"</b>. Se o navegador perguntar, permita o MIDI.</li>
-      <li><b>Dica para projetos longos (mais de 1024 compassos):</b> no começo de cada música, coloque um <b>Program Change</b> com o número da ordem do show (1 = primeira música). Assim o app nunca confunde as músicas.</li></ol>
-      <div class="hint">${other} Os nomes dos menus podem mudar um pouco conforme a versão ${dawDo()}.</div>
-      <h4 class="howh">Sem internet: rede local com um roteador simples</h4>
-      <ol class="howto">
-        <li><b>Antes, com internet:</b> no computador ${dawDo()}, rode o <b>"Atualizar salvetheapp"</b> do modo local. Ele guarda partituras, áudios e alinhamento no computador.</li>
-        <li>Ligue o roteador (não precisa de cabo de internet). Conecte o computador e todos os iPads <b>na mesma rede</b> dele. O computador pode ir por cabo no roteador: fica ainda mais estável.</li>
-        <li>No computador, abra <b>"Abrir salvetheapp"</b>. Se o sistema perguntar se pode aceitar conexões, clique em <b>Permitir</b>.</li>
-        <li>Nos iPads, abra o endereço que aparece na janela do computador, algo como <b>http://192.168.0.10:8080</b>.</li>
-      </ol>
-      <div class="hint"><b>Cuidados:</b> não use a rede de convidados do roteador e deixe desligado o "isolamento de clientes" (AP isolation), senão os aparelhos não se enxergam. iPad com chip de celular: desligue os dados móveis. O aviso "sem internet" no Wi-Fi é normal. Prefira a rede de 5 GHz. Nessa rede o endereço da internet (salvetheapp-3cceb.web.app) não abre: use o do modo local. Também dá para ligar os iPads por cabo de rede (adaptador Ethernet) num switch, com o Wi-Fi deles desligado.</div>`;
-  }
   function paintDawLabels() {
     const b = document.querySelector('#logicBtn'); if (b) b.title = 'A partitura segue ' + dawO();
   }
@@ -3997,10 +4282,11 @@ const Logic = (() => {
     if (panel) return;
     const scrim = el('div', 'scrim'); panel = el('div', 'modal'); panel.setAttribute('role', 'dialog');
     const midiOk = !!navigator.requestMIDIAccess && S.canWrite;
-    const dawOpts = Object.entries(DAWS).map(([k, d]) => `<option value="${k}"${k === dawKey() ? ' selected' : ''}>${k === 'outra' ? 'Outra' : d.name}</option>`).join('');
+    const dawOpts = Object.entries(DAWS).map(([k, d]) => `<option value="${k}"${k === dawKey() ? ' selected' : ''}>${d.name}</option>`).join('');
     panel.innerHTML = `<h3>Seguir ${dawO()}</h3>
       ${S.canWrite ? `<label class="lgrow"><span><b>Qual DAW este show usa</b><br><select id="lgDaw">${dawOpts}</select></span></label><button class="btn" id="lgMarkers" type="button">Marcar os inícios das músicas na DAW</button>` : ''}
-      <details class="lghow"><summary>Como configurar ${dawO()} (Mac e Windows)</summary><div id="lgHow">${howTo()}</div></details>
+      <div class="gcards"><button class="gcard" id="lgGuiaDaw" type="button"><b>Ligar ${escH(DAWS[dawKey()].name === 'Outra DAW' ? 'a DAW' : 'o ' + DAWS[dawKey()].name)} ao app</b><small>Passo a passo, no Mac ou no Windows. Dá para baixar em .txt.</small><span class="seta">›</span></button>
+        <button class="gcard" id="lgGuiaRede" type="button"><b>Tocar sem internet (rede local)</b><small>O computador da DAW e os iPads num roteador Wi-Fi, sem internet.</small><span class="seta">›</span></button></div>
       <label class="lgrow"><input type="checkbox" id="lgFollow"> <span><b>Seguir ${dawO()} neste aparelho</b><br><small>A partitura troca de música, marca o compasso e vira a página sozinha quando ${dawO()} toca.</small></span></label>
       ${midiOk ? `${window.top !== window ? '<button class="btn" id="lgBridge" type="button">Abrir ponte MIDI (janela separada)</button><div class="hint">Use a ponte se aparecer que o navegador não deixou usar o MIDI.</div>' : ''}
       <label class="lgrow"><input type="checkbox" id="lgSource"> <span><b>Este computador recebe o MIDI ${dawDo()}</b><br><small>Ligue só no computador onde ${dawO()} está tocando (no Chrome ou no Edge, Mac ou Windows).</small></span></label><div class="hint" id="lgPorts"></div>` : ''}
@@ -4013,6 +4299,8 @@ const Logic = (() => {
     const shut = () => { scrim.remove(); panel.remove(); panel = null; };
     scrim.onclick = shut; $('#lgClose', panel).onclick = shut;
     const mkb = $('#lgMarkers', panel); if (mkb) mkb.onclick = () => { shut(); openMarkers(); };
+    $('#lgGuiaDaw', panel).onclick = () => { shut(); Guia.show('daw', { daw: dawKey(), admin: S.canWrite, back: () => btn.onclick() }); };
+    $('#lgGuiaRede', panel).onclick = () => { shut(); Guia.show('rede', { admin: S.canWrite, back: () => btn.onclick() }); };
     const dawSel = $('#lgDaw', panel);
     if (dawSel) dawSel.onchange = () => {
       L.cfg.daw = dawSel.value;
@@ -4023,7 +4311,7 @@ const Logic = (() => {
     const src = $('#lgSource', panel); if (src) src.onchange = e => setSource(e.target.checked);
     const br = $('#lgBridge', panel); if (br) br.onclick = openBridge;
     const off = $('#lgOff', panel), offV = $('#lgOffV', panel);
-    const showOff = () => { offV.textContent = (L.offset > 0 ? '+' : '') + (L.offset / 1000).toFixed(3).replace('.', ',').replace(/0$/, '') + ' s'; };
+    const showOff = () => { offV.textContent = (L.offset > 0 ? '+' : '') + ((L.offset || 0) / 1000).toFixed(3).replace('.', ',').replace(/0$/, '') + ' s'; };
     off.value = String(L.offset || 0); showOff();
     off.oninput = () => { L.offset = parseInt(off.value, 10) || 0; ls.set('logicOffset', L.offset); showOff(); };
     $('#lgAudio', panel).onchange = e => {
