@@ -148,6 +148,25 @@ const team = {
   setLicao: (id, ativa, texto) => updateDoc(doc(fs, 'treino', 'regras', 'licoes', id), { ativa: !!ativa, texto: String(texto).slice(0, 1500) }),
   delLicao: id => deleteDoc(doc(fs, 'treino', 'regras', 'licoes', id)),
 };
+/* "Sugerir melhoria / Relatar problema": anyone signed in, from any band. The optional screenshot goes first to the
+   sender's own folder (sugestoes/{uid}/...), then the suggestion with where it was sent from. Only the app owner
+   reads the list (equipe.html); the jury (function juri) gives its verdict on the server. */
+async function sugerir({ tipo, texto, tela, aparelho, erros, foto }) {
+  const u = CTX.user; if (!u) throw new Error('sem login');
+  const ref = doc(collection(fs, 'sugestoes'));
+  const d = { texto: String(texto || '').trim().slice(0, 2000), ...me(), criadoEm: Date.now(), status: 'nova', tipo: tipo === 'problema' ? 'problema' : 'melhoria' };
+  if (CTX.band) { d.banda = String(CTX.band).slice(0, 120); if (CTX.bandName) d.bandaNome = String(CTX.bandName).slice(0, 80); if (CTX.role) d.papel = String(CTX.role).slice(0, 20); }
+  if (tela) d.tela = String(tela).slice(0, 300);
+  if (aparelho) d.aparelho = String(aparelho).slice(0, 300);
+  if (erros) d.erros = String(erros).slice(0, 2000);
+  if (foto) {
+    const path = `sugestoes/${u.uid}/${ref.id}.jpg`;
+    await uploadBytesResumable(sref(storage, path), foto, { contentType: foto.type || 'image/jpeg' });
+    d.foto = path;
+  }
+  await setDoc(ref, d);
+  return ref.id;
+}
 // files (scores and sources) go to the band's folder in Cloud Storage; only band members can open the links' folder by rules
 function uploadFile(file, opts = {}) {
   if (!CTX.band) return Promise.reject(new Error('sem banda'));
@@ -397,7 +416,7 @@ window.SALVE = {
   token: () => auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null),
   listShows, createShow: name => createShow(CTX.band, name), saveShow, deleteShow, library,
   makeInvite, members, setRole, removeMember, myBands,
-  signupState, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile, teamState, team,
+  signupState, listCodes, newCode, setCodeActive, setSignupOpen, upload: uploadFile, teamState, team, sugerir,
   switchTo: (band, show) => { CTX.band = band; CTX.show = show; remember(); location.reload(); },
   switchBand: () => { try { localStorage.removeItem(LS); sessionStorage.setItem('salve:pick', '1'); } catch {} location.reload(); },
 };

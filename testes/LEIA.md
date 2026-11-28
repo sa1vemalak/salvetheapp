@@ -11,6 +11,11 @@
   copia o convite para testar o app que salva músicos.
 - `node testes/instalar.js`: no celular e no tablet (iPhone, iPad, Android) aparece "Instalar o app" com o passo a passo para pôr
   o ícone na tela de início; no computador e quando já abriu pelo ícone, não aparece. `FOTOS=pasta` salva os prints.
+- `node testes/sugestoes.js`: "Sugerir melhoria" (menu e tela inicial) manda ideia ou problema com a tela, o aparelho, os
+  últimos erros e o print opcional; a página da equipe mostra ao dono as sugestões em grupos com o parecer do júri.
+  `FOTOS=pasta` salva os prints.
+- `node testes/juri.js`: o júri das sugestões (três avaliadores, a maioria decide, bug confirmado vai para a correção
+  automática, o texto de quem mandou é tratado como dado).
 - `python3 testes/malak_base.py` (precisa do music21): a pauta da base sem nome na grade não vira trompete; os nomes param no 2º sistema.
 - `python3 testes/malak_links.py`: o Malak abre os PDFs da turnê salvos como caminho do site ("scores/...").
 - `python3 testes/malak_leitura.py` (precisa de pymupdf e music21): o Malak lê do PDF as pausas, notas agudas com linhas

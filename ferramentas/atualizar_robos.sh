@@ -4,7 +4,7 @@
 #     bash ferramentas/atualizar_robos.sh            # tudo: Caio e funções, Malak, Mestrinho
 #     bash ferramentas/atualizar_robos.sh funcoes    # só uma parte: funcoes, malak, mestrinho ou site
 #     bash ferramentas/atualizar_robos.sh site       # publica o app nos dois endereços (usa a conta do Cloud Shell)
-#     bash ferramentas/atualizar_robos.sh regras     # publica as regras do banco (firebase/firestore.rules)
+#     bash ferramentas/atualizar_robos.sh regras     # publica as regras do banco e dos arquivos (firebase/*.rules)
 # O Malak leva uns 15-30 minutos e o Mestrinho uns 30-60 (a montagem roda no Google; não feche a aba).
 set -euo pipefail
 P=salvetheapp-3cceb
@@ -48,14 +48,14 @@ if [[ $QUAIS == tudo || $QUAIS == mestrinho ]]; then
 fi
 
 if [[ $QUAIS == regras ]]; then
-  passo "Regras do banco (firebase/firestore.rules)"
+  passo "Regras do banco e dos arquivos (firebase/firestore.rules e storage.rules)"
   tmp=$(mktemp -d)
-  cp ../firebase/firestore.rules "$tmp/firestore.rules"
-  echo '{ "firestore": { "rules": "firestore.rules" } }' > "$tmp/firebase.json"
+  cp ../firebase/firestore.rules ../firebase/storage.rules "$tmp/"
+  echo '{ "firestore": { "rules": "firestore.rules" }, "storage": { "rules": "storage.rules" } }' > "$tmp/firebase.json"
   export GOOGLE_CLOUD_QUOTA_PROJECT="$P"
-  (cd "$tmp" && npx -y firebase-tools@13 deploy --only firestore:rules --project "$P" --non-interactive)
+  (cd "$tmp" && npx -y firebase-tools@13 deploy --only firestore:rules,storage --project "$P" --non-interactive)
   rm -rf "$tmp"
-  echo "OK: regras do banco publicadas."
+  echo "OK: regras do banco e dos arquivos publicadas."
 fi
 
 if [[ $QUAIS == site ]]; then

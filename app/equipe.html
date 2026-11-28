@@ -48,6 +48,20 @@ main { max-width: 860px; margin: 0 auto; padding: 16px; display: flex; flex-dire
 .item { box-shadow: none; }
 .item.off { opacity: .6; }
 .item.feita { border-left: 4px solid #2e8b57; } .item.descartada { opacity: .6; } .item.em-andamento { border-left: 4px solid var(--accent); }
+/* sugestões: grupos e o parecer do júri */
+.grupo { display: flex; flex-direction: column; gap: 10px; }
+.grupo > h3, .grupo > summary { font: 700 15px/1.3 var(--f-display); margin: 8px 0 0; cursor: pointer; }
+.grupo > p.small { margin-top: -6px; }
+.small { font-size: 13px; } .mono { font-family: var(--f-mono); font-size: 12px; overflow-wrap: anywhere; }
+.sug .tit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.chip { font: 600 11.5px var(--f-mono); letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
+.chip.prob { color: var(--fg); border-color: var(--fg); }
+.sug .foto img { max-width: 220px; max-height: 160px; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.juri { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.juri.sim { border-color: rgba(255,255,255,.35); box-shadow: 0 0 18px rgba(255,255,255,.06); }
+.juri ul.votos { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; display: flex; flex-direction: column; gap: 4px; }
+.corr { font-size: 14px; } .corr a { color: var(--fg); font-weight: 600; }
+.chave summary { cursor: pointer; font-weight: 600; }
 .muted { color: var(--muted); margin: 0; }
 .texto { white-space: pre-wrap; margin: 0; font-family: var(--f-body); }
 pre.texto { font-size: 13px; max-height: 320px; overflow: auto; background: var(--bg); padding: 10px; border-radius: 8px; }
