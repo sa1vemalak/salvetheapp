@@ -93,8 +93,26 @@ const caixa = (p, sel) => p.$eval(sel, e => { const r = e.getBoundingClientRect(
   confere('o app lembra as laterais fechadas', (await caixa(p, '#sideL')).w === 0 && (await caixa(p, '#sideR')).w === 0);
   await p.click('#sideLBtn'); await p.click('#sideRBtn'); await p.waitForTimeout(700);
   confere('os botões do topo abrem as laterais de novo', (await caixa(p, '#sideL')).w > 200 && (await caixa(p, '#sideR')).w > 200);
+  await p.click('#playerBtn'); await p.waitForTimeout(400);
+  confere('com o Ouvir aberto, o "Tela cheia" continua inteiro e tocável', await p.evaluate(() => { const b = document.querySelector('#readBtn'); b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect(); return r.height > 30 && b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); }));
+  confere('instrumentos do Ouvir alinhados em duas colunas iguais', await p.$$eval('#pMix .mixch', xs => { const r = xs.map(x => x.getBoundingClientRect());
+    return r.length === 4 && r[0].left === r[2].left && r[1].left === r[3].left && Math.abs(r[0].width - r[1].width) < 1 && r.every(q => q.right <= document.querySelector('#player').getBoundingClientRect().right); }));
   await p.click('#readBtn'); await p.waitForTimeout(500);
   confere('tela cheia esconde as laterais', await p.$eval('#sideL', e => getComputedStyle(e).display === 'none'));
+  confere('tela cheia: a partitura ocupa a tela toda (e não some)', (await caixa(p, '#stage')).w === 1180 && await p.$eval('.center', e => e.getBoundingClientRect().width === 1180));
+  await p.click('#readExit'); await p.waitForTimeout(500);
+  confere('sair da tela cheia traz as laterais de volta', (await caixa(p, '#sideL')).w > 200 && (await caixa(p, '#sideR')).w > 200);
+  await p.click('#homeBtn'); await p.waitForTimeout(500);
+  confere('na tela inicial nada das ferramentas aparece por cima ("fantasma")', await p.evaluate(() => { const b = document.querySelector('#readBtn').getBoundingClientRect();
+    const e = document.elementFromPoint(b.x + 20, b.y + 10); return !!e && !!e.closest('#home, .temabtn'); }));
+  confere('botão do tema no canto de baixo da tela inicial', await p.$eval('#temaBtn', e => { const r = e.getBoundingClientRect(); return getComputedStyle(e).display !== 'none' && r.left < 40 && r.bottom > innerHeight - 40; }));
+  await p.click('#temaBtn'); await p.waitForTimeout(200);
+  confere('o botão liga o tema claro', await p.evaluate(() => document.documentElement.dataset.theme === 'light' && getComputedStyle(document.body).backgroundColor !== 'rgb(6, 6, 7)'));
+  await p.reload(); await p.waitForFunction(() => window.__t, null, { timeout: 15000 });
+  confere('o app lembra o tema claro', await p.evaluate(() => document.documentElement.dataset.theme === 'light' && document.querySelector('#temaBtn').textContent.includes('escuro')));
+  await p.evaluate(() => document.querySelector('#temaSide').click());
+  confere('o botão do menu volta para o escuro', await p.evaluate(() => !document.documentElement.dataset.theme));
   await ctx.close();
 
   console.log('Tela estreita (celular)');
