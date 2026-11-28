@@ -98,10 +98,10 @@ service cloud.firestore {
           allow write: if editor(b);
         }
       }
-      // songs, layout, ann (the shared "Em comum" layer), versions
+      // songs, layout, ann (the shared "Em comum" layer), versions; uso = the robots' monthly spend, written only by the server
       match /{col}/{doc} {
         allow read: if member(b);
-        allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs', 'propostas']);
+        allow write: if editor(b) && !(col in ['members', 'invites', 'shows', 'jobs', 'propostas', 'uso']);
       }
       // a musician's "Minha versão" sent to the band: any member sends their own; only the owner approves or
       // refuses it (approving applies the changes with the owner's own permissions, in the app)

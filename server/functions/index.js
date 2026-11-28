@@ -9,6 +9,7 @@ const { GoogleAuth } = require('google-auth-library');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const bus = require('./llm/bus');
+const gasto = require('./gasto');   // the monthly robot budget per band (R$ 20)
 const { DOMParser } = require('linkedom');
 const Partitura = require('./partitura');   // the same file as app/partitura.js (ferramentas/atualizar_robos.sh copies it)
 
@@ -377,6 +378,10 @@ async function handle(req, res) {
   const member = await data(db.collection('bands').doc(band).collection('members').doc(user.uid));
   if (!member) return fail(403, 'Você não é desta banda.');
 
+  // the monthly budget: each band may spend up to R$ 20 a month on the robots (the app owner's band has no limit)
+  const verba = await gasto.livre(db, band);
+  if (!verba.ok) return fail(429, verba.msg);
+
   // a simple daily cap per band, so a loop or abuse can't run up the bill
   const day = new Date().toISOString().slice(0, 10);
   const usage = db.collection('sistema').doc('uso').collection(day).doc(band);
@@ -411,6 +416,7 @@ async function handle(req, res) {
         break;
       }
       const out = await bus.turn(db, { modulo: 'agente', system: (editar ? SYSTEM + EDITAR(musica) : SYSTEM) + (pessoal ? PESSOAL : ''), messages, tools: TOOLS, maxTokens: 8000, quem });
+      await gasto.somar(db, band, 'caio', gasto.reaisDoUso(out.modelo, out.usage, verba.dolar), verba.semLimite);
       if (out.stop_reason === 'refusal') { texto = 'Não posso ajudar com esse pedido.'; break; }
       messages.push({ role: 'assistant', content: out.content });
       texto = out.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || texto;
@@ -453,6 +459,8 @@ exports.robo = onDocumentCreated({ document: 'bands/{b}/jobs/{j}', region: 'sout
   if (n > robot.limit) {
     return ref.update({ status: 'erro', msg: arranjo ? 'A banda chegou ao limite de 5 arranjos por dia.' : 'A banda chegou ao limite de 60 processamentos hoje.' });
   }
+  const verba = await gasto.livre(db, event.params.b);
+  if (!verba.ok) return ref.update({ status: 'erro', msg: verba.msg });
   try {
     const client = await gauth.getClient();
     const project = process.env.GCLOUD_PROJECT || 'salvetheapp-3cceb';
@@ -461,6 +469,7 @@ exports.robo = onDocumentCreated({ document: 'bands/{b}/jobs/{j}', region: 'sout
       data: { overrides: { containerOverrides: [{ env: [{ name: 'JOB', value: ref.path }] }] } },
     });
     await ref.update({ status: 'na fila', msg: `${robot.name} vai começar em instantes.`, atualizado: Date.now() });
+    await gasto.somar(db, event.params.b, robot.job === 'robo' ? 'malak' : 'mestrinho', gasto.POR_TRABALHO[robot.job === 'robo' ? 'malak' : 'mestrinho'], verba.semLimite);
   } catch (e) {
     console.error(e?.response?.data || e);
     await ref.update({ status: 'erro', msg: `Não consegui ligar ${robot.name.toLowerCase()}. Tente de novo em alguns minutos.` });

@@ -60,4 +60,9 @@ await t('autor apaga a dele', assertSucceeds(deleteDoc(doc(db('mu1'), 'bands/B/p
 await t('músico continua sem escrever nas músicas da banda', assertFails(setDoc(doc(db('mu1'), 'bands/B/songs/m1'), { title: 'x' })));
 await t('versão pessoal na área particular do músico', assertSucceeds(setDoc(doc(db('mu1'), 'users/mu1/ann-B/pessoal__m1__trompete'), { tipo: 'versao_pessoal', musica: 'm1', parte: 'trompete', mudancas: [] })));
 await t('ninguém lê a versão pessoal de outro', assertFails(getDoc(doc(db('mu2'), 'users/mu1/ann-B/pessoal__m1__trompete'))));
+// the robots' monthly spend: the band reads it, only the server writes it (so nobody resets the R$ 20 limit)
+await t('dono NÃO zera o gasto do mês', assertFails(setDoc(doc(db('dono1'), 'bands/B/uso/2026-11'), { reais: 0 })));
+await t('editor NÃO mexe no gasto do mês', assertFails(setDoc(doc(db('ed9'), 'bands/B/uso/2026-11'), { reais: 0 })));
+await t('quem é da banda lê o gasto do mês', assertSucceeds(getDoc(doc(db('mu1'), 'bands/B/uso/2026-11'))));
+await t('quem não é da banda NÃO lê o gasto', assertFails(getDoc(doc(db('estranho'), 'bands/B/uso/2026-11'))));
 console.log(`\n${ok} passaram, ${fail} falharam`); await env.cleanup(); process.exit(fail ? 1 : 0);
