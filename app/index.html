@@ -908,6 +908,15 @@ body.at-home .admbtn.on { display: grid; }
 body.pode-instalar.at-home:not(.inst-adiado) .admbtn { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 .admbtn .ponto { position: absolute; top: -3px; right: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
   background: var(--fg); color: var(--bg); font: 700 10px/16px var(--f-body); text-align: center; }
+/* ===== Equipe do Salve: ícone na tela inicial para quem o dono marcou no painel de admin (equipe/{uid}) e para o dono ===== */
+.eqbtn { position: fixed; z-index: 61; right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: none; align-items: center; gap: 7px; height: 34px; padding: 0 13px 0 10px; border-radius: 999px; border: 1px solid var(--line2);
+  background: var(--raise); color: var(--fg); box-shadow: var(--shadow); font: 600 13px var(--f-body); text-decoration: none; }
+.eqbtn svg { width: 17px; height: 17px; }
+.eqbtn:hover, .eqbtn:focus-visible { border-color: var(--fg); }
+body.at-home .eqbtn.on { display: inline-flex; }
+body.tem-admin .eqbtn { right: calc(max(14px, env(safe-area-inset-right, 0px)) + 42px); }
+body.pode-instalar.at-home:not(.inst-adiado) .eqbtn { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
 body.pode-instalar #instalarSide { display: flex; }
 .scrim.inst { z-index: 70; }
 .modal.guia.inst { z-index: 71; }
@@ -1145,6 +1154,7 @@ body.pode-instalar #instalarSide { display: flex; }
 
 <button class="temabtn" id="temaBtn" type="button" title="Trocar entre tema claro e escuro"><svg class="tema-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="tema-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="tema-txt">Tema claro</span></button>
 <button class="instbtn" id="instalarBtn" type="button" title="Pôr o app na tela de início do celular"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/></svg><span>Instalar o app</span></button>
+<a class="eqbtn" id="equipeBtn" href="equipe.html" title="Abrir a página da Equipe do Salve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c.5-.1 1-.2 1.5-.2 2.8 0 5 2.2 5 5"/></svg><span>Equipe do Salve</span></a>
 <a class="admbtn" id="adminBtn" href="admin.html" title="Painel de admin" aria-label="Painel de admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span class="ponto" id="adminPonto" hidden></span></a>
 <button class="readexit" id="readExit" hidden aria-label="Sair da tela cheia" title="Sair da tela cheia">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4v5H4M15 4v5h5M15 20v-5h5M9 20v-5H4"/></svg></button>
@@ -4750,7 +4760,7 @@ async function boot() {
   const who = window.claude?.use ? await window.claude.use('user').catch(() => null) : null;
   S.canWrite = who ? await who.canEdit().catch(() => false) : !!db;
   S.uid = who ? await who.id().catch(() => null) : null;
-  if (S.uid) AdminIcone.ver();
+  if (S.uid) { AdminIcone.ver(); EquipeIcone.ver(); }
   S.personal = !!db && !S.canWrite;
   document.body.classList.toggle('musician', S.personal);
   document.body.classList.toggle('readonly-common', !S.canWrite);
@@ -4788,9 +4798,18 @@ const AdminIcone = {
     const r = await SALVE.novosCadastros().catch(() => null);
     if (!r || !r.admin) return;
     const a = $('#adminBtn'), p = $('#adminPonto');
-    a.classList.add('on');
+    a.classList.add('on'); document.body.classList.add('tem-admin');
     p.hidden = !r.novos; p.textContent = r.novos > 9 ? '9+' : String(r.novos || '');
     a.title = r.novos ? `Painel de admin · ${r.novos} cadastro${r.novos > 1 ? 's' : ''} novo${r.novos > 1 ? 's' : ''}` : 'Painel de admin';
+  },
+};
+// the "Equipe do Salve" icon: for whoever the owner marked in the admin panel (equipe/{uid}) and for the owner;
+// the page and the rules check equipe/{uid} again, so unmarking closes it even if the icon was still on the screen
+const EquipeIcone = {
+  async ver() {
+    if (!window.SALVE || !SALVE.teamState) return;
+    const t = await SALVE.teamState().catch(() => null);
+    $('#equipeBtn').classList.toggle('on', !!(t && t.team));
   },
 };
 boot();

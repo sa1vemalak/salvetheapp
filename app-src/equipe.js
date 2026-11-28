@@ -322,11 +322,11 @@ function open(key) {
 if (window.__testToken) signInWithCustomToken(auth, window.__testToken).catch(e => console.error(e));  // end-to-end tests only
 onAuthStateChanged(auth, async u => {
   ME = u;
-  if (!u) return screen('Entre no app primeiro', 'Esta página é da equipe do salvetheapp. Entre com a sua conta no app e volte aqui.', ['Abrir o app', './']);
+  if (!u) return screen('Entre no app primeiro', 'Esta página é da Equipe do Salve. Entre com a sua conta no app e volte aqui.', ['Abrir o app', './']);
   $('#who').textContent = u.displayName || u.email || '';
   const [adm, eq] = await Promise.all([getDoc(doc(fs, 'admins', u.uid)).catch(() => null), getDoc(doc(fs, 'equipe', u.uid)).catch(() => null)]);
   ADMIN = !!(adm && adm.exists());
-  if (!((adm && adm.exists()) || (eq && eq.exists()))) return screen('Área da equipe do app', 'Sua conta não faz parte da equipe do salvetheapp. Se deveria, peça para o dono do app incluir você.', ['Voltar para o app', './']);
+  if (!((adm && adm.exists()) || (eq && eq.exists()))) return screen('Equipe do Salve', 'Sua conta não faz parte da Equipe do Salve. Se deveria, peça para o dono do app marcar você no painel de admin.', ['Voltar para o app', './']);
   const nav = $('#tabs'); nav.hidden = false; nav.replaceChildren();
   TABS.forEach(([k, label]) => { const b = el('button', 'tab', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.dataset.k = k; b.onclick = () => open(k); nav.append(b); });
   open((location.hash || '').slice(1) || 'sugestoes');

@@ -6,6 +6,8 @@
    POST { acao }     -> 'visto'                       marks the new signups as seen (admins/{uid}.painelVistoEm)
                         'limite', reais               the monthly robot budget per band (sistema/gasto.limiteReais)
                         'semLimite', banda, valor     a band with no budget limit (sistema/gasto.semLimite)
+                        'equipe', uid, valor          who opens the "Equipe do Salve" page (equipe/{uid}: created or
+                                                      deleted only here; the Firestore and Storage rules read it)
 
    Sources: Firebase Auth (who signed up, last sign-in), cadastros/{uid} (written by the functions in cadastros.js:
    how they entered and which bands they joined), users/{uid} (bands + acessos: { 'AAAA-MM-DD': n } written by the
@@ -74,6 +76,7 @@ async function relatorio(db, adm) {
   const limite = Number(g.limiteReais) > 0 ? Number(g.limiteReais) : gasto.LIMITE_REAIS;
   const semLimiteCfg = Array.isArray(g.semLimite) ? g.semLimite : [];
   const admins = new Set((await db.collection('admins').get()).docs.map(d => d.id));
+  const equipe = new Set((await db.collection('equipe').get().catch(() => ({ docs: [] }))).docs.map(d => d.id));
 
   // people: one row per account (Auth), with what the app knows about them
   const pessoas = contas.map(u => {
@@ -89,7 +92,7 @@ async function relatorio(db, adm) {
       uid: u.uid, nome: c.nome || u.displayName || us.name || '', email: c.email || u.email || us.email || '',
       entrada: c.entrada || ENTRADA[(u.providerData[0] || {}).providerId] || (u.providerData[0] || {}).providerId || '',
       criadoEm, ultimo, hoje: !!acessos[hoje], dias7: diasAtivos.filter(d => d7.has(d)).length, dias30: diasAtivos.length, aberturas30,
-      bandas: bandasU, entrouEm: Array.isArray(c.bandas) ? c.bandas.slice(0, 20) : [], admin: admins.has(u.uid), desativada: !!u.disabled,
+      bandas: bandasU, entrouEm: Array.isArray(c.bandas) ? c.bandas.slice(0, 20) : [], admin: admins.has(u.uid), equipe: admins.has(u.uid) || equipe.has(u.uid), desativada: !!u.disabled,
       novo: criadoEm > visto && !admins.has(u.uid),
     };
   }).sort((a, b) => b.criadoEm - a.criadoEm);
@@ -153,6 +156,19 @@ async function acao(db, uid, b) {
     if (!/^[\w.-]{1,120}$/.test(banda) || !(await db.collection('bands').doc(banda).get()).exists) return { code: 400, erro: 'banda não encontrada' };
     const F = admin.firestore.FieldValue;
     await ref.set({ semLimite: b.valor ? F.arrayUnion(banda) : F.arrayRemove(banda) }, { merge: true }); return { ok: true };
+  }
+  if (a === 'equipe') {
+    const alvo = String(b.uid || '');
+    if (!/^[\w-]{1,128}$/.test(alvo)) return { code: 400, erro: 'pessoa não encontrada' };
+    if ((await db.collection('admins').doc(alvo).get()).exists) return { code: 400, erro: 'O dono do app sempre entra na Equipe do Salve.' };
+    const ref2 = db.collection('equipe').doc(alvo);
+    if (!b.valor) { await ref2.delete(); return { ok: true, equipe: false }; }
+    let u;
+    try { u = await admin.auth().getUser(alvo); } catch { return { code: 400, erro: 'pessoa não encontrada' }; }
+    const antes = await ref2.get();
+    await ref2.set({ nome: String(u.displayName || u.email || '').slice(0, 80), email: String(u.email || '').slice(0, 200), papel: (antes.exists && (antes.data() || {}).papel) || 'parceiro',
+      desde: (antes.exists && (antes.data() || {}).desde) || Date.now(), por: uid }, { merge: true });
+    return { ok: true, equipe: true };
   }
   return { code: 400, erro: 'ação desconhecida' };
 }

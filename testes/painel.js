@@ -18,7 +18,7 @@ function fakeDb(dados) {
   const refDe = p => { const partes = p.split('/'); const r = { id: partes[partes.length - 1], path: p };
     r.parent = { id: partes[partes.length - 2], parent: partes.length > 2 ? refDe(partes.slice(0, -2).join('/')) : null }; return r; };
   const filhos = (p, fundo) => Object.keys(dados).filter(k => k.startsWith(p + '/') && k.slice(p.length + 1).split('/').length === 1).map(snap);
-  const docRef = p => ({ get: async () => snap(p), set: async (v, o) => { dados[p] = { ...(o && o.merge ? dados[p] || {} : {}), ...v }; }, collection: c => colRef(p + '/' + c) });
+  const docRef = p => ({ get: async () => snap(p), set: async (v, o) => { dados[p] = { ...(o && o.merge ? dados[p] || {} : {}), ...v }; }, delete: async () => { delete dados[p]; }, collection: c => colRef(p + '/' + c) });
   const colRef = p => ({ doc: id => docRef(p + '/' + id), get: async () => ({ docs: filhos(p) }) });
   return { collection: c => colRef(c), collectionGroup: c => ({ get: async () => ({ docs: Object.keys(dados).filter(k => { const s = k.split('/'); return s.length >= 2 && s[s.length - 2] === c; }).map(snap) }) }) };
 }
@@ -31,6 +31,7 @@ const tokens = { 'tk-dono': 'dono', 'tk-ana': 'ana' };
 Object.defineProperty(admin, 'auth', { configurable: true, value: () => ({
   verifyIdToken: async t => { if (!tokens[t]) throw new Error('token'); return { uid: tokens[t] }; },
   listUsers: async () => ({ users: contas }),
+  getUser: async uid => { const c = contas.find(x => x.uid === uid); if (!c) throw new Error('user-not-found'); return c; },
 }) });
 Object.defineProperty(admin, 'firestore', { configurable: true, value: Object.assign(() => null, { FieldValue: { arrayUnion: (...v) => ({ uniao: v }), arrayRemove: (...v) => ({ tira: v }) } }) });
 const painel = require(path.join(FN, 'painel.js'));
@@ -93,6 +94,20 @@ const chama = async (metodo, token, body) => { let st = 200, js = null;
   confere('mudar o limite', (await chama('POST', 'tk-dono', { acao: 'limite', reais: 30 })).st === 200 && dados['sistema/gasto'].limiteReais === 30);
   confere('liberar uma banda do limite', (await chama('POST', 'tk-dono', { acao: 'semLimite', banda: 'ana-1', valor: true })).st === 200 && dados['sistema/gasto'].semLimite.uniao[0] === 'ana-1');
   confere('banda que não existe é recusada', (await chama('POST', 'tk-dono', { acao: 'semLimite', banda: 'nao-existe', valor: true })).st === 400);
+
+  console.log('Equipe do Salve (quem abre a página da equipe)');
+  confere('outra conta não consegue se pôr na equipe', (await chama('POST', 'tk-ana', { acao: 'equipe', uid: 'ana', valor: true })).st === 403 && !dados['equipe/ana']);
+  confere('ninguém começa na equipe, só o dono', (await chama('GET', 'tk-dono')).js.pessoas.filter(p => p.equipe).map(p => p.uid).join() === 'dono');
+  confere('o dono marca o Beto: equipe/beto criado com nome e e-mail', (await chama('POST', 'tk-dono', { acao: 'equipe', uid: 'beto', valor: true })).st === 200 &&
+    dados['equipe/beto'] && dados['equipe/beto'].nome === 'Beto' && dados['equipe/beto'].email === 'beto@x.com' && dados['equipe/beto'].por === 'dono', JSON.stringify(dados['equipe/beto']));
+  confere('o relatório mostra o Beto na equipe', (await chama('GET', 'tk-dono')).js.pessoas.find(p => p.uid === 'beto').equipe);
+  const desde = dados['equipe/beto'].desde;
+  await chama('POST', 'tk-dono', { acao: 'equipe', uid: 'beto', valor: true });
+  confere('marcar de novo não muda a data de entrada', dados['equipe/beto'].desde === desde);
+  confere('o dono desmarca o Beto: equipe/beto apagado', (await chama('POST', 'tk-dono', { acao: 'equipe', uid: 'beto', valor: false })).st === 200 && !('equipe/beto' in dados));
+  confere('conta que não existe é recusada', (await chama('POST', 'tk-dono', { acao: 'equipe', uid: 'ninguem', valor: true })).st === 400 && !dados['equipe/ninguem']);
+  confere('caminho estranho é recusado', (await chama('POST', 'tk-dono', { acao: 'equipe', uid: '../admins/x', valor: true })).st === 400);
+  confere('o dono não se tira da equipe', (await chama('POST', 'tk-dono', { acao: 'equipe', uid: 'dono', valor: false })).st === 400);
   confere('ação desconhecida é recusada', (await chama('POST', 'tk-dono', { acao: 'apagarTudo' })).st === 400);
 
   console.log(falhas.length ? `\n${falhas.length} falharam, ${ok} ok` : `\nTudo certo (${ok})`);
