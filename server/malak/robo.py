@@ -25,6 +25,9 @@ import hornsampler as H  # real recorded horns (VSCO 2 CE, MTG Solo Sax), the en
 
 PROJECT = os.environ.get('GOOGLE_CLOUD_PROJECT', 'salvetheapp-3cceb')
 BUCKET = os.environ.get('BUCKET', 'salvetheapp-3cceb.firebasestorage.app')
+# the app's site: the tour songs' PDFs and audio are files of the site, saved on the song as paths like
+# "scores/teu-popo/v20261125/grade.pdf" (the app opens them from its own address; the robot needs the full link)
+SITE = os.environ.get('SITE', 'https://salvetheapp.web.app/')
 # the fullest General MIDI bank available: 128 instruments + drum kits (MuseScore General, else FluidR3)
 SF2 = os.environ.get('SF2') or next((p for p in ('/usr/share/sounds/sf2/MuseScore_General_Full.sf2', '/usr/share/sounds/sf2/MuseScore_General.sf2',
       '/usr/share/sounds/sf3/MuseScore_General.sf3', '/usr/share/sounds/sf3/MuseScore_General_Full.sf3', '/usr/share/sounds/sf2/FluidR3_GM.sf2') if os.path.exists(p)), '/usr/share/sounds/sf2/FluidR3_GM.sf2')
@@ -50,8 +53,16 @@ def slug(s):
     return s or 'parte'
 
 
+def full_url(url):
+    """a link the robot can open: full links stay as they are, the site's paths ("scores/...") get the site's address"""
+    url = (url or '').strip()
+    if re.match(r'^[a-z][a-z0-9+.-]*://', url, re.I):
+        return url
+    return SITE.rstrip('/') + '/' + urllib.parse.quote(url.lstrip('/'), safe='/%?=&')
+
+
 def download(url, dest):
-    with urllib.request.urlopen(url, timeout=120) as r, open(dest, 'wb') as f:
+    with urllib.request.urlopen(full_url(url), timeout=120) as r, open(dest, 'wb') as f:
         shutil.copyfileobj(r, f)
     return dest
 
