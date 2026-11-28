@@ -159,18 +159,35 @@ service cloud.firestore {
     function team() { return isAdmin() || (signed() && exists(/databases/$(database)/documents/equipe/$(request.auth.uid))); }
     function shortText(v, n) { return v is string && v.size() > 0 && v.size() <= n; }
     match /equipe/{uid} { allow read: if signed() && (request.auth.uid == uid || isAdmin()); }
-    match /sugestoes/{id} {
-      allow read: if team();
-      allow create: if team() && request.resource.data.keys().hasOnly(['texto', 'uid', 'nome', 'criadoEm', 'status']) &&
-        shortText(request.resource.data.texto, 2000) && request.resource.data.uid == request.auth.uid &&
-        request.resource.data.criadoEm is int && request.resource.data.status == 'nova' &&
-        (!('nome' in request.resource.data) || request.resource.data.nome is string && request.resource.data.nome.size() <= 80);
-      // anyone on the team can move a suggestion along and answer it; the text and author stay
-      allow update: if team() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'atualizadoEm']) &&
-        request.resource.data.status in ['nova', 'em andamento', 'feita', 'descartada'] &&
-        (!('resposta' in request.resource.data) || request.resource.data.resposta is string && request.resource.data.resposta.size() <= 2000);
-      allow delete: if isAdmin() || (team() && resource.data.uid == request.auth.uid);
+    // suggestions and problem reports: anyone signed in sends one from inside the app (Sugerir melhoria); only the
+    // app owner (admins/{uid}) reads them all, each person reads their own. The jury verdict (juri) and the automatic
+    // fix (correcao) are written by the server only (functions juri / sugestoesRotina).
+    function isValidSugestao(d) {
+      return d.keys().hasAll(['texto', 'uid', 'criadoEm', 'status']) &&
+        d.keys().hasOnly(['texto', 'uid', 'nome', 'criadoEm', 'status', 'tipo', 'banda', 'bandaNome', 'papel', 'tela', 'aparelho', 'erros', 'foto']) &&
+        shortText(d.texto, 2000) && d.uid == request.auth.uid && d.criadoEm is int && d.status == 'nova' &&
+        (!('nome' in d) || (d.nome is string && d.nome.size() <= 80)) &&
+        (!('tipo' in d) || d.tipo in ['melhoria', 'problema']) &&
+        (!('banda' in d) || (d.banda is string && d.banda.size() <= 120)) &&
+        (!('bandaNome' in d) || (d.bandaNome is string && d.bandaNome.size() <= 80)) &&
+        (!('papel' in d) || (d.papel is string && d.papel.size() <= 20)) &&
+        (!('tela' in d) || (d.tela is string && d.tela.size() <= 300)) &&
+        (!('aparelho' in d) || (d.aparelho is string && d.aparelho.size() <= 300)) &&
+        (!('erros' in d) || (d.erros is string && d.erros.size() <= 2000)) &&
+        // the optional screenshot, uploaded first to the sender's own folder in Storage
+        (!('foto' in d) || (d.foto is string && d.foto.size() <= 200 && d.foto.matches('sugestoes/' + request.auth.uid + '/[A-Za-z0-9._-]+')));
     }
+    match /sugestoes/{id} {
+      allow read: if isAdmin() || (signed() && resource.data.uid == request.auth.uid);
+      allow create: if signed() && isValidSugestao(request.resource.data);
+      // the owner moves a suggestion along and answers it; the text, the author and the jury's verdict stay
+      allow update: if isAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'resposta', 'atualizadoEm']) &&
+        request.resource.data.status in ['nova', 'aprovada', 'em andamento', 'feita', 'descartada'] &&
+        (!('resposta' in request.resource.data) || request.resource.data.resposta is string && request.resource.data.resposta.size() <= 2000);
+      allow delete: if isAdmin() || (signed() && resource.data.uid == request.auth.uid);
+    }
+    // the key the daily fixing routine uses to read confirmed bugs (created by the server; the owner copies it)
+    match /sistema/rotina { allow read: if isAdmin(); }
     // the writing rules the AI arranger follows (one doc, every edit keeps the text before it in /versoes)
     match /treino/regras {
       allow read: if team();

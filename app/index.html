@@ -910,6 +910,21 @@ body.pode-instalar #instalarSide { display: flex; }
 /* no celular o fim da tela inicial e do login rola para cima do botão, nada fica escondido atrás dele */
 @media (max-width: 700px) { .home-in, .gate-in { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)) !important; } }
 
+/* ===== Sugerir melhoria / relatar problema (qualquer pessoa; chega para a equipe do app e passa pelo júri) ===== */
+#sugerirSide svg { width: 18px; height: 18px; }
+.scrim.sug { z-index: 70; }
+.modal.guia.sug { z-index: 71; }
+.sug .seg.tipo { box-sizing: border-box; width: 100%; }
+.sug .seg.tipo button { flex: 1; min-height: 46px; padding: 10px; font-size: 14.5px; font-weight: 600; }
+.sug .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sug textarea { box-sizing: border-box; width: 100%; min-height: 130px; resize: vertical; font: 15px/1.5 var(--f-body); color: var(--fg); background: var(--chrome); border: 1px solid var(--line2, var(--line)); border-radius: 12px; padding: 12px; }
+.sug .foto { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sug .foto img { width: 64px; height: 64px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line2, var(--line)); }
+.sug .vai { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+.sug .passos { margin: 0; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); font-size: 13.5px; line-height: 1.55; color: var(--muted); }
+.sug .passos b { color: var(--fg); }
+.sug .gfoot .btn.primary { padding: 12px 22px; font-weight: 700; }
+
 /* ===== Tema claro: o mesmo desenho da Noite, em papel e tinta ===== */
 :root[data-theme="light"] {
   --bg: #f3f3f1; --chrome: #ffffff; --raise: #ffffff; --line: rgba(0,0,0,.09); --line2: rgba(0,0,0,.16);
@@ -995,6 +1010,7 @@ body.pode-instalar #instalarSide { display: flex; }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.5"/><path d="M15.5 14.2c3 .3 5.5 2.7 5.5 5.8"/></svg><span class="lbl">Banda, shows e convites</span></button>
         <button class="iconbtn" id="caioBtn" title="Caio, o assistente da banda">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg><span class="lbl">Perguntar ao Caio</span></button>
+        <button class="iconbtn" id="sugerirSide" type="button" title="Mandar uma ideia ou contar um problema para a equipe do app"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg><span class="lbl">Sugerir melhoria</span></button>
         <button class="iconbtn" id="instalarSide" type="button" title="Pôr o app na tela de início do celular"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/></svg><span class="lbl">Instalar o app</span></button>
         <button class="iconbtn" id="temaSide" type="button" title="Trocar entre tema claro e escuro"><svg class="tema-sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="tema-lua" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg><span class="lbl tema-txt">Tema claro</span></button>
       </div>
@@ -1105,6 +1121,7 @@ body.pode-instalar #instalarSide { display: flex; }
         <button class="cta" id="homeAdd" type="button" hidden><span><small>Partituras</small>Adicionar música</span><span aria-hidden="true">+</span></button>
         <button class="btn" id="homeCaio" type="button" hidden>Perguntar ao Caio</button>
         <button class="btn" id="homeBand" type="button" hidden>Banda e convites</button>
+        <button class="btn" id="homeSugerir" type="button" hidden>Sugerir melhoria</button>
       </div>
       <p class="role" id="homeRole"></p>
       <p class="credits" id="homeCredits" hidden>Sons dos sopros: gravações de VSCO 2 Community Edition (Versilian Studios, domínio público) e MTG Solo Saxophones (Music Technology Group, Universitat Pompeu Fabra, licença CC BY 4.0).</p>
@@ -3550,6 +3567,93 @@ const Instalar = (() => {
   try { matchMedia('(display-mode: standalone)').addEventListener('change', atualiza); } catch {}
   atualiza();
   return { show, guia, atualiza, movel, instalado };
+})();
+
+/* ---------- Sugerir melhoria / relatar problema: qualquer pessoa, de qualquer banda. Vai junto onde ela estava e o
+   aparelho; o print é opcional. Chega para a equipe do app (equipe.html), que só vê depois do júri dar o parecer. ---------- */
+const Sugerir = (() => {
+  const erros = [];   // os últimos erros de JavaScript desta aba, que ajudam a achar um problema
+  addEventListener('error', e => { erros.push(String(e.message || e.error || '').slice(0, 300)); if (erros.length > 5) erros.shift(); });
+  addEventListener('unhandledrejection', e => { erros.push('promise: ' + String(e.reason?.message || e.reason || '').slice(0, 300)); if (erros.length > 5) erros.shift(); });
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function tela() {
+    if (document.body.classList.contains('at-home')) return 'Tela inicial';
+    const song = currentSong(), parte = (song?.parts || []).find(p => p.key === panes[0]?.part);
+    const aberta = document.querySelector('.modal:not(.sug) h3, .drawer:not([hidden]) h3');
+    return ['Partitura', song?.title, parte?.name || parte?.key, aberta ? 'janela: ' + aberta.textContent.trim() : ''].filter(Boolean).join(' · ').slice(0, 300);
+  }
+  function aparelho() {
+    const ua = navigator.userAgent;
+    const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const sis = /iPhone|iPod/.test(ua) ? 'iPhone' : ipad ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : /Linux/.test(ua) ? 'Linux' : 'outro';
+    const nav = /CriOS|Chrome\//.test(ua) && !/Edg/.test(ua) ? 'Chrome' : /Edg/.test(ua) ? 'Edge' : /Firefox|FxiOS/.test(ua) ? 'Firefox' : /SamsungBrowser/.test(ua) ? 'Samsung' : /Safari/.test(ua) ? 'Safari' : 'navegador';
+    const app = Instalar.instalado() ? 'pelo ícone' : 'no navegador';
+    return `${sis} · ${nav} ${app} · tela ${innerWidth}×${innerHeight} · tema ${document.documentElement.dataset.theme === 'light' ? 'claro' : 'escuro'}`;
+  }
+  // o print vira JPEG de no máximo 1600 px (fica leve para mandar pelo celular)
+  async function reduz(file) {
+    try {
+      const img = await createImageBitmap(file), k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise(ok => c.toBlob(b => ok(b ? new File([b], 'print.jpg', { type: 'image/jpeg' }) : file), 'image/jpeg', 0.82));
+    } catch { return file; }
+  }
+
+  let aberto = null;
+  function show(tipo0) {
+    if (aberto) aberto.close();
+    let tipo = tipo0 === 'problema' ? 'problema' : 'melhoria', foto = null, enviando = false;
+    const ondeEstava = tela(), noAparelho = aparelho();
+    const scrim = el('div', 'scrim sug'), m = el('div', 'modal guia sug'); m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+    const close = () => { scrim.remove(); m.remove(); document.removeEventListener('keydown', onKey); aberto = null; };
+    const onKey = e => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey); scrim.onclick = close;
+    m.innerHTML = `<div class="guia-top"><div><div class="eyebrow">Equipe do salvetheapp</div><h3>Sugerir melhoria</h3>
+        <p>Conte uma ideia para o app ou algo que deu errado. Chega para a equipe, que olha uma por uma.</p></div><button class="guia-x" type="button" aria-label="Fechar">✕</button></div>
+      <div class="seg tipo" id="sgTipo" role="group" aria-label="O que é"><button type="button" data-k="melhoria">Ideia de melhoria</button><button type="button" data-k="problema">Algo deu errado</button></div>
+      <label class="sr" for="sgTexto">Sua mensagem</label><textarea id="sgTexto" maxlength="2000"></textarea>
+      <p class="passos" id="sgPassos" hidden>Para a gente achar o problema, conte: <b>o que você fez</b>, <b>o que esperava</b> e <b>o que aconteceu</b>. Um print ajuda muito.</p>
+      <div class="foto"><label class="btn" for="sgFoto">Anexar um print (opcional)</label><input type="file" id="sgFoto" accept="image/*" hidden><span id="sgFotoV"></span></div>
+      <p class="vai">Vai junto: <b>${esc(ondeEstava)}</b> · ${esc(noAparelho)}.</p>
+      <div class="gfoot"><button class="btn" id="sgCancela" type="button">Cancelar</button><button class="btn primary" id="sgEnvia" type="button">Enviar</button></div>`;
+    const txt = m.querySelector('#sgTexto');
+    function render() {
+      m.querySelectorAll('#sgTipo button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === tipo)));
+      txt.placeholder = tipo === 'problema' ? 'Ex.: toquei em Ouvir na música Céu Azul e o som não saiu (iPad, no ensaio).' : 'Ex.: queria ver as letras de ensaio maiores na parte do trompete.';
+      m.querySelector('#sgPassos').hidden = tipo !== 'problema';
+    }
+    m.querySelectorAll('#sgTipo button').forEach(b => b.onclick = () => { tipo = b.dataset.k; render(); txt.focus(); });
+    m.querySelector('.guia-x').onclick = close; m.querySelector('#sgCancela').onclick = close;
+    m.querySelector('#sgFoto').onchange = async e => {
+      const f = e.target.files && e.target.files[0]; const v = m.querySelector('#sgFotoV'); v.replaceChildren();
+      if (!f) { foto = null; return; }
+      foto = await reduz(f);
+      const img = el('img'); img.alt = 'print anexado'; img.src = URL.createObjectURL(foto);
+      const tira = el('button', 'btn ghost', 'Tirar'); tira.type = 'button'; tira.onclick = () => { foto = null; v.replaceChildren(); e.target.value = ''; };
+      v.append(img, tira); v.style.display = 'flex'; v.style.gap = '8px'; v.style.alignItems = 'center';
+    };
+    m.querySelector('#sgEnvia').onclick = async () => {
+      const texto = txt.value.trim();
+      if (texto.length < 5) { toast('Escreva um pouco mais, por favor.'); txt.focus(); return; }
+      if (enviando) return; enviando = true; const b = m.querySelector('#sgEnvia'); b.textContent = 'Enviando…'; b.disabled = true;
+      try {
+        if (!window.SALVE || !SALVE.sugerir) throw new Error('sem conexão');
+        await SALVE.sugerir({ tipo, texto, tela: ondeEstava, aparelho: noAparelho, erros: erros.join(' | '), foto });
+        close(); toast(tipo === 'problema' ? 'Obrigado! O problema chegou para a equipe do app.' : 'Obrigado! A ideia chegou para a equipe do app.');
+      } catch { enviando = false; b.textContent = 'Enviar'; b.disabled = false; toast('Não consegui enviar agora. Confira a internet e tente de novo.'); }
+    };
+    render();
+    document.body.append(scrim, m);
+    setTimeout(() => txt.focus(), 50);
+    aberto = { close, m };
+    return aberto;
+  }
+  $('#sugerirSide').onclick = () => show();
+  $('#homeSugerir').onclick = () => show();
+  if (window.SALVE) $('#homeSugerir').hidden = false; else $('#sugerirSide').hidden = true;
+  return { show, tela, aparelho };
 })();
 
 /* ---------- reading mode: just the score, full screen ---------- */

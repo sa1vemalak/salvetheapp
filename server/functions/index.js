@@ -10,6 +10,7 @@ const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const bus = require('./llm/bus');
 const gasto = require('./gasto');   // the monthly robot budget per band (R$ 20)
+const juri = require('./juri');     // the jury of the suggestions sent from the app
 const { DOMParser } = require('linkedom');
 const Partitura = require('./partitura');   // the same file as app/partitura.js (ferramentas/atualizar_robos.sh copies it)
 
@@ -498,6 +499,106 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
     await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
   }
 });
+/* ---------------- suggestions: the jury and the daily fixing routine ---------------- */
+// the key the daily routine uses (sistema/rotina.chave): made here the first time, the app owner copies it in equipe.html
+async function chaveRotina() {
+  const ref = db.collection('sistema').doc('rotina');
+  const s = await ref.get();
+  if (s.exists && s.data().chave) return s.data().chave;
+  const chave = require('crypto').randomBytes(24).toString('hex');
+  await ref.set({ chave, criadaEm: Date.now() }, { merge: true });
+  return chave;
+}
+async function fotoDaSugestao(path) {
+  if (!path || !/^sugestoes\/[\w-]+\/[\w.-]+$/.test(path)) return null;
+  try {
+    const f = admin.storage().bucket().file(path);
+    const [meta] = await f.getMetadata();
+    if (+meta.size > 5 * 1024 * 1024 || !/^image\/(jpeg|png|webp|gif)$/.test(meta.contentType || '')) return null;
+    const [buf] = await f.download();
+    return { tipo: meta.contentType, base64: buf.toString('base64') };
+  } catch (e) { console.error('foto da sugestão:', e?.message || e); return null; }
+}
+// the verdict as it is saved on the suggestion; a bug the majority confirms goes to the fixing routine's queue
+function gravarVeredito(ref, votos, v, extra = {}) {
+  const upd = { juri: { estado: 'pronto', em: Date.now(), votos, ...v, ...extra } };
+  if (v.bug) upd.correcao = { estado: 'na fila', em: Date.now() };
+  return ref.update(upd);
+}
+
+exports.juri = onDocumentCreated({ document: 'sugestoes/{id}', region: 'southamerica-east1', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 180, memory: '512MiB', maxInstances: 5 }, async event => {
+  const ref = event.data.ref, s = event.data.data() || {};
+  if (!s.texto || s.juri) return;
+  await chaveRotina().catch(e => console.error('chave da rotina:', e));
+  const espera = motivo => ref.update({ juri: { estado: 'espera', motivo, em: Date.now() } });
+  // more than POR_DIA from one person in 24 h: kept, and the daily routine judges them
+  const minhas = await db.collection('sugestoes').where('uid', '==', s.uid).get().catch(() => null);
+  const hoje = minhas ? minhas.docs.filter(d => (d.data().criadoEm || 0) > Date.now() - 864e5).length : 0;
+  if (hoje > juri.POR_DIA) return espera(`Mais de ${juri.POR_DIA} sugestões desta pessoa hoje: o júri avalia na rotina diária.`);
+  // the cost goes to the sender's band, only if they really are in it; a band over its R$ 20 waits for the routine
+  let banda = null, verba = null;
+  if (s.banda) {
+    const m = await db.collection('bands').doc(s.banda).collection('members').doc(s.uid).get().catch(() => null);
+    if (m && m.exists) { banda = s.banda; verba = await gasto.livre(db, banda); }
+  }
+  if (verba && !verba.ok) return espera('A banda já usou a verba de robôs do mês: o júri avalia na rotina diária.');
+  const imagem = await fotoDaSugestao(s.foto);
+  const r = await juri.avaliar(s, { imagem, reaisDoUso: gasto.reaisDoUso,
+    turn: o => bus.turn(db, { ...o, quem: { banda: banda || '', uid: s.uid, sugestao: event.params.id } }) });
+  if (banda && r.reais > 0) await gasto.somar(db, banda, 'juri', r.reais, verba.semLimite);
+  if (!r.veredito) return ref.update({ juri: { estado: 'erro', motivo: 'Os avaliadores não responderam: a rotina diária tenta de novo.', em: Date.now() } });
+  await gravarVeredito(ref, r.votos, r.veredito, { reais: Math.round(r.reais * 100) / 100 });
+});
+
+/* the daily fixing routine (a scheduled Claude session) reads the queue and reports back here, with the key.
+   GET  ?fotos=1           -> { fila: [...bugs the jury confirmed, waiting for a fix], espera: [...waiting for a jury] }
+   POST { id, correcao: { estado, pr?, nota? } }   the fix's progress (it never merges or publishes: the owner does)
+   POST { id, juri: { votos: [ {papel, tipo, nota, vale, motivo, resumo} x3 ] } }   a jury held by the routine itself
+   Only the text, where it was sent from and the votes go out: never the sender's name, e-mail or band. */
+const CORRECAO = ['na fila', 'reproduzindo', 'pr', 'nao_reproduzi', 'erro'];
+async function rotina(req, res) {
+  const dada = String(req.get('x-chave') || req.query.chave || (req.body && req.body.chave) || '');
+  const certa = await chaveRotina();
+  const crypto = require('crypto');
+  if (!dada || dada.length !== certa.length || !crypto.timingSafeEqual(Buffer.from(dada), Buffer.from(certa))) return res.status(403).json({ erro: 'chave errada' });
+  if (req.method === 'GET') {
+    const [fila, espera, erro] = await Promise.all([
+      db.collection('sugestoes').where('correcao.estado', '==', 'na fila').get(),
+      db.collection('sugestoes').where('juri.estado', '==', 'espera').get(),
+      db.collection('sugestoes').where('juri.estado', '==', 'erro').get()]);
+    const fotos = req.query.fotos === '1';
+    const sai = async d => { const s = d.data();
+      return { id: d.id, tipo: s.tipo || 'melhoria', texto: s.texto, tela: s.tela || '', aparelho: s.aparelho || '', erros: s.erros || '', criadoEm: s.criadoEm,
+        papel: s.papel || '', juri: s.juri || null, correcao: s.correcao || null, foto: fotos && s.foto ? await fotoDaSugestao(s.foto) : null }; };
+    const viva = d => !['descartada', 'feita'].includes(d.data().status);   // the owner already decided
+    return res.json({ fila: await Promise.all(fila.docs.filter(viva).map(sai)), espera: await Promise.all([...espera.docs, ...erro.docs].filter(viva).map(sai)) });
+  }
+  if (req.method !== 'POST') return res.status(405).end();
+  const b = req.body || {}, id = String(b.id || '');
+  if (!/^[A-Za-z0-9]{10,40}$/.test(id)) return res.status(400).json({ erro: 'id' });
+  const ref = db.collection('sugestoes').doc(id), snap = await ref.get();
+  if (!snap.exists) return res.status(404).json({ erro: 'não existe' });
+  if (b.correcao) {
+    const c = b.correcao, estado = String(c.estado || '');
+    if (!CORRECAO.includes(estado)) return res.status(400).json({ erro: 'estado' });
+    const pr = String(c.pr || '');
+    if (pr && !/^https:\/\/github\.com\/sa1vemalak\/salvetheapp\/pull\/\d+$/.test(pr)) return res.status(400).json({ erro: 'pr' });
+    await ref.update({ correcao: { estado, em: Date.now(), ...(pr ? { pr } : {}), ...(c.nota ? { nota: String(c.nota).slice(0, 1500) } : {}) } });
+    return res.json({ ok: true });
+  }
+  if (b.juri && Array.isArray(b.juri.votos)) {
+    const papeis = Object.keys(juri.PAPEIS);
+    const votos = b.juri.votos.slice(0, 3).map(v => { const l = juri.lerVoto([{ type: 'tool_use', name: 'votar', input: v }]);
+      const papel = papeis.includes(v && v.papel) ? v.papel : null; return l && papel ? { papel, nome: juri.PAPEIS[papel].nome, ...l } : null; }).filter(Boolean);
+    const v = juri.veredito(votos);
+    if (!v || votos.length < 3) return res.status(400).json({ erro: 'precisa dos três votos' });
+    await gravarVeredito(ref, votos, v, { pela: 'rotina' });
+    return res.json({ ok: true, veredito: v });
+  }
+  return res.status(400).json({ erro: 'nada para fazer' });
+}
+exports.sugestoesRotina = onRequest({ region: 'southamerica-east1', timeoutSeconds: 60, maxInstances: 2 }, rotina);
+Object.defineProperty(exports, '__rotina', { value: rotina, enumerable: false });
 exports.__fotosDoPedido = fotosDoPedido;  // tests
 exports.__aplicarPessoal = aplicarPessoal;
 exports.__conferirProposta = (bandId, mudancas) => conferirProposta(db.collection('bands').doc(bandId), mudancas);  // tests

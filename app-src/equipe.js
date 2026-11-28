@@ -2,7 +2,7 @@
    improves the app together, outside any band: suggestions, the writing rules the AI arranger follows, and lessons
    from corrected arrangements. Data lives in sugestoes/*, treino/regras (+ /versoes, /licoes); see firestore.rules. */
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getStorage, ref as sref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -23,7 +23,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const when = t => t ? new Date(+t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 let toastT = null;
 const toast = m => { const t = $('#toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3200); };
-let ME = null;
+let ME = null, ADMIN = false;
 const me = () => ({ uid: ME.uid, nome: (ME.displayName || ME.email || '').slice(0, 80) });
 const byNewest = k => (a, b) => (b[k] || 0) - (a[k] || 0);
 
@@ -34,46 +34,121 @@ function screen(title, text, link) {
   main.append(box);
 }
 
-/* ---------- Sugestões ---------- */
-const STATUS = ['nova', 'em andamento', 'feita', 'descartada'];
+/* ---------- Sugestões ----------
+   Chegam do botão "Sugerir melhoria" do app (qualquer pessoa, de qualquer banda) e daqui. Antes de aparecer para o
+   dono decidir, cada uma passa pelo júri (3 avaliadores, função juri): o que o júri aprova fica em "Para você
+   aprovar"; um problema que o júri confirma vai para a correção automática, que reproduz, corrige e abre o PR. */
+const STATUS = ['nova', 'aprovada', 'em andamento', 'feita', 'descartada'];
+const CORR = { 'na fila': 'Na fila da correção automática (a rotina roda uma vez por dia).', reproduzindo: 'A correção automática está tentando reproduzir.',
+  pr: 'Corrigido num pedido no GitHub: falta você dar o ok para juntar e publicar.', nao_reproduzi: 'A correção automática não conseguiu reproduzir o problema.', erro: 'A correção automática deu erro; tenta de novo na próxima rodada.' };
+const TIPO_J = { bug: 'problema no app', melhoria: 'melhoria', duvida: 'dúvida de uso', outro: 'fora do assunto' };
+function grupo(s) {
+  const j = s.juri || {};
+  if (s.status === 'feita' || s.status === 'descartada') return 'fim';
+  if (s.status === 'aprovada' || s.status === 'em andamento') return 'andamento';
+  if (j.estado !== 'pronto') return 'juri';
+  if (j.bug) return 'bug';
+  return j.vale ? 'aprovar' : 'recusada';
+}
+const GRUPOS = [
+  ['aprovar', 'Para você aprovar', 'O júri achou que vale. Você decide se entra no app.'],
+  ['bug', 'Problemas confirmados pelo júri', 'Vão sozinhos para a correção automática, que abre o pedido no GitHub. Você dá o ok para juntar e publicar.'],
+  ['juri', 'Esperando o júri', 'Acabaram de chegar, ou a banda já usou a verba do mês (a rotina diária avalia).'],
+  ['andamento', 'Aprovadas e em andamento', ''],
+  ['recusada', 'Recusadas pelo júri', 'Ficam guardadas: se discordar, aprove mesmo assim.', true],
+  ['fim', 'Feitas e descartadas', '', true],
+];
+function cartao(s) {
+  const j = s.juri || {}, c = el('article', 'card item sug ' + String(s.status || 'nova').replace(' ', '-'));
+  const head = el('div', 'row between');
+  const tit = el('div', 'tit');
+  tit.append(el('span', 'chip ' + (s.tipo === 'problema' ? 'prob' : ''), s.tipo === 'problema' ? 'Algo deu errado' : 'Ideia'), el('b', '', j.resumo || String(s.texto).slice(0, 70)));
+  head.append(tit, el('span', 'muted small', when(s.criadoEm)));
+  const quem = [s.nome || 'Alguém', s.bandaNome, s.papel].filter(Boolean).join(' · ');
+  c.append(head, el('p', 'muted small', quem), el('p', 'texto', s.texto));
+  if (s.tela || s.aparelho) c.append(el('p', 'muted small', [s.tela, s.aparelho].filter(Boolean).join(' · ')));
+  if (s.erros) c.append(el('p', 'muted small mono', 'Erros na tela: ' + s.erros));
+  if (s.foto && ADMIN) {
+    const a = el('a', 'foto'); a.target = '_blank'; a.rel = 'noopener'; const img = el('img'); img.alt = 'print anexado'; a.append(img); c.append(a);
+    getDownloadURL(sref(storage, s.foto)).then(u => { img.src = u; a.href = u; }, () => a.remove());
+  }
+  if (j.estado === 'pronto') {
+    const box = el('div', 'juri ' + (j.vale ? 'sim' : 'nao'));
+    box.append(el('b', '', `Júri: ${j.vale ? 'vale' : 'não vale'} (${j.sim} de ${j.de}) · nota ${String(j.nota).replace('.', ',')} · ${TIPO_J[j.tipo] || j.tipo}`));
+    const ul = el('ul', 'votos');
+    (j.votos || []).forEach(v => { const li = el('li'); li.append(el('b', '', `${v.nome} ${v.vale ? '✓' : '✗'} ${v.nota}/5`), document.createTextNode(' ' + v.motivo)); ul.append(li); });
+    box.append(ul); c.append(box);
+  } else if (j.estado) c.append(el('p', 'muted small', 'Júri: ' + (j.motivo || 'avaliando…')));
+  else c.append(el('p', 'muted small', 'Júri: avaliando…'));
+  if (s.correcao) {
+    const k = el('div', 'corr'); k.append(el('b', '', 'Correção: '), document.createTextNode(CORR[s.correcao.estado] || s.correcao.estado));
+    if (s.correcao.pr) { const a = el('a', '', ' Abrir o pedido'); a.href = s.correcao.pr; a.target = '_blank'; a.rel = 'noopener'; k.append(a); }
+    if (s.correcao.nota) k.append(el('p', 'muted small', s.correcao.nota));
+    c.append(k);
+  }
+  if (!ADMIN) { if (s.resposta) c.append(el('p', '', 'Resposta: ' + s.resposta)); return c; }
+  const set = (status, extra = {}) => updateDoc(doc(fs, 'sugestoes', s.id), { status, ...extra, atualizadoEm: Date.now() }).catch(() => toast('Não consegui mudar.'));
+  const rapido = el('div', 'row end');
+  if (!['aprovada', 'em andamento', 'feita'].includes(s.status)) { const b = el('button', 'btn primary', 'Aprovar'); b.type = 'button'; b.onclick = () => set('aprovada').then(() => toast('Aprovada. Fica em "Aprovadas e em andamento".')); rapido.append(b); }
+  if (s.status !== 'descartada') { const b = el('button', 'btn', 'Descartar'); b.type = 'button'; b.onclick = () => set('descartada'); rapido.append(b); }
+  const sel = el('select'); sel.setAttribute('aria-label', 'Situação');
+  STATUS.forEach(x => { const o = el('option', '', x); o.value = x; o.selected = x === (s.status || 'nova'); sel.append(o); });
+  sel.onchange = () => set(sel.value);
+  rapido.prepend(sel);
+  const resp = el('textarea'); resp.rows = 2; resp.maxLength = 2000; resp.placeholder = 'Resposta (o que foi feito, ou por que não)'; resp.value = s.resposta || '';
+  resp.setAttribute('aria-label', 'Resposta');
+  const save = el('button', 'btn', 'Salvar resposta'); save.type = 'button';
+  save.onclick = () => set(sel.value, { resposta: resp.value.trim() }).then(() => toast('Resposta salva.'));
+  const del = el('button', 'btn ghost', 'Apagar'); del.type = 'button';
+  del.onclick = () => confirm('Apagar esta sugestão?') && deleteDoc(doc(fs, 'sugestoes', s.id)).catch(() => toast('Não consegui apagar.'));
+  const row = el('div', 'row end'); row.append(del, save);
+  c.append(rapido, resp, row);
+  return c;
+}
 function sugestoes(root) {
   const form = el('form', 'card');
-  form.innerHTML = `<h2>Sugerir uma melhoria</h2><p class="muted">Qualquer ideia para o app: uma tela, um jeito de escrever, um erro que você viu. Fica nesta lista para a equipe.</p>
+  form.innerHTML = `<h2>Sugerir uma melhoria</h2><p class="muted">Qualquer ideia para o app: uma tela, um jeito de escrever, um erro que você viu. No app, o botão <b>Sugerir melhoria</b> do menu faz o mesmo e manda junto a tela e o aparelho.</p>
     <label class="sr" for="sgTxt">Sua sugestão</label><textarea id="sgTxt" rows="4" maxlength="2000" placeholder="Ex.: na parte de trompete, mostrar as letras de ensaio maiores"></textarea>
     <div class="row end"><button class="btn primary" type="submit">Enviar sugestão</button></div>`;
   form.onsubmit = async e => {
     e.preventDefault(); const t = $('#sgTxt', form).value.trim(); if (!t) return;
-    try { await setDoc(doc(collection(fs, 'sugestoes')), { texto: t, ...me(), criadoEm: Date.now(), status: 'nova' }); $('#sgTxt', form).value = ''; toast('Sugestão enviada.'); }
+    try { await setDoc(doc(collection(fs, 'sugestoes')), { texto: t, ...me(), criadoEm: Date.now(), status: 'nova', tipo: 'melhoria', tela: 'Página da equipe' }); $('#sgTxt', form).value = ''; toast('Sugestão enviada.'); }
     catch { toast('Não consegui enviar.'); }
   };
   const list = el('section', 'list'); list.append(el('p', 'muted', 'carregando…'));
   root.append(form, list);
-  return onSnapshot(collection(fs, 'sugestoes'), snap => {
+  if (ADMIN) root.append(chaveRotinaCard());
+  const q = ADMIN ? collection(fs, 'sugestoes') : query(collection(fs, 'sugestoes'), where('uid', '==', ME.uid));
+  return onSnapshot(q, snap => {
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort(byNewest('criadoEm'));
-    list.replaceChildren(el('h2', '', `Sugestões (${items.length})`));
-    if (!items.length) list.append(el('p', 'muted', 'Nenhuma sugestão ainda.'));
-    for (const s of items) {
-      const c = el('article', 'card item ' + s.status.replace(' ', '-'));
-      const head = el('div', 'row between');
-      head.append(el('b', '', `${s.nome || 'Alguém'} · ${when(s.criadoEm)}`));
-      const sel = el('select'); sel.setAttribute('aria-label', 'Situação');
-      STATUS.forEach(x => { const o = el('option', '', x); o.value = x; o.selected = x === s.status; sel.append(o); });
-      sel.onchange = () => updateDoc(doc(fs, 'sugestoes', s.id), { status: sel.value, atualizadoEm: Date.now() }).catch(() => toast('Não consegui mudar.'));
-      head.append(sel);
-      const resp = el('textarea'); resp.rows = 2; resp.maxLength = 2000; resp.placeholder = 'Resposta (o que foi feito, ou por quê não)'; resp.value = s.resposta || '';
-      resp.setAttribute('aria-label', 'Resposta');
-      const save = el('button', 'btn', 'Salvar resposta'); save.type = 'button';
-      save.onclick = () => updateDoc(doc(fs, 'sugestoes', s.id), { status: sel.value, resposta: resp.value.trim(), atualizadoEm: Date.now() }).then(() => toast('Resposta salva.'), () => toast('Não consegui salvar.'));
-      const row = el('div', 'row end'); row.append(save);
-      if (s.uid === ME.uid) {
-        const del = el('button', 'btn ghost', 'Apagar'); del.type = 'button';
-        del.onclick = () => confirm('Apagar esta sugestão?') && deleteDoc(doc(fs, 'sugestoes', s.id)).catch(() => toast('Não consegui apagar.'));
-        row.prepend(del);
-      }
-      c.append(head, el('p', 'texto', s.texto), resp, row);
-      list.append(c);
+    list.replaceChildren(el('h2', '', ADMIN ? `Sugestões (${items.length})` : `As suas sugestões (${items.length})`));
+    if (!items.length) { list.append(el('p', 'muted', 'Nenhuma sugestão ainda.')); return; }
+    for (const [k, titulo, sub, fechado] of GRUPOS) {
+      const g = items.filter(s => grupo(s) === k);
+      if (!g.length) continue;
+      const sec = el(fechado ? 'details' : 'section', 'grupo g-' + k);
+      const h = el(fechado ? 'summary' : 'h3', '', `${titulo} (${g.length})`); sec.append(h);
+      if (sub) sec.append(el('p', 'muted small', sub));
+      g.forEach(s => sec.append(cartao(s)));
+      list.append(sec);
     }
   }, () => list.replaceChildren(el('p', 'muted', 'Não consegui ler as sugestões.')));
+}
+// the key the daily fixing routine uses to read the confirmed problems (only the app owner sees it)
+function chaveRotinaCard() {
+  const box = el('details', 'card chave');
+  box.append(el('summary', '', 'Chave da correção automática'), el('p', 'muted small', 'A rotina diária do Claude usa esta chave para ler os problemas que o júri confirmou. Não mande para ninguém além do Claude.'));
+  const row = el('div', 'row'); box.append(row);
+  box.addEventListener('toggle', async () => {
+    if (!box.open || row.childElementCount) return;
+    const d = await getDoc(doc(fs, 'sistema', 'rotina')).catch(() => null);
+    const k = d && d.exists() ? d.data().chave : '';
+    if (!k) { row.append(el('p', 'muted small', 'Ainda não existe: ela aparece depois da primeira sugestão que chegar com o app publicado.')); return; }
+    const code = el('code', 'mono', k); const b = el('button', 'btn', 'Copiar'); b.type = 'button';
+    b.onclick = async () => { try { await navigator.clipboard.writeText(k); toast('Chave copiada.'); } catch { prompt('Copie a chave:', k); } };
+    row.append(code, b);
+  });
+  return box;
 }
 
 /* ---------- Regras do Mestrinho ---------- */
@@ -225,6 +300,13 @@ function treinar(root) {
   }, () => list.replaceChildren(el('p', 'muted', 'Não consegui ler as rodadas.')));
 }
 
+// end-to-end tests only: draw the list from made-up suggestions, without Firebase
+if (window.__testEquipe) window.__equipe = { desenha(items, admin) { ADMIN = admin; ME = { uid: 'eu' }; const main = $('#main'); main.replaceChildren();
+  const list = el('section', 'list'); main.append(list);
+  for (const [k, titulo, sub, fechado] of GRUPOS) { const g = items.filter(s => grupo(s) === k); if (!g.length) continue;
+    const sec = el(fechado ? 'details' : 'section', 'grupo g-' + k); sec.append(el(fechado ? 'summary' : 'h3', '', `${titulo} (${g.length})`)); if (sub) sec.append(el('p', 'muted small', sub));
+    g.forEach(s => sec.append(cartao(s))); list.append(sec); } }, grupo };
+
 /* ---------- page ---------- */
 const TABS = [['sugestoes', 'Sugestões', sugestoes], ['treinar', 'Treinar a IA', treinar], ['licoes', 'Lições', licoes], ['regras', 'Regras do Mestrinho', regras]];
 let unsub = null;
@@ -243,6 +325,7 @@ onAuthStateChanged(auth, async u => {
   if (!u) return screen('Entre no app primeiro', 'Esta página é da equipe do salvetheapp. Entre com a sua conta no app e volte aqui.', ['Abrir o app', './']);
   $('#who').textContent = u.displayName || u.email || '';
   const [adm, eq] = await Promise.all([getDoc(doc(fs, 'admins', u.uid)).catch(() => null), getDoc(doc(fs, 'equipe', u.uid)).catch(() => null)]);
+  ADMIN = !!(adm && adm.exists());
   if (!((adm && adm.exists()) || (eq && eq.exists()))) return screen('Área da equipe do app', 'Sua conta não faz parte da equipe do salvetheapp. Se deveria, peça para o dono do app incluir você.', ['Voltar para o app', './']);
   const nav = $('#tabs'); nav.hidden = false; nav.replaceChildren();
   TABS.forEach(([k, label]) => { const b = el('button', 'tab', label); b.type = 'button'; b.setAttribute('role', 'tab'); b.dataset.k = k; b.onclick = () => open(k); nav.append(b); });

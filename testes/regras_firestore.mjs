@@ -65,4 +65,21 @@ await t('dono NÃO zera o gasto do mês', assertFails(setDoc(doc(db('dono1'), 'b
 await t('editor NÃO mexe no gasto do mês', assertFails(setDoc(doc(db('ed9'), 'bands/B/uso/2026-11'), { reais: 0 })));
 await t('quem é da banda lê o gasto do mês', assertSucceeds(getDoc(doc(db('mu1'), 'bands/B/uso/2026-11'))));
 await t('quem não é da banda NÃO lê o gasto', assertFails(getDoc(doc(db('estranho'), 'bands/B/uso/2026-11'))));
+// suggestions from the app: anyone signed in sends; only the app owner reads them all; the jury is the server's
+await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'admins/chefe'), { ok: true }));
+const sug = (uid, extra = {}) => ({ texto: 'O som não saiu', uid, nome: 'X', criadoEm: now, status: 'nova', tipo: 'problema', banda: 'B', bandaNome: 'Banda', papel: 'musico', tela: 'Partitura', aparelho: 'iPhone · Safari', ...extra });
+await t('qualquer pessoa manda uma sugestão', assertSucceeds(setDoc(doc(db('mu1'), 'sugestoes/S1'), sug('mu1', { foto: 'sugestoes/mu1/S1.jpg' }))));
+await t('NÃO manda em nome de outro', assertFails(setDoc(doc(db('mu1'), 'sugestoes/S2'), sug('mu2'))));
+await t('NÃO manda já com o parecer do júri', assertFails(setDoc(doc(db('mu1'), 'sugestoes/S3'), sug('mu1', { juri: { estado: 'pronto', vale: true, bug: true } }))));
+await t('NÃO manda já aprovada', assertFails(setDoc(doc(db('mu1'), 'sugestoes/S4'), sug('mu1', { status: 'aprovada' }))));
+await t('NÃO aponta o print para a pasta de outro', assertFails(setDoc(doc(db('mu1'), 'sugestoes/S5'), sug('mu1', { foto: 'sugestoes/mu2/x.jpg' }))));
+await t('quem mandou lê a sua', assertSucceeds(getDoc(doc(db('mu1'), 'sugestoes/S1'))));
+await t('outra pessoa NÃO lê', assertFails(getDoc(doc(db('mu2'), 'sugestoes/S1'))));
+await t('o dono do app lê', assertSucceeds(getDoc(doc(db('chefe'), 'sugestoes/S1'))));
+await t('quem mandou NÃO se aprova', assertFails(updateDoc(doc(db('mu1'), 'sugestoes/S1'), { status: 'aprovada', atualizadoEm: now })));
+await t('o dono do app aprova', assertSucceeds(updateDoc(doc(db('chefe'), 'sugestoes/S1'), { status: 'aprovada', atualizadoEm: now })));
+await t('o dono do app NÃO muda o parecer do júri', assertFails(updateDoc(doc(db('chefe'), 'sugestoes/S1'), { juri: { vale: false } })));
+await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'sistema/rotina'), { chave: 'segredo' }));
+await t('o dono do app vê a chave da correção automática', assertSucceeds(getDoc(doc(db('chefe'), 'sistema/rotina'))));
+await t('mais ninguém vê a chave', assertFails(getDoc(doc(db('mu1'), 'sistema/rotina'))));
 console.log(`\n${ok} passaram, ${fail} falharam`); await env.cleanup(); process.exit(fail ? 1 : 0);

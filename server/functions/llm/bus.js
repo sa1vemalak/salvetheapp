@@ -12,6 +12,8 @@ const ADAPTERS = { anthropic };
 
 const DEFAULT_ROUTES = {
   agente: [{ provedor: 'anthropic', modelo: 'claude-opus-5-5', effort: 'medium' }],
+  // the jury of the suggestions: three short votes, so the cheaper model with little thinking
+  juri: [{ provedor: 'anthropic', modelo: 'claude-sonnet-5-5', effort: 'low' }],
 };
 
 let cache = { at: 0, table: null };

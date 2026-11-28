@@ -23,6 +23,13 @@ service firebase.storage {
       allow read: if team();
       allow write: if team() && request.auth.uid == uid && (request.resource == null || request.resource.size < 200 * 1024 * 1024);
     }
+    // the optional screenshot of a suggestion: each person writes in their own folder (images up to 8 MB, never replaced);
+    // the sender and the app owner read it
+    match /sugestoes/{uid}/{file} {
+      allow read: if request.auth != null && (request.auth.uid == uid || firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid)));
+      allow create: if request.auth != null && request.auth.uid == uid && request.resource.size < 8 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/.*');
+    }
     match /{other=**} { allow read, write: if false; }
   }
 }
