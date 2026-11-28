@@ -1472,6 +1472,7 @@ const Band = (() => {
       ${editor ? `<div class="bsec"><b>Convidar</b><div class="hint">Mande o link pelo WhatsApp. A pessoa entra com Google ou e-mail e já cai na banda.</div>
         <div class="brow"><button class="btn" data-inv="musico" type="button">Link para músico</button><button class="btn" data-inv="editor" type="button">Link para editor</button></div>
         <input id="bInvLink" readonly placeholder="o link aparece aqui" style="width:100%"></div>` : ''}
+      ${editor ? `<div class="bsec" id="bUso"><b>Robôs neste mês</b><div class="hint" id="bUsoTxt">carregando…</div></div>` : ''}
       ${editor ? `<div class="bsec"><b>Modo local (sem internet)</b><div class="hint">Baixa os dados deste show para o programa do modo local. Coloque o arquivo <b>dados.json</b> na pasta do modo local, no lugar do antigo, e rode o "Atualizar".</div><button class="btn" id="bExport" type="button">Baixar dados deste show</button></div>` : ''}
       <div class="bsec"><b>Pessoas da banda</b><div class="blist" id="bMembers"><div class="hint">carregando…</div></div></div>
       <div class="bsec" id="bAdmin" hidden><b>Administração do salvetheapp</b><div class="hint">Só você vê isto. Enquanto o cadastro estiver fechado, criar banda nova exige um código de acesso. Entrar numa banda por convite continua livre.</div>
@@ -1530,6 +1531,18 @@ const Band = (() => {
       };
       paintCodes();
     }).catch(() => {});
+    // robots' monthly spend (the server counts it in bands/{b}/uso/{AAAA-MM}; R$ 20 a month per band)
+    const usoTxt = m.querySelector('#bUsoTxt');
+    if (usoTxt) {
+      const mes = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+      const real = v => 'R$ ' + (Number(v) || 0).toFixed(2).replace('.', ',');
+      S.db.collection('uso').doc(mes).get().then(d => {
+        const u = d.exists ? d.data() : {};
+        const partes = [['Caio', u.caio], ['Malak', u.malak], ['Mestrinho', u.mestrinho]].filter(x => x[1] > 0).map(([n, v]) => `${n} ${real(v)}`).join(' · ');
+        usoTxt.textContent = u.semLimite ? `${real(u.reais)} usados (esta banda não tem limite).${partes ? ' ' + partes + '.' : ''}`
+          : `${real(u.reais)} de R$ 20,00 usados. Quando chega a R$ 20, o Caio, o Malak e o Mestrinho param até o dia 1º do mês que vem.${partes ? ' ' + partes + '.' : ''}`;
+      }, () => { usoTxt.textContent = 'Não consegui ler o gasto do mês.'; });
+    }
     // members
     SALVE.members().then(list => {
       const box = m?.querySelector('#bMembers'); if (!box) return;

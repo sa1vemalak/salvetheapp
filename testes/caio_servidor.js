@@ -24,9 +24,11 @@ const docs = {
   'bands/b/songs/m1': { title: 'Música 1', partitura: { xml: 'mem://m1', versao: 3, partesSemPdf: [], partes: [{ key: 'trompete', name: 'Trompete' }, { key: 'sax-tenor', name: 'Sax Tenor' }, { key: 'base', name: 'Base' }] }, player: { made: '2026-11-27' } },
 };
 const jobs = [{ id: 'm1__1', tipo: 'audio', fonte: 'partitura', status: 'pronto', msg: 'Pronto: ouça e confira.', avisos: ['Sax Tenor: compasso 3 com tempo a mais'], criadoEm: 1764270000000, atualizado: 1764270100000 }];
+const gravados = [];   // what the server wrote with set() (the monthly robot spend)
 const ref = p => ({
   collection: c => col(p + '/' + c),
   get: async () => ({ exists: p in docs, data: () => docs[p] }),
+  set: async v => { gravados.push([p, v]); },
 });
 const col = p => {
   const q = { orderBy: () => q, startAt: () => q, endAt: () => q, limitToLast: () => q, where: () => q,
@@ -35,12 +37,12 @@ const col = p => {
   return q;
 };
 docs['bands/b/members/u1'] = { role: 'dono' };
-const fakeAdmin = { initializeApp() {}, firestore: Object.assign(() => ({ collection: c => col(c), runTransaction: async f => f({ get: async () => ({ exists: false }), set() {} }) }), { FieldPath: { documentId: () => '__id' } }),
+const fakeAdmin = { initializeApp() {}, firestore: Object.assign(() => ({ collection: c => col(c), runTransaction: async f => f({ get: async () => ({ exists: false }), set() {} }) }), { FieldPath: { documentId: () => '__id' }, FieldValue: { increment: n => ({ inc: n }) } }),
   auth: () => ({ verifyIdToken: async t => { if (t !== 'ok') throw new Error('token'); return { uid: 'u1' }; } }) };
 // the AI: answers with plain text and keeps what it was sent, so the test sees the pictures arrive
 const vistos = [];
 const busPath = require.resolve(path.join(FN, 'llm', 'bus.js'));
-require.cache[busPath] = { id: busPath, filename: busPath, loaded: true, exports: { turn: async (db, o) => { vistos.push(JSON.parse(JSON.stringify(o.messages))); return { content: [{ type: 'text', text: 'Li.' }], stop_reason: 'end_turn' }; } } };
+require.cache[busPath] = { id: busPath, filename: busPath, loaded: true, exports: { turn: async (db, o) => { vistos.push(JSON.parse(JSON.stringify(o.messages))); return { content: [{ type: 'text', text: 'Li.' }], stop_reason: 'end_turn', modelo: 'claude-opus-5-5', usage: { input_tokens: 1000, output_tokens: 500 } }; } } };
 const adminPath = require.resolve(path.join(FN, 'node_modules', 'firebase-admin'));
 require.cache[adminPath] = { id: adminPath, filename: adminPath, loaded: true, exports: fakeAdmin };
 global.fetch = async () => ({ text: async () => XML });
@@ -141,6 +143,24 @@ const srv = require(path.join(FN, 'index.js'));
   confere('nota na versão pessoal passa e avisa que vale só para a pessoa', pp2.ok && /só na versão pessoal/.test(pp2.aviso), JSON.stringify(pp2));
   const rp = await pedir({ ...pedido, destino: 'pessoal' });
   confere('pedido pessoal: pode aplicar e volta marcado como pessoal; o Caio recebe o modo Minha versão', rp.code === 200 && rp.j.podeAplicar && rp.j.destino === 'pessoal', JSON.stringify(rp));
+  console.log('Limite de R$ 20 por mês por banda');
+  const gasto = require(path.join(FN, 'gasto.js'));
+  confere('conta do custo: 1 milhão de tokens de entrada e de saída no Opus 5.5 = US$ 24', Math.abs(gasto.reaisDoUso('claude-opus-5-5', { input_tokens: 1e6, output_tokens: 1e6 }, 1) - 24) < 1e-9);
+  const mes = gasto.mes();
+  confere('cada pergunta ao Caio soma o custo no mês da banda', gravados.some(([p, v]) => p === `bands/b/uso/${mes}` && v.caio?.inc > 0 && v.reais?.inc === v.caio.inc), JSON.stringify(gravados.slice(-2)));
+  docs['bands/b3'] = { name: 'Outra banda', owner: 'u9' };
+  docs['bands/b3/members/u1'] = { role: 'dono' };
+  docs[`bands/b3/uso/${mes}`] = { reais: 20.4 };
+  const lim = await pedir({ ...pedido, band: 'b3' });
+  confere('banda que passou de R$ 20 no mês: o Caio não responde e explica', lim.code === 429 && /R\$ 20,00/.test(lim.j.erro) && /dia 1º/.test(lim.j.erro), JSON.stringify(lim));
+  docs[`bands/b3/uso/${mes}`] = { reais: 19.9 };
+  const abaixo = await pedir({ ...pedido, band: 'b3' });
+  confere('abaixo de R$ 20 o Caio responde', abaixo.code === 200, JSON.stringify(abaixo));
+  docs[`bands/b3/uso/${mes}`] = { reais: 80 };
+  docs['admins/u9'] = { em: 1 };
+  const dono = await pedir({ ...pedido, band: 'b3' });
+  confere('banda do dono do app (administrador) não tem limite', dono.code === 200 && gravados.some(([p, v]) => p === `bands/b3/uso/${mes}` && v.semLimite === true), JSON.stringify(dono));
+  confere('o mês é contado no horário de Brasília', gasto.mes(new Date('2026-12-01T02:00:00Z')) === '2026-11' && gasto.mes(new Date('2026-12-01T03:30:00Z')) === '2026-12');
   console.log(`\n${ok} ok, ${falhas.length} falharam`);
   process.exit(falhas.length ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
