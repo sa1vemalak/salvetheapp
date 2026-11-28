@@ -7,6 +7,7 @@
   do modo local com programa, atalhos e dados). `FOTOS=pasta` salva os prints e os .txt.
 - `node testes/laterais.js`: o menu à esquerda, as ferramentas à direita e a partitura no meio, no iPad e no celular
   (gavetas), e os avisos dos robôs com o botão Ensaio. `FOTOS=pasta` salva os prints.
+- `python3 testes/malak_base.py` (precisa do music21): a pauta da base sem nome na grade não vira trompete; os nomes param no 2º sistema.
 - `python3 testes/malak_links.py`: o Malak abre os PDFs da turnê salvos como caminho do site ("scores/...").
 - `node --check server/functions/index.js`: o código do Caio não tem erro de escrita.
 - `node testes/caio_servidor.js` (depois de `cd server/functions && npm ci`): o Caio lê a partitura com o mesmo código do app

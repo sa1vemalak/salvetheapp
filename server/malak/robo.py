@@ -97,15 +97,51 @@ GM = [
     ('baixo acustico|acoustic bass|contrabaixo|double bass|upright', 32), ('fretless', 35), ('baixo|bass', 33),
     ('violino|violin', 40), ('viola', 41), ('violoncelo|cello', 42), ('cordas|strings', 48), ('harpa|harp', 46),
     ('tímpano|timpano|timpani', 47), ('coro|choir|coral', 52), ('voz|vocal|voice|canto|soprano voice|melodia', 53),
-    ('trompete|trumpet|flugel|cornet', 56), ('trombone', 57), ('tuba|bombardino|euphonium', 58), ('surdina|mute', 59),
-    ('trompa|french horn|horn in f|horn', 60), ('metais|brass', 61), ('sax soprano|soprano sax', 64), ('sax alto|alto sax|alto', 65),
-    ('sax tenor|tenor sax|tenor', 66), ('sax baritono|baritone sax|bari', 67), ('sax', 65), ('oboe|oboé', 68),
+    ('trompete|trumpet|flugel|cornet|tpt', 56), ('trombone|tbn', 57), ('tuba|bombardino|euphonium', 58), ('surdina|mute', 59),
+    ('trompa|french horn|horn in f|horn', 60), ('metais|brass', 61), ('sax soprano|soprano sax', 64), ('sax alto|alto sax|alto|a\\. ?sx', 65),
+    ('sax tenor|tenor sax|tenor|t\\. ?sx', 66), ('sax baritono|baritone sax|bari', 67), ('sax', 65), ('oboe|oboé', 68),
     ('corne ingles|english horn', 69), ('fagote|bassoon', 70), ('clarone|bass clarinet|clarinete|clarinet|requinta', 71),
     ('flautim|piccolo', 72), ('flauta doce|recorder', 74), ('pifano|pife|fife', 72), ('flauta|flute', 73), ('pan flute|flauta pan', 75),
     ('ocarina', 79), ('sintetizador|synth lead|lead', 80), ('pad', 88), ('sitar', 104), ('kalimba', 108), ('steel drum|steel pan', 114),
     ('base', 0), ('teclado|keyboard|keys|piano', 0),
 ]
 DRUMS = 'bateria|drum|percuss|pandeiro|caixa|surdo|tamborim|agogo|agogô|cuica|cuíca|conga|bongo|cajon|cajón|ganza|ganzá|shaker|triangulo|triângulo|chocalho|timbal|repique|zabumba|kit'
+
+
+BASE_NAME = r'base|cifra|chord|harmonia|teclado|piano|guitarra|viol'
+
+
+def chart_name(name):
+    """a chord-chart part (slashes + chord symbols) is the band's base: never a horn, even when the PDF gave it
+    another staff's name (Teu Popô: the base staff has no name on the first system, so it got 'B♭ Tpt.')"""
+    return name if re.search(BASE_NAME, name or '', re.I) else 'Base'
+
+
+def is_comping(part):
+    """the base the robot makes from chord symbols: chords of 3+ notes on most attacks (horns play single notes)"""
+    ns = [n for n in part.recurse().notes if not isinstance(n, m21.harmony.ChordSymbol)]
+    if len(ns) < 8:
+        return False
+    return sum(1 for n in ns if n.isChord and len(n.pitches) >= 3) >= 0.6 * len(ns)
+
+
+def repeats_instrument(nm, names):
+    """'B♭ Tpt.' after 'Trumpet in B♭': the second system's short names began, so the first system is over"""
+    if '.' not in nm or not names:
+        return False
+    try:
+        mine = program_for(None, nm)
+    except Exception:
+        return False
+    if mine[1] or mine[0] == 0:
+        return False
+    for old in names:
+        try:
+            if program_for(None, old) == mine:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def program_for(part, name):
@@ -468,7 +504,7 @@ def pdf_text(pdf):
                         if all(CHORD.match(x['text'].replace('♭', 'b').replace('♯', '#')) for x in ws):
                             continue  # a line with only chord-like words is not a name
                         nm = ' '.join(x['text'] for x in sorted(ws, key=lambda x: x['x0']))
-                        if nm in names:
+                        if nm in names or repeats_instrument(nm, names):
                             break  # the names start repeating (abbreviated systems): first system done
                         names.append(nm)
                     info['names'] = names
@@ -1166,6 +1202,8 @@ def run(job):
             score = load_score(src_files)
             olds = [x.get('name') for x in prev.get('instrumentos', [])]
             names = [(olds[i] if i < len(olds) and olds[i] else (pt.partName or f'Parte {i + 1}')) for i, pt in enumerate(score.parts)]
+            # a base made from chord symbols, saved under a horn's name by an older run: it plays as the base again
+            names = [chart_name(nm) if is_comping(pt) else nm for pt, nm in zip(score.parts, names)]
             if prev.get('bpm') and not bpm:
                 bpm_text = prev['bpm']
             how = prev.get('source', 'partitura lida')
@@ -1180,6 +1218,7 @@ def run(job):
                     if ns and all(getattr(n, 'notehead', '') == 'slash' for n in ns):
                         bars = chords_from_part(pt)
                         if bars:
+                            names[i] = chart_name(names[i])
                             score.replace(pt, comping_part(score, bars, names[i]))
                             print('base tocada das cifras da partitura:', names[i], len(bars), 'compassos com cifra', flush=True)
         else:
@@ -1190,7 +1229,9 @@ def run(job):
                 except Exception as e:
                     tinfo['boxes'] = None; print('mapa de compassos do PDF:', e)
                 sc = load_score(files, tinfo['boxes'], _pdf)
-                if len(sc.parts) > 1 and len(tinfo['names']) >= len(sc.parts):
+                # names from the top staff down; a staff with no name on the first system (often the base, at the
+                # bottom) keeps the reader's name and is told apart later (chords -> Base)
+                if len(sc.parts) > 1 and tinfo['names']:
                     for pt, nm in zip(sc.parts, tinfo['names'][:len(sc.parts)]):
                         pt.partName = nm
                 if tinfo['bpm'] and not bpm:
@@ -1219,13 +1260,16 @@ def run(job):
                 for i, pt in enumerate(list(score.parts)):
                     notes = len(list(pt.recurse().notes))
                     if notes <= len(pt.getElementsByClass('Measure')) * 0.3:  # nearly empty: the chart part
+                        names[i] = chart_name(names[i])
                         newp = comping_part(score, bars, names[i])
                         chart_parts[i] = chart_part(score, bars, names[i])
                         score.replace(pt, newp); click_names.add(names[i])
                         print('base gerada das cifras:', names[i], len(bars), 'compassos com cifra', flush=True)
         # PDFs are read at written pitch: trumpet in Bb, saxes, horn... need their transposition to sound in tune
         if not how.startswith('arquivo original') and how != 'partitura editada':
-            for pt, nm in zip(score.parts, names):
+            for i, (pt, nm) in enumerate(zip(score.parts, names)):
+                if i in chart_parts:
+                    continue  # the base is made from the chord symbols, already at concert pitch
                 iv = set_transposition(pt, nm)
                 if iv:
                     print('transposição', nm, iv, flush=True)
