@@ -11,6 +11,7 @@ const admin = require('firebase-admin');
 const bus = require('./llm/bus');
 const gasto = require('./gasto');   // the monthly robot budget per band (R$ 20)
 const juri = require('./juri');     // the jury of the suggestions sent from the app
+const cadastros = require('./cadastros');   // who signed up: only the app owner sees it
 const { DOMParser } = require('linkedom');
 const Partitura = require('./partitura');   // the same file as app/partitura.js (ferramentas/atualizar_robos.sh copies it)
 
@@ -499,6 +500,19 @@ exports.treino = onDocumentCreated({ document: 'treino/regras/rodadas/{r}', regi
     await ref.update({ status: 'erro', msg: 'Não consegui ligar o Mestrinho. Tente de novo em alguns minutos.' });
   }
 });
+/* ---------------- who signed up (only the app owner sees it, in the admin panel) ---------------- */
+// a new account (e-mail or Google). The app sets the name right after creating the account, so read it again a moment later.
+exports.cadastro = require('firebase-functions/v1').region('southamerica-east1').auth.user().onCreate(async u => {
+  await new Promise(r => setTimeout(r, 8000));
+  const agora = await admin.auth().getUser(u.uid).catch(() => u);
+  await cadastros.guarda(db, admin, cadastros.conta(agora));
+});
+// someone joined a band (created it, or came in by an invite link)
+exports.entrouNaBanda = onDocumentCreated({ document: 'bands/{b}/members/{uid}', region: 'southamerica-east1' }, async event => {
+  const linha = await cadastros.entrada(db, event.params.b, event.params.uid, event.data.data() || {});
+  await cadastros.guarda(db, admin, linha);
+});
+
 /* ---------------- suggestions: the jury and the daily fixing routine ---------------- */
 // the key the daily routine uses (sistema/rotina.chave): made here the first time, the app owner copies it in equipe.html
 async function chaveRotina() {

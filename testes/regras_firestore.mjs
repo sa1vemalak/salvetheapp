@@ -4,7 +4,7 @@
 //   npx firebase-tools emulators:exec --only firestore --project demo-salve "node regras_firestore.mjs"
 // O testes/firebase.json só serve ao emulador (porta 8089); o deploy continua sendo feito de server/.
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, deleteDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, collection } from 'firebase/firestore';
 import fs from 'fs';
 const env = await initializeTestEnvironment({ projectId: 'demo-salve', firestore: { rules: fs.readFileSync(new URL('../firebase/firestore.rules', import.meta.url), 'utf8'), host: '127.0.0.1', port: 8089 } });
 await env.withSecurityRulesDisabled(async c => { const d = c.firestore();
@@ -82,4 +82,14 @@ await t('o dono do app NÃO muda o parecer do júri', assertFails(updateDoc(doc(
 await env.withSecurityRulesDisabled(c => setDoc(doc(c.firestore(), 'sistema/rotina'), { chave: 'segredo' }));
 await t('o dono do app vê a chave da correção automática', assertSucceeds(getDoc(doc(db('chefe'), 'sistema/rotina'))));
 await t('mais ninguém vê a chave', assertFails(getDoc(doc(db('mu1'), 'sistema/rotina'))));
+// who signed up: only the app owner reads it; band owners, musicians, team partners and the person themselves do not
+await env.withSecurityRulesDisabled(async c => { await setDoc(doc(c.firestore(), 'cadastros/mu1'), { nome: 'Mu', email: 'mu@x.com', em: now });
+  await setDoc(doc(c.firestore(), 'equipe/parceiro'), { nome: 'Arranjador' }); });
+await t('o dono do app vê os cadastros', assertSucceeds(getDoc(doc(db('chefe'), 'cadastros/mu1'))));
+await t('o dono do app lista os cadastros', assertSucceeds(getDocs(collection(db('chefe'), 'cadastros'))));
+await t('dono de banda NÃO vê os cadastros', assertFails(getDocs(collection(db('dono1'), 'cadastros'))));
+await t('parceiro da equipe NÃO vê os cadastros', assertFails(getDoc(doc(db('parceiro'), 'cadastros/mu1'))));
+await t('a própria pessoa NÃO vê o seu cadastro', assertFails(getDoc(doc(db('mu1'), 'cadastros/mu1'))));
+await t('ninguém escreve cadastro pelo app (nem o dono do app)', assertFails(setDoc(doc(db('chefe'), 'cadastros/x'), { nome: 'x' })));
+await t('ninguém se cadastra sozinho', assertFails(setDoc(doc(db('mu2'), 'cadastros/mu2'), { nome: 'x' })));
 console.log(`\n${ok} passaram, ${fail} falharam`); await env.cleanup(); process.exit(fail ? 1 : 0);

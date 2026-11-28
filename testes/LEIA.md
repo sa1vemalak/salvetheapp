@@ -16,6 +16,8 @@
   `FOTOS=pasta` salva os prints.
 - `node testes/juri.js`: o júri das sugestões (três avaliadores, a maioria decide, bug confirmado vai para a correção
   automática, o texto de quem mandou é tratado como dado).
+- `node testes/cadastros.js`: cada conta nova e cada entrada em banda viram um registro em `cadastros/{uid}` (nome, e-mail,
+  banda, papel, link de convite de quem ou código de acesso) que só o dono do app lê.
 - `python3 testes/malak_base.py` (precisa do music21): a pauta da base sem nome na grade não vira trompete; os nomes param no 2º sistema.
 - `python3 testes/malak_links.py`: o Malak abre os PDFs da turnê salvos como caminho do site ("scores/...").
 - `python3 testes/malak_leitura.py` (precisa de pymupdf e music21): o Malak lê do PDF as pausas, notas agudas com linhas

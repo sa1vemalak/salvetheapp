@@ -186,6 +186,9 @@ service cloud.firestore {
         (!('resposta' in request.resource.data) || request.resource.data.resposta is string && request.resource.data.resposta.size() <= 2000);
       allow delete: if isAdmin() || (signed() && resource.data.uid == request.auth.uid);
     }
+    // who signed up (new accounts and who joined which band): written by the server only (functions cadastro and
+    // entrouNaBanda); ONLY the app owner (admins/{uid}) reads it. Band owners, musicians and team partners never do.
+    match /cadastros/{uid} { allow read: if isAdmin(); allow write: if false; }
     // the key the daily fixing routine uses to read confirmed bugs (created by the server; the owner copies it)
     match /sistema/rotina { allow read: if isAdmin(); }
     // the writing rules the AI arranger follows (one doc, every edit keeps the text before it in /versoes)
