@@ -1119,7 +1119,7 @@ def engrave_parts(xml_path, title, partes, tmp, dest, so=None):
 
 
 # Change this when the reading or the sound changes, so songs made by an older robot are made again when asked.
-ROBO_VERSAO = '2026-11-28-leitura-vetorial-2'
+ROBO_VERSAO = '2026-11-28-leitura-vetorial-3'
 PRECO_MALAK = 0.3  # reais the server counts for each Malak run (server/functions/gasto.js POR_TRABALHO.malak)
 
 
