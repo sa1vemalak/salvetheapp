@@ -26,7 +26,7 @@ PROJ = 'salvetheapp-3cceb'
 API = 'https://firebasehosting.googleapis.com/v1beta1'
 SITES = os.environ['SITE'].split(',') if os.environ.get('SITE') else ['salvetheapp-3cceb', 'salvetheapp']
 DADOS = re.compile(r'^/?(scores|_blob)/')          # dados das bandas: ficam no ar, não no repositório
-GERADOS = {'index.html', 'fb.js', 'version.json', 'local/manifest.json', 'local/index.html', 'local/local.js'}
+GERADOS = {'index.html', 'fb.js', 'version.json', 'local/manifest.json', 'local/index.html', 'local/local.js', 'local/servidor.js'}
 DRY, FORCE = bool(os.environ.get('DRY')), bool(os.environ.get('FORCE'))
 FULL = bool(os.environ.get('FULL'))  # conferência pesada: baixa cada arquivo das bandas inteiro (a normal só confirma que existe)
 
@@ -133,12 +133,14 @@ lh = h.replace('<script src="fb.js"></script>', '<script src="local.js"></script
 lh = re.sub(r"window\.APP_VERSION = '[^']*';", "window.APP_VERSION = 'dev';", lh)
 open(os.path.join(root, 'local', 'index.html'), 'w').write(lh)
 shutil.copyfile(os.path.join(RAIZ, 'modo-local', 'local.js'), os.path.join(root, 'local', 'local.js'))
+# o programa do modo local, para o app montar o .zip que a banda baixa (Seguir a DAW › Tocar sem internet)
+shutil.copyfile(os.path.join(RAIZ, 'modo-local', 'servidor.js'), os.path.join(root, 'local', 'servidor.js'))
 
 app_man = []
 for dp, _, fs in os.walk(root):
     for f in fs:
         full = os.path.join(dp, f); rel = os.path.relpath(full, root).replace(os.sep, '/')
-        if rel in ('index.html', 'fb.js', 'version.json', 'local/manifest.json'): continue
+        if rel in ('index.html', 'fb.js', 'version.json', 'local/manifest.json', 'local/servidor.js'): continue
         b = open(full, 'rb').read()
         e = {'path': rel, 'size': len(b), 'md5': hashlib.md5(b).hexdigest()}
         to = {'local/index.html': 'index.html', 'local/local.js': 'local.js'}.get(rel)
