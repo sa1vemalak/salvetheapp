@@ -92,4 +92,10 @@ await t('parceiro da equipe NÃO vê os cadastros', assertFails(getDoc(doc(db('p
 await t('a própria pessoa NÃO vê o seu cadastro', assertFails(getDoc(doc(db('mu1'), 'cadastros/mu1'))));
 await t('ninguém escreve cadastro pelo app (nem o dono do app)', assertFails(setDoc(doc(db('chefe'), 'cadastros/x'), { nome: 'x' })));
 await t('ninguém se cadastra sozinho', assertFails(setDoc(doc(db('mu2'), 'cadastros/mu2'), { nome: 'x' })));
+// Equipe do Salve: only the server (painel, by the app owner) puts someone in or takes them out
+await t('ninguém se põe na Equipe do Salve sozinho', assertFails(setDoc(doc(db('mu2'), 'equipe/mu2'), { nome: 'x' })));
+await t('nem o dono do app escreve equipe/ pelo app (só o servidor)', assertFails(setDoc(doc(db('chefe'), 'equipe/mu2'), { nome: 'x' })));
+await t('o parceiro não se tira nem muda a própria marca', assertFails(updateDoc(doc(db('parceiro'), 'equipe/parceiro'), { papel: 'admin' })));
+await t('quem está na equipe lê as lições', assertSucceeds(getDocs(collection(db('parceiro'), 'treino/regras/licoes'))));
+await t('quem saiu da equipe NÃO lê as lições', assertFails(getDocs(collection(db('mu2'), 'treino/regras/licoes'))));
 console.log(`\n${ok} passaram, ${fail} falharam`); await env.cleanup(); process.exit(fail ? 1 : 0);

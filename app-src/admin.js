@@ -1,6 +1,6 @@
 /* salvetheapp · Painel de admin (admin.html): só o dono do app. Tudo o que ele acompanha num lugar só: novos
    cadastros, quem usa e com que frequência, bandas e o custo dos robôs (limite por banda), sugestões e problemas
-   com o parecer do júri e a correção automática, códigos de acesso e cadastro aberto, e relatórios em planilha.
+   com o parecer do júri e a correção automática, quem entra na Equipe do Salve, códigos de acesso e cadastro aberto, e relatórios em planilha.
    O relatório vem da função `painel` (server/functions/painel.js), que confere no servidor se a conta está em
    admins/{uid}; os códigos, o cadastro aberto e o andamento das sugestões usam as regras do Firestore (só admin).
    Build: npx esbuild admin.js --bundle --minify --format=iife --target=es2019 --outfile=../app/admin.js */
@@ -169,7 +169,8 @@ function pessoas(main) {
       { t: 'Último uso', v: p => ha(p.ultimo) },
       { t: 'Dias (7)', num: 1, v: p => p.dias7 }, { t: 'Dias (30)', num: 1, v: p => p.dias30 },
       { t: 'Frequência', v: p => { const [t, k] = freq(p); return el('span', 'freq ' + k, t); } },
-      { t: 'Bandas', v: p => p.bandas.map(b => `${b.nome} (${b.papel})`).join(', ') || '–' }], l, 'Ninguém com esse nome.'));
+      { t: 'Bandas', v: p => p.bandas.map(b => `${b.nome} (${b.papel})`).join(', ') || '–' },
+      { t: 'Equipe', v: p => p.equipe ? el('span', 'chip eq', p.admin ? 'dono' : 'equipe') : '' }], l, 'Ninguém com esse nome.'));
   };
   busca.oninput = desenha; ord.onchange = desenha; desenha();
 }
@@ -238,6 +239,33 @@ function sugestoes(main) {
 function recontar() { R.grupos = {}; R.sugestoes.forEach(s => { R.grupos[s.grupo] = (R.grupos[s.grupo] || 0) + 1; }); }
 
 /* ---------- Acesso (códigos e cadastro aberto) ---------- */
+/* who opens the "Equipe do Salve" page: the server creates/deletes equipe/{uid} (the rules read it) */
+function equipeCard(main) {
+  const c = card('Equipe do Salve', 'Quem você marcar aqui ganha o ícone "Equipe do Salve" na tela inicial e entra na página da equipe (treinar a IA, lições, regras do Mestrinho e as próprias sugestões). Desmarcou, o ícone some e a página fecha para a pessoa. Cadastros, uso e custo continuam só no seu painel.');
+  const busca = el('input'); busca.type = 'search'; busca.placeholder = 'Procurar por nome ou e-mail'; busca.setAttribute('aria-label', 'Procurar pessoa para a equipe');
+  const linha = el('div', 'row'); linha.append(busca); c.append(linha);
+  const caixa = el('div', 'list equipe'); c.append(caixa); main.append(c);
+  const desenha = () => {
+    const q = busca.value.trim().toLowerCase();
+    const l = R.pessoas.filter(p => !q || [p.nome, p.email].join(' ').toLowerCase().includes(q))
+      .sort((a, b) => (b.admin - a.admin) || (b.equipe - a.equipe) || String(a.nome || a.email).localeCompare(String(b.nome || b.email), 'pt-BR'));
+    caixa.replaceChildren(...l.slice(0, q ? 60 : 30).map(p => {
+      const row = el('label', 'eqrow' + (p.equipe ? ' on' : '')); row.append(pessoaTxt(p));
+      if (p.admin) { row.append(el('span', 'muted small', 'sempre (dono do app)')); return row; }
+      const cb = el('input'); cb.type = 'checkbox'; cb.checked = !!p.equipe; cb.dataset.uid = p.uid;
+      cb.setAttribute('aria-label', `${p.nome || p.email} acessa a Equipe do Salve`);
+      cb.onchange = async () => { cb.disabled = true;
+        try { await chamar('POST', { acao: 'equipe', uid: p.uid, valor: cb.checked }); p.equipe = cb.checked; row.classList.toggle('on', cb.checked);
+          toast(cb.checked ? `${p.nome || p.email} agora vê a Equipe do Salve.` : `${p.nome || p.email} não vê mais a Equipe do Salve.`); }
+        catch (e) { cb.checked = !cb.checked; toast(e.message || 'Não consegui mudar.'); }
+        cb.disabled = false; };
+      const sw = el('span', 'switch'); sw.append(cb, document.createTextNode(' acessa')); row.append(sw); return row;
+    }));
+    if (!l.length) caixa.append(el('p', 'muted', 'Ninguém com esse nome.'));
+    else if (!q && l.length > 30) caixa.append(el('p', 'muted small', `Mostrando 30 de ${l.length}. Procure pelo nome para achar os outros.`));
+  };
+  busca.oninput = desenha; desenha();
+}
 async function acesso(main) {
   const c = card('Cadastro', 'Enquanto o cadastro estiver fechado, criar banda nova exige um código de acesso. Entrar numa banda por convite continua livre.');
   const sw = el('label', 'switch'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = R.config.cadastroAberto;
@@ -310,7 +338,7 @@ function relatorios(main) {
 }
 
 /* ---------- page ---------- */
-const TABS = [['resumo', 'Resumo', resumo], ['cadastros', 'Cadastros', cadastros], ['pessoas', 'Pessoas', pessoas], ['bandas', 'Bandas e custo', bandas],
+const TABS = [['resumo', 'Resumo', resumo], ['cadastros', 'Cadastros', cadastros], ['pessoas', 'Pessoas', pessoas], ['equipe', 'Equipe do Salve', equipeCard], ['bandas', 'Bandas e custo', bandas],
   ['sugestoes', 'Sugestões', sugestoes], ['acesso', 'Acesso', acesso], ['relatorios', 'Relatórios', relatorios]];
 function marcaAba() {
   const b = document.querySelector('[data-k="cadastros"]'); if (!b) return;
